@@ -1,0 +1,7 @@
+Coloque nesta pasta os dois arquivos do certificado da API Pix Sicredi,
+convertidos para PEM (instruções no README.md da pasta backend):
+
+  cert.pem  → o certificado
+  key.pem   → a chave privada
+
+Nunca compartilhe estes arquivos.

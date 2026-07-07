@@ -1,0 +1,20 @@
+# Mapeia as rotas que o site chama para os arquivos PHP.
+# Este arquivo deve ficar em public_html/api/ junto com os .php.
+RewriteEngine On
+RewriteBase /api/
+
+# Banco de dados
+RewriteRule ^dados$ dados.php [L,QSA]
+RewriteRule ^dados/([A-Za-z]+)$ dados.php?colecao=$1 [L,QSA]
+
+# Cobranças PIX
+RewriteRule ^pix/cobranca$ pix.php?acao=cobranca [L,QSA]
+RewriteRule ^pix/cobranca/([A-Za-z0-9]+)$ pix.php?acao=status&txid=$1 [L,QSA]
+
+# Webhook do Sicredi
+RewriteRule ^webhook/pix$ pix.php?acao=webhook [L,QSA]
+
+# Bloqueia acesso direto aos arquivos de apoio
+<FilesMatch "^(config|lib)\.php$">
+  Require all denied
+</FilesMatch>
