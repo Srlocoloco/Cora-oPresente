@@ -1,0 +1,8 @@
+# Segredos — nunca versionar
+.env
+certs/*.pem
+certs/*.pfx
+certs/*.p12
+certs/*.cer
+certs/*.key
+node_modules/
