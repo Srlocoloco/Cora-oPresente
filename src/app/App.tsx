@@ -116,7 +116,7 @@ const CONFIG_PADRAO: ConfigLoja = {
   freteCapital: 14.9,
   freteInterior: 19.9,
   fretePadrao: 29.9,
-  comissaoRecrutador: 2,
+  comissaoRecrutador: 3,
 };
 
 // ─── Cupons de Desconto ───────────────────────────────────────────────────────
@@ -156,31 +156,48 @@ function PaginaFinanceiroAdmin({
   const mesAtual = NOMES_MESES[new Date().getMonth()];
   const faturamentoMes = validos.filter((o) => o.month === mesAtual).reduce((acum, o) => acum + o.total, 0);
 
-  // Fechamento de comissões: quanto pagar a cada recrutador
+  // Fechamento de comissões: quanto pagar a cada recrutador (comissão sobre a
+  // equipe + bônus de nível quando o próprio recrutador atinge Ouro/Diamante)
   const recrutadores = Object.keys(cargos).filter((e) => cargos[e] === "recrutador");
   const fechamento = recrutadores.map((email) => {
-    const ativos = recrutamentos
-      .filter((r) => r.recrutador === email && r.ativado)
-      .map((r) => r.email.toLowerCase());
+    const equipe = recrutamentos.filter((r) => r.recrutador === email);
+    const ativos = equipe.filter((r) => r.ativado).map((r) => r.email.toLowerCase());
     const totalEquipe = validos
       .filter((o) => o.vendedor && ativos.includes(o.vendedor.toLowerCase()))
       .reduce((acum, o) => acum + o.total, 0);
     const nome =
       clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email;
-    return { email, nome, totalEquipe, valor: totalEquipe * comissao };
+    const bonus = bonusDeNivel(totalNivelRecrutador(email, recrutamentos, pedidos));
+    return { email, nome, totalEquipe, comissao: totalEquipe * comissao, bonus, valor: totalEquipe * comissao + bonus };
   });
-  const comissoesTotal = fechamento.reduce((acum, f) => acum + f.valor, 0);
+  const comissoesTotal = fechamento.reduce((acum, f) => acum + f.comissao, 0);
+
+  // Bônus de nível dos vendedores independentes (mesma regra, com base nas
+  // próprias vendas de cada um)
+  const vendedoresList = Object.keys(cargos).filter((e) => cargos[e] === "vendedor");
+  const bonusVendedores = vendedoresList
+    .map((email) => {
+      const totalProprio = totalVendidoPor(email, pedidos);
+      const nome = clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email;
+      return { email, nome, totalProprio, bonus: bonusDeNivel(totalProprio) };
+    })
+    .filter((v) => v.bonus > 0);
+
+  const bonusRecrutadoresTotal = fechamento.reduce((acum, f) => acum + f.bonus, 0);
+  const bonusVendedoresTotal = bonusVendedores.reduce((acum, v) => acum + v.bonus, 0);
+  const bonusTotal = bonusRecrutadoresTotal + bonusVendedoresTotal;
 
   const cartoes = [
     { label: "Faturamento total", valor: formatarMoeda(faturamentoTotal), icone: <TrendingUp size={22} className="text-emerald-600" /> },
     { label: `Faturamento de ${mesAtual}`, valor: formatarMoeda(faturamentoMes), icone: <TrendingUp size={22} className="text-[#C8102E]" /> },
     { label: "Pedidos válidos", valor: String(validos.length), icone: <ShoppingBag size={22} className="text-[#C8102E]" /> },
     { label: `Comissões a pagar (${comissao * 100}%)`, valor: formatarMoeda(comissoesTotal), icone: <Users size={22} className="text-[#C8102E]" /> },
+    { label: "Bônus de nível a pagar", valor: formatarMoeda(bonusTotal), icone: <Award size={22} className="text-purple-600" /> },
   ];
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {cartoes.map((c) => (
           <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             <span className="flex-shrink-0">{c.icone}</span>
@@ -196,7 +213,7 @@ function PaginaFinanceiroAdmin({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-black text-gray-900 text-[15px]">Fechamento de comissões</h3>
-          <p className="text-[12px] text-gray-400 mt-0.5">Quanto pagar a cada recrutador pelas vendas acumuladas da equipe dele.</p>
+          <p className="text-[12px] text-gray-400 mt-0.5">Quanto pagar a cada recrutador: comissão sobre a equipe + bônus de nível (Ouro R$100 / Diamante R$150) quando o próprio recrutador atinge o nível.</p>
         </div>
         {fechamento.length === 0 ? (
           <div className="px-5 py-10 text-center text-gray-400 text-[13px]">Nenhum recrutador nomeado ainda.</div>
@@ -206,9 +223,35 @@ function PaginaFinanceiroAdmin({
               <div key={f.email} className="px-5 py-3.5 flex items-center justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
                   <div className="text-[13px] font-bold text-gray-800 truncate">{f.nome}</div>
-                  <div className="text-[11px] text-gray-400 truncate">{f.email} · equipe vendeu {formatarMoeda(f.totalEquipe)}</div>
+                  <div className="text-[11px] text-gray-400 truncate">
+                    {f.email} · equipe vendeu {formatarMoeda(f.totalEquipe)}
+                    {f.bonus > 0 && ` · bônus de nível ${formatarMoeda(f.bonus)}`}
+                  </div>
                 </div>
                 <span className="font-black text-emerald-600 text-[14px]">{formatarMoeda(f.valor)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Bônus de nível dos vendedores independentes */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-black text-gray-900 text-[15px]">Bônus de nível — Vendedores</h3>
+          <p className="text-[12px] text-gray-400 mt-0.5">Vendedores que atingiram o nível Ouro (R$100) ou Diamante (R$150) em vendas totais.</p>
+        </div>
+        {bonusVendedores.length === 0 ? (
+          <div className="px-5 py-10 text-center text-gray-400 text-[13px]">Nenhum vendedor atingiu o nível Ouro ainda.</div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {bonusVendedores.map((v) => (
+              <div key={v.email} className="px-5 py-3.5 flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-bold text-gray-800 truncate">{v.nome}</div>
+                  <div className="text-[11px] text-gray-400 truncate">{v.email} · vendeu {formatarMoeda(v.totalProprio)}</div>
+                </div>
+                <span className="font-black text-purple-600 text-[14px]">{formatarMoeda(v.bonus)}</span>
               </div>
             ))}
           </div>
@@ -516,47 +559,86 @@ const NIVEIS_VENDEDOR = [
   {
     name: "Bronze",
     min: 0,
-    max: 50000,
+    max: 500,
     color: "#CD7F32",
     bg: "from-amber-800/20 to-amber-600/10",
     border: "border-amber-700/30",
-    commission: "8%",
-    benefits: ["Suporte padrão", "Comissão de 8%", "Painel básico", "Relatório mensal"],
+    commission: "4%",
+    benefits: ["Suporte padrão", "Comissão de 4%", "Painel básico", "Relatório mensal"],
   },
   {
     name: "Prata",
-    min: 50000,
-    max: 150000,
+    min: 500,
+    max: 1500,
     color: "#A8B8C8",
     bg: "from-slate-400/20 to-slate-300/10",
     border: "border-slate-400/30",
-    commission: "10%",
-    benefits: ["Suporte prioritário", "Comissão de 10%", "Destaque nas buscas", "Relatórios avançados"],
+    commission: "6%",
+    benefits: ["Suporte prioritário", "Comissão de 6%", "Destaque nas buscas", "Relatórios avançados"],
   },
   {
     name: "Ouro",
-    min: 150000,
-    max: 300000,
+    min: 1500,
+    max: 3000,
     color: "#FFD700",
     bg: "from-yellow-400/20 to-yellow-300/10",
     border: "border-yellow-400/40",
-    commission: "12%",
-    benefits: ["Suporte dedicado", "Comissão de 12%", "Banner gratuito", "Analytics premium", "Selo Ouro"],
+    commission: "8%",
+    benefits: ["Suporte dedicado", "Comissão de 8%", "Banner gratuito", "Analytics premium", "Selo Ouro"],
   },
   {
     name: "Diamante",
-    min: 300000,
+    min: 3000,
     max: Infinity,
     color: "#7DD3F8",
     bg: "from-cyan-400/20 to-blue-300/10",
     border: "border-cyan-400/40",
-    commission: "15%",
-    benefits: ["Gerente exclusivo", "Comissão de 15%", "Topo dos resultados", "Campanhas gratuitas", "Early access", "Selo Diamante"],
+    commission: "10%",
+    benefits: ["Gerente exclusivo", "Comissão de 10%", "Topo dos resultados", "Campanhas gratuitas", "Early access", "Selo Diamante"],
   },
 ];
 
 function obterNivelVendedor(sales: number) {
   return NIVEIS_VENDEDOR.findIndex((l) => sales >= l.min && sales < l.max);
+}
+
+// Fração de comissão (ex.: 0.08) do nível correspondente a um total de vendas
+function comissaoFracaoPorNivel(vendasTotais: number) {
+  const nivel = NIVEIS_VENDEDOR[obterNivelVendedor(vendasTotais)] ?? NIVEIS_VENDEDOR[0];
+  return parseFloat(nivel.commission) / 100;
+}
+
+// Bônus de nível: pago à própria conta (vendedor ou recrutador) quando ela
+// atinge, em vendas totais, o nível Ouro ou o nível Diamante. É cumulativo —
+// quem chega ao Diamante já passou pelo Ouro e recebe os dois valores.
+const BONUS_NIVEL_OURO = 100;
+const BONUS_NIVEL_DIAMANTE = 150;
+
+function bonusDeNivel(vendasTotais: number) {
+  let bonus = 0;
+  if (vendasTotais >= NIVEIS_VENDEDOR[2].min) bonus += BONUS_NIVEL_OURO;
+  if (vendasTotais >= NIVEIS_VENDEDOR[3].min) bonus += BONUS_NIVEL_DIAMANTE;
+  return bonus;
+}
+
+// Total vendido (não cancelado) por uma conta, somando todo o histórico
+function totalVendidoPor(email: string, pedidos: Pedido[]) {
+  return pedidos
+    .filter((o) => o.vendedor?.toLowerCase() === email.toLowerCase() && o.status !== "Cancelado")
+    .reduce((acum, o) => acum + o.total, 0);
+}
+
+// Total de vendas de um recrutador (equipe ativa + vendas com o próprio
+// código) — mesmo critério usado para calcular o nível dele.
+function totalNivelRecrutador(email: string, recrutamentos: Recrutamento[], pedidos: Pedido[]) {
+  const emailLimpo = email.toLowerCase();
+  const ativos = recrutamentos
+    .filter((r) => r.recrutador === emailLimpo && r.ativado)
+    .map((r) => r.email.toLowerCase());
+  const totalEquipe = pedidos
+    .filter((o) => o.status !== "Cancelado" && o.vendedor && ativos.includes(o.vendedor.toLowerCase()))
+    .reduce((acum, o) => acum + o.total, 0);
+  return totalEquipe + totalVendidoPor(emailLimpo, pedidos);
 }
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -584,7 +666,26 @@ function ImagemProduto({ src, alt, className }: { src?: string; alt: string; cla
 
 const OPCOES_SELO = ["OFERTA", "MAIS VENDIDO", "TOP VENDA", "NOVO", "LANÇAMENTO"];
 
-const CATEGORIAS = ["Todos", "Perfumes", "TVs", "Notebooks", "Geladeiras", "Áudio", "Eletrodomésticos", "Games"];
+const CATEGORIAS = [
+  "Todos",
+  "Perfumes",
+  "Adega",
+  "Brinquedos",
+  "Academia",
+  "Acessórios",
+  "Bijuterias",
+  "Decoração",
+  "Eletrodomésticos",
+  "Cosméticos",
+  "Utensílios/Utilidades",
+];
+
+// Nome de exibição de uma categoria — pedidos antigos podem ter uma
+// categoria que já não existe mais na lista (ex.: catálogo trocado); em vez
+// de mostrar esse valor obsoleto, agrupa como "Outros".
+function categoriaExibida(categoria: string) {
+  return CATEGORIAS.includes(categoria) ? categoria : "Outros";
+}
 
 // Conta do administrador da loja — somente ela enxerga e acessa o painel Admin
 const EMAIL_ADMIN = "balorense@gmail.com";
@@ -599,7 +700,7 @@ const NOME_MASTER = "Master";
 // ─── Cargos & Recrutamento ────────────────────────────────────────────────────
 
 // Cargos que o Master pode dar a um usuário.
-// Recrutador: cadastra vendedores e ganha 2% sobre as vendas deles.
+// Recrutador: cadastra vendedores e ganha 3% sobre as vendas deles.
 // Vendedor: cadastra produtos no catálogo e NÃO pode recrutar.
 type Cargo = "recrutador" | "vendedor";
 
@@ -615,7 +716,7 @@ interface Recrutamento {
 }
 
 // Percentual que o recrutador ganha sobre cada venda dos seus vendedores
-const COMISSAO_RECRUTADOR = 0.02;
+const COMISSAO_RECRUTADOR = 0.03;
 
 // Gera um código único de recrutamento (ex.: CP-7K2M9X)
 function gerarCodigoRecrutamento() {
@@ -650,18 +751,21 @@ function codigoVendaDe(email: string) {
 // Aplicativo da Web → em "Origens JavaScript autorizadas" adicione
 // http://localhost:5173) e cole o ID abaixo. Com o ID preenchido, o site
 // consulta a Google de verdade; vazio, usa o cadastro simulado por nome.
-const GOOGLE_CLIENT_ID = "";
+const GOOGLE_CLIENT_ID = "887237314004-016e23l96uj8mrc2kmhh7bmemiij7j5c.apps.googleusercontent.com";
 
 const NOMES_MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 const CORES_CATEGORIA: Record<string, string> = {
   Perfumes: "#C8102E",
-  Notebooks: "#E8B84B",
-  TVs: "#10B981",
-  Games: "#F59E0B",
-  Geladeiras: "#6366F1",
-  "Áudio": "#EC4899",
-  "Eletrodomésticos": "#8B5CF6",
+  Adega: "#7C2D12",
+  Brinquedos: "#F59E0B",
+  Academia: "#10B981",
+  "Acessórios": "#6366F1",
+  Bijuterias: "#EC4899",
+  "Decoração": "#8B5CF6",
+  "Eletrodomésticos": "#0EA5E9",
+  "Cosméticos": "#DB2777",
+  "Utensílios/Utilidades": "#65A30D",
 };
 
 // Pedido gerado a cada compra finalizada
@@ -690,6 +794,9 @@ interface Cliente {
   name: string;
   email: string;
   since: string;
+  // true = e-mail verificado de verdade pelo login do Google (JWT do Google);
+  // usado para exigir e-mail verificado antes de dar cargo de recrutador/vendedor
+  viaGoogle?: boolean;
 }
 
 // Lê um valor salvo no navegador (localStorage) com segurança
@@ -706,7 +813,7 @@ function lerArmazenamento<T>(key: string, fallback: T): T {
 
 // Formata números como moeda brasileira (R$)
 const formatarMoeda = (v: number) =>
-  `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+  `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const precoParcela = (price: number, n: number) => formatarMoeda(price / n);
 const pctDesconto = (orig: number, curr: number) =>
   Math.round(((orig - curr) / orig) * 100);
@@ -714,36 +821,16 @@ const pctDesconto = (orig: number, curr: number) =>
 // ─── Logo ─────────────────────────────────────────────────────────────────────
 
 function Logo({ small }: { small?: boolean }) {
-  const [erroImagem, setImgError] = useState(false);
-
-  // Usa a imagem da logo (public/logo.png); se não existir, mostra a versão em texto
-  if (!erroImagem) {
-    return (
-      <div className={`bg-white rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 ${small ? "w-10 h-10" : "w-12 h-12 md:w-14 md:h-14"}`}>
-        <img
-          src="/logo.png"
-          alt="Coração Presente"
-          className="w-full h-full object-cover scale-[1.15]"
-          onError={() => setImgError(true)}
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className={`bg-white rounded-xl flex items-center gap-2 ${small ? "px-2.5 py-1.5" : "px-3 py-2"}`}>
-      <Heart
-        size={small ? 14 : 18}
-        className="fill-red-500 text-red-500 flex-shrink-0"
-      />
-      <div className="leading-none">
+    <div className={`bg-white rounded-xl flex items-center ${small ? "px-2.5 py-1.5" : "px-3 py-2"}`}>
+      <div className="leading-none" style={{ fontFamily: "'Playfair Display', serif" }}>
         <div
-          className={`text-[#C8102E] font-black tracking-tight leading-none ${small ? "text-[10px]" : "text-[13px]"}`}
+          className={`text-[#C8102E] font-black italic tracking-tight leading-none ${small ? "text-[11px]" : "text-[15px]"}`}
         >
           CORAÇÃO
         </div>
         <div
-          className={`text-[#C8102E] font-black tracking-tight leading-none ${small ? "text-[10px]" : "text-[13px]"}`}
+          className={`text-[#C8102E] font-black italic tracking-tight leading-none ${small ? "text-[11px]" : "text-[15px]"}`}
         >
           PRESENTE
         </div>
@@ -754,7 +841,7 @@ function Logo({ small }: { small?: boolean }) {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-type Tela = "login" | "loja" | "carrinho" | "pagamento" | "admin" | "master" | "recrutador" | "vendedor" | "sucesso" | "perfil";
+type Tela = "login" | "loja" | "carrinho" | "pagamento" | "admin" | "master" | "recrutador" | "vendedor" | "sucesso" | "perfil" | "notificacoes";
 
 // Dados do pagamento escolhido no carrinho (aguardando confirmação)
 interface DadosPagamento {
@@ -780,11 +867,17 @@ export default function App() {
   // IDs dos produtos favoritados (coração)
   const [favoritos, setFavoritos] = useState<number[]>([]);
   const [menuMobileAdmin, setMenuMobileAdmin] = useState(false);
-  // Cliente logado (null = visitante)
-  const [usuario, setUsuario] = useState<Usuario | null>(null);
+  // Cliente logado (null = visitante). Recuperado do navegador para que o
+  // usuário continue logado mesmo depois de fechar e abrir o site de novo.
+  const [usuario, setUsuario] = useState<Usuario | null>(() =>
+    lerArmazenamento<Usuario | null>("cp_usuario_logado", null)
+  );
   // Define se a tela de login abre em login ou cadastro
   const [modoTelaLogin, setModoTelaLogin] = useState<"login" | "cadastro">("login");
   const [avisoTelaLogin, setAvisoTelaLogin] = useState("");
+  // Mostra o pop-up de "conta ativada como vendedor" depois que o cliente
+  // ativa o código no próprio perfil
+  const [avisoVendedorAtivado, setAvisoVendedorAtivado] = useState(false);
   // Produto que o visitante tentou comprar antes de se cadastrar
   const [produtoPendente, setProdutoPendente] = useState<Produto | null>(null);
   // Pagamento escolhido no carrinho, aguardando confirmação na tela de pagamento
@@ -820,6 +913,12 @@ export default function App() {
     const t = setTimeout(() => setToastAdicionado(null), 2600);
     return () => clearTimeout(t);
   }, [toastAdicionado]);
+
+  // Mantém o login salvo no navegador: continua logado ao voltar ao site
+  useEffect(() => {
+    if (usuario) localStorage.setItem("cp_usuario_logado", JSON.stringify(usuario));
+    else localStorage.removeItem("cp_usuario_logado");
+  }, [usuario]);
 
   // ── Banco de dados (XAMPP/MySQL via backend) — fonte única dos dados ─────
   // Tudo que precisa ser guardado vive SOMENTE no banco "coracaopresente".
@@ -899,6 +998,19 @@ export default function App() {
     salvarNoBanco("alertasEstoque", alertasEstoque);
   }, [alertasEstoque]);
 
+  // Limpa automaticamente os alertas de estoque assim que o produto volta a
+  // ter estoque (ou é excluído) — sem isso, cada "esgotado" ficava para
+  // sempre na lista e lotava o sino de notificações do Admin.
+  useEffect(() => {
+    setAlertasEstoque((atual) => {
+      const aindaEsgotados = atual.filter((a) => {
+        const produto = produtos.find((p) => p.id === a.id);
+        return produto ? produto.stock <= 0 : false;
+      });
+      return aindaEsgotados.length === atual.length ? atual : aindaEsgotados;
+    });
+  }, [produtos]);
+
   useEffect(() => {
     salvarNoBanco("cargos", cargos);
   }, [cargos]);
@@ -937,6 +1049,27 @@ export default function App() {
       else novo[chave] = cargo;
       return novo;
     });
+  };
+
+  // Cliente ativa, no próprio perfil, o código de vendedor recebido do
+  // recrutador. Retorna uma mensagem de erro, ou null se ativou com sucesso
+  // (nesse caso também dispara o pop-up de aviso).
+  const ativarCodigoVendedor = (codigo: string): string | null => {
+    if (!usuario) return "Você precisa estar logado.";
+    const codigoLimpo = codigo.trim().toUpperCase();
+    if (!codigoLimpo) return "Informe o código recebido do seu recrutador.";
+    const emailLimpo = usuario.email.toLowerCase();
+    const vinculo = recrutamentos.find(
+      (r) => r.codigo === codigoLimpo && r.email.toLowerCase() === emailLimpo
+    );
+    if (!vinculo) return "Código inválido para esta conta. Confira com o seu recrutador.";
+    if (vinculo.ativado) return "Este código já foi ativado.";
+    setRecrutamentos((anterior) =>
+      anterior.map((r) => (r.codigo === codigoLimpo ? { ...r, ativado: true } : r))
+    );
+    definirCargo(emailLimpo, "vendedor");
+    setAvisoVendedorAtivado(true);
+    return null;
   };
 
   // Recrutador cadastra um vendedor: gera o código de ativação e cria o vínculo.
@@ -1015,6 +1148,14 @@ export default function App() {
     setTela("login");
   };
 
+  // Botão "Entrar" do cabeçalho: abre direto a tela de login (não a de cadastro)
+  const abrirTelaLogin = () => {
+    setModoTelaLogin("login");
+    setAvisoTelaLogin("");
+    setProdutoPendente(null);
+    setTela("login");
+  };
+
   // Finaliza a compra: cria os pedidos, dá baixa no estoque e gera alertas
   // Chamado pelo carrinho: valida o cliente e abre a tela de pagamento
   const finalizarCompra = (dados: DadosPagamento) => {
@@ -1054,7 +1195,9 @@ export default function App() {
       pagamento: rotuloPagamento,
       // Atribuição da venda: com código de venda válido, a venda conta somente
       // para a conta dona do código; sem código, vale o dono do produto
-      vendedor: donoCodigoVenda ?? item.owner,
+      // Sem código de venda, a venda cai para o administrador (a loja),
+      // não para o dono do produto — só o código credita o vendedor/recrutador
+      vendedor: donoCodigoVenda ?? EMAIL_ADMIN,
       codigoVenda: donoCodigoVenda ? codigoVendaLimpo : undefined,
       // Endereço de entrega preenchido no carrinho (CEP + número)
       endereco: pagamentoPendente.endereco,
@@ -1075,7 +1218,9 @@ export default function App() {
       .map((p) => ({ id: p.id, name: p.name, date }));
 
     setProdutos(produtosAtualizados);
-    if (esgotados.length > 0) setAlertasEstoque((anterior) => [...esgotados, ...anterior]);
+    // Mantém só os 30 mais recentes — o efeito acima já remove o que foi
+    // reabastecido, isso aqui é só uma trava extra contra crescimento sem fim
+    if (esgotados.length > 0) setAlertasEstoque((anterior) => [...esgotados, ...anterior].slice(0, 30));
 
     setPedidos((anterior) => [...novosPedidos, ...anterior]);
     setTotalUltimaCompra(pagamentoPendente.total);
@@ -1104,6 +1249,16 @@ export default function App() {
   const totalCarrinho = carrinho.reduce((acum, i) => acum + i.price * i.qty, 0);
   const qtdCarrinho = carrinho.reduce((acum, i) => acum + i.qty, 0);
 
+  // Pedidos do cliente com status em andamento — vira o número no sino de
+  // notificações do menu inferior (mobile)
+  const qtdNotificacoesCliente = usuario
+    ? pedidos.filter(
+        (o) =>
+          o.email.toLowerCase() === usuario.email.toLowerCase() &&
+          (o.status === "Processando" || o.status === "Em trânsito")
+      ).length
+    : 0;
+
   // Dono do código de venda digitado pelo cliente (null = vazio ou inválido).
   // Sem código (ou com código inválido), a compra segue normalmente.
   // Contas com código: o Master e todos que têm cargo de recrutador ou vendedor.
@@ -1126,32 +1281,26 @@ export default function App() {
 
   const produtosFiltrados = useMemo(
     () => produtos.filter((p) => {
-      const matchCat = categoriaSelecionada === "Todos" || p.category === categoriaSelecionada;
+      const termo = busca.trim().toLowerCase();
       const matchSearch =
-        p.name.toLowerCase().includes(busca.toLowerCase()) ||
-        p.brand.toLowerCase().includes(busca.toLowerCase());
+        !termo ||
+        p.name.toLowerCase().includes(termo) ||
+        p.brand.toLowerCase().includes(termo) ||
+        p.category.toLowerCase().includes(termo);
+      // Com uma busca digitada, procura em todas as categorias — só filtra
+      // pela categoria selecionada quando o campo de busca está vazio.
+      const matchCat = termo ? true : categoriaSelecionada === "Todos" || p.category === categoriaSelecionada;
       return matchCat && matchSearch;
     }),
     [categoriaSelecionada, busca, produtos]
   );
 
   // Após login/cadastro: registra o cliente e retoma a compra pendente.
-  // Se veio um código de recrutamento válido, ativa a conta como vendedor.
-  const processarLogin = (u: Usuario, codigoVendedor?: string) => {
+  // A ativação do código de vendedor agora acontece no perfil do cliente,
+  // depois que a conta já existe — ver ativarCodigoVendedor.
+  const processarLogin = (u: Usuario, viaGoogle?: boolean) => {
     setUsuario(u);
     const emailLimpo = u.email.toLowerCase();
-    // Ativação por código: vincula o vendedor ao recrutador que o cadastrou
-    if (codigoVendedor) {
-      const vinculo = recrutamentos.find(
-        (r) => r.codigo === codigoVendedor && r.email.toLowerCase() === emailLimpo
-      );
-      if (vinculo) {
-        setRecrutamentos((anterior) =>
-          anterior.map((r) => (r.codigo === codigoVendedor ? { ...r, ativado: true } : r))
-        );
-        definirCargo(emailLimpo, "vendedor");
-      }
-    }
     // Administrador e Master não entram na lista de clientes da loja
     if (emailLimpo === EMAIL_ADMIN || emailLimpo === EMAIL_MASTER) {
       setTela(produtoPendente ? "carrinho" : "loja");
@@ -1161,11 +1310,14 @@ export default function App() {
     }
     setClientes((anterior) =>
       anterior.some((c) => c.email === u.email)
-        ? anterior
+        ? viaGoogle
+          ? anterior.map((c) => (c.email === u.email ? { ...c, viaGoogle: true } : c))
+          : anterior
         : [...anterior, {
             name: u.name,
             email: u.email,
             since: new Date().toLocaleDateString("pt-BR", { month: "short", year: "numeric" }),
+            viaGoogle: Boolean(viaGoogle),
           }]
     );
     if (produtoPendente) {
@@ -1186,7 +1338,6 @@ export default function App() {
         aviso={avisoTelaLogin}
         aoVoltar={() => { setProdutoPendente(null); setAvisoTelaLogin(""); setTela("loja"); }}
         clientes={clientes}
-        recrutamentos={recrutamentos}
       />
     );
   }
@@ -1214,7 +1365,7 @@ export default function App() {
     if (ehAdmin) { setPaginaAdmin("dashboard"); setTela("admin"); }
     else if (ehMaster) { setPaginaAdmin("dashboard"); setTela("master"); }
     else if (cargoUsuario === "recrutador") { setPaginaAdmin("vendedores"); setTela("recrutador"); }
-    else if (cargoUsuario === "vendedor") { setPaginaAdmin("produtos"); setTela("vendedor"); }
+    else if (cargoUsuario === "vendedor") { setPaginaAdmin("pedidos"); setTela("vendedor"); }
   };
 
   // Abre o perfil do cliente (pede login se for visitante)
@@ -1226,6 +1377,17 @@ export default function App() {
       return;
     }
     setTela("perfil");
+  };
+
+  // Abre as notificações do cliente (pede login se for visitante)
+  const abrirNotificacoes = () => {
+    if (!usuario) {
+      setModoTelaLogin("login");
+      setAvisoTelaLogin("Entre na sua conta para ver suas notificações");
+      setTela("login");
+      return;
+    }
+    setTela("notificacoes");
   };
 
   // Perfil do cliente: pedidos por status, cupons e categorias
@@ -1242,6 +1404,8 @@ export default function App() {
           aoSair={() => { setUsuario(null); setTela("loja"); }}
           rotuloPainel={rotuloPainel}
           aoAbrirPainel={abrirPainel}
+          cargoUsuario={cargoUsuario}
+          aoAtivarCodigo={ativarCodigoVendedor}
         />
         <BarraInferiorMobile
           ativa="perfil"
@@ -1249,8 +1413,36 @@ export default function App() {
           aoIrInicio={() => { setProdutoSelecionado(null); setTela("loja"); }}
           aoAbrirCarrinho={() => setTela("carrinho")}
           aoAbrirPerfil={() => {}}
-          categorias={CATEGORIAS.filter((c) => c !== "Todos")}
-          aoEscolherCategoria={(c) => { setCategoriaSelecionada(c); setProdutoSelecionado(null); setTela("loja"); }}
+          aoAbrirNotificacoes={abrirNotificacoes}
+          qtdNotificacoes={qtdNotificacoesCliente}
+        />
+        {avisoVendedorAtivado && (
+          <ModalVendedorAtivado
+            aoFechar={() => setAvisoVendedorAtivado(false)}
+            aoAbrirPainel={() => { setAvisoVendedorAtivado(false); abrirPainel(); }}
+          />
+        )}
+        {bancoConectado === false && <AvisoBancoDesconectado />}
+      </>
+    );
+  }
+
+  // Notificações do cliente: status dos pedidos (substitui "Categorias" no menu mobile)
+  if (tela === "notificacoes" && usuario) {
+    return (
+      <>
+        <TelaNotificacoesCliente
+          pedidos={pedidos.filter((o) => o.email.toLowerCase() === usuario.email.toLowerCase())}
+          aoVoltar={() => setTela("loja")}
+        />
+        <BarraInferiorMobile
+          ativa="notificacoes"
+          qtdCarrinho={qtdCarrinho}
+          aoIrInicio={() => { setProdutoSelecionado(null); setTela("loja"); }}
+          aoAbrirCarrinho={() => setTela("carrinho")}
+          aoAbrirPerfil={abrirPerfil}
+          aoAbrirNotificacoes={() => {}}
+          qtdNotificacoes={0}
         />
         {bancoConectado === false && <AvisoBancoDesconectado />}
       </>
@@ -1311,12 +1503,13 @@ export default function App() {
         aoDefinirCargo={definirCargo}
         recrutamentos={recrutamentos}
         codigoVenda={usuario ? codigoVendaDe(usuario.email) : undefined}
+        comissaoPct={config.comissaoRecrutador / 100}
         bancoOffline={bancoConectado === false}
       />
     );
   }
 
-  // Painel do Recrutador: cadastra vendedores e acompanha as comissões de 2%
+  // Painel do Recrutador: cadastra vendedores e acompanha as comissões
   if (tela === "recrutador" && usuario && cargoUsuario === "recrutador") {
     return (
       <PainelAdmin
@@ -1343,7 +1536,8 @@ export default function App() {
     );
   }
 
-  // Painel do Vendedor: gerencia apenas os próprios produtos e vendas.
+  // Painel do Vendedor: só divulga os produtos da loja (não tem catálogo
+  // próprio) e acompanha as vendas creditadas ao código de venda dele.
   // Vendedor NÃO pode recrutar — o painel não tem nenhuma função de recrutamento.
   if (tela === "vendedor" && usuario && cargoUsuario === "vendedor") {
     const emailVendedor = usuario.email.toLowerCase();
@@ -1358,13 +1552,11 @@ export default function App() {
         usuario={usuario}
         pedidos={pedidos.filter((o) => o.vendedor?.toLowerCase() === emailVendedor)}
         clientes={clientes}
-        produtos={produtos.filter((p) => p.owner?.toLowerCase() === emailVendedor)}
-        aoSalvarProduto={(p) => salvarProduto({ ...p, owner: emailVendedor })}
-        aoExcluirProduto={excluirProduto}
+        produtos={[]}
+        aoSalvarProduto={() => {}}
+        aoExcluirProduto={() => {}}
         aoAtualizarStatusPedido={atualizarStatusPedido}
-        alertasEstoque={alertasEstoque.filter((a) =>
-          produtos.some((p) => p.id === a.id && p.owner?.toLowerCase() === emailVendedor)
-        )}
+        alertasEstoque={[]}
         codigoVenda={codigoVendaDe(emailVendedor)}
         bancoOffline={bancoConectado === false}
       />
@@ -1380,7 +1572,6 @@ export default function App() {
           total={pagamentoPendente.total}
           aoConfirmar={confirmarPagamento}
           aoVoltar={() => { setPagamentoPendente(null); setTela("carrinho"); }}
-          chavePix={config.chavePix}
         />
       );
     }
@@ -1429,8 +1620,8 @@ export default function App() {
         aoAbrirCarrinho={() => setTela("carrinho")}
         aoAbrirPainel={abrirPainel}
         rotuloPainel={rotuloPainel}
-        aoClicarEntrar={abrirTelaCadastro}
-        aoSair={() => setUsuario(null)}
+        aoClicarEntrar={abrirTelaLogin}
+        aoAbrirPerfil={abrirPerfil}
         busca={busca}
         aoBuscar={(v) => { setBusca(v); setProdutoSelecionado(null); }}
         usuario={usuario}
@@ -1503,7 +1694,7 @@ export default function App() {
           }}
         />
 
-        <section id="produtos-section" className="max-w-[1280px] mx-auto px-4 py-8">
+        <section id="produtos-section" className="max-w-[1440px] mx-auto px-4 py-8">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-xl font-black text-gray-900">
@@ -1525,7 +1716,7 @@ export default function App() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 md:gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5">
               {produtosFiltrados.map((p) => (
                 <CartaoProduto
                   key={p.id}
@@ -1539,14 +1730,12 @@ export default function App() {
             </div>
           )}
         </section>
-
-        <SecaoConfianca />
       </main>
       )}
 
       <RodapeLoja />
 
-      {/* Navegação inferior no celular: Início · Categorias · Carrinho · Eu */}
+      {/* Navegação inferior no celular: Início · Notificações · Carrinho · Eu */}
       <BarraInferiorMobile
         ativa="inicio"
         qtdCarrinho={qtdCarrinho}
@@ -1558,12 +1747,8 @@ export default function App() {
         }}
         aoAbrirCarrinho={() => setTela("carrinho")}
         aoAbrirPerfil={abrirPerfil}
-        categorias={CATEGORIAS.filter((c) => c !== "Todos")}
-        aoEscolherCategoria={(c) => {
-          setCategoriaSelecionada(c);
-          setProdutoSelecionado(null);
-          document.getElementById("produtos-section")?.scrollIntoView({ behavior: "smooth" });
-        }}
+        aoAbrirNotificacoes={abrirNotificacoes}
+        qtdNotificacoes={qtdNotificacoesCliente}
       />
 
       {bancoConectado === false && <AvisoBancoDesconectado />}
@@ -1579,14 +1764,12 @@ function TelaLogin({
   aviso,
   aoVoltar,
   clientes = [],
-  recrutamentos = [],
 }: {
-  aoLogar: (u: Usuario, codigoVendedor?: string) => void;
+  aoLogar: (u: Usuario, viaGoogle?: boolean) => void;
   modoInicial?: "login" | "cadastro";
   aviso?: string;
   aoVoltar?: () => void;
   clientes?: Cliente[];
-  recrutamentos?: Recrutamento[];
 }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -1596,8 +1779,6 @@ function TelaLogin({
   const [erro, setErro] = useState("");
   const [modo, setModo] = useState<"login" | "cadastro">(modoInicial);
   const [name, setName] = useState("");
-  // Código de recrutamento (opcional): ativa a conta como vendedor
-  const [codigoVendedor, setCodigoVendedor] = useState("");
   // Cadastro rápido com Google: só pede o nome de usuário
   const [modoGoogle, setModoGoogle] = useState(false);
   const [nomeGoogle, setNomeGoogle] = useState("");
@@ -1619,7 +1800,7 @@ function TelaLogin({
             const payload = JSON.parse(
               atob(resposta.credential.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))
             );
-            aoLogar({ name: payload.name || payload.email.split("@")[0], email: payload.email });
+            aoLogar({ name: payload.name || payload.email.split("@")[0], email: payload.email }, true);
           } catch {
             setErro("Não foi possível entrar com o Google. Tente novamente.");
           }
@@ -1684,18 +1865,6 @@ function TelaLogin({
       }
     }
 
-    // Código de vendedor (opcional): precisa bater com o cadastro feito pelo recrutador
-    const codigoLimpo = codigoVendedor.trim().toUpperCase();
-    if (modo === "cadastro" && codigoLimpo) {
-      const vinculo = recrutamentos.find(
-        (r) => r.codigo === codigoLimpo && r.email.toLowerCase() === emailLimpo
-      );
-      if (!vinculo) {
-        setErro("Código de vendedor inválido para este e-mail. Confira com o seu recrutador.");
-        return;
-      }
-    }
-
     setErro("");
     setCarregando(true);
     setTimeout(() => {
@@ -1709,7 +1878,7 @@ function TelaLogin({
         aoLogar({ name: NOME_MASTER, email: EMAIL_MASTER });
         return;
       }
-      aoLogar({ name: name || email.split("@")[0], email }, modo === "cadastro" && codigoLimpo ? codigoLimpo : undefined);
+      aoLogar({ name: name || email.split("@")[0], email });
     }, 1200);
   };
 
@@ -1846,24 +2015,6 @@ function TelaLogin({
                 </button>
               </div>
             </div>
-
-            {modo === "cadastro" && (
-              <div>
-                <label className="text-[13px] font-semibold text-gray-700 block mb-1.5">
-                  Código de vendedor <span className="text-gray-400 font-medium">(opcional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={codigoVendedor}
-                  onChange={(e) => setCodigoVendedor(e.target.value.toUpperCase())}
-                  placeholder="Ex.: CP-7K2M9X"
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all"
-                />
-                <p className="text-[11px] text-gray-400 mt-1.5">
-                  Recebeu um código do seu recrutador? Informe aqui para ativar sua conta de vendedor.
-                </p>
-              </div>
-            )}
 
             {modo === "login" && (
               <div className="flex items-center justify-between">
@@ -2011,84 +2162,165 @@ function BarraInferiorMobile({
   aoIrInicio,
   aoAbrirCarrinho,
   aoAbrirPerfil,
-  categorias,
-  aoEscolherCategoria,
+  aoAbrirNotificacoes,
+  qtdNotificacoes = 0,
 }: {
-  ativa: "inicio" | "perfil";
+  ativa: "inicio" | "perfil" | "notificacoes";
   qtdCarrinho: number;
   aoIrInicio: () => void;
   aoAbrirCarrinho: () => void;
   aoAbrirPerfil: () => void;
-  categorias: string[];
-  aoEscolherCategoria: (c: string) => void;
+  aoAbrirNotificacoes: () => void;
+  qtdNotificacoes?: number;
 }) {
-  const [categoriasAbertas, setCategoriasAbertas] = useState(false);
-
   const classeItem = (ativo: boolean) =>
     `flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${
       ativo ? "text-[#C8102E]" : "text-gray-400"
     }`;
 
   return (
-    <>
-      {/* Gaveta de categorias */}
-      {categoriasAbertas && (
-        <div className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setCategoriasAbertas(false)}>
-          <div
-            className="absolute bottom-14 left-0 right-0 bg-white rounded-t-2xl p-4 max-h-[60vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="font-black text-gray-900 text-[15px] mb-3">Categorias</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {categorias.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => { aoEscolherCategoria(c); setCategoriasAbertas(false); }}
-                  className="border border-gray-200 rounded-xl px-3 py-3 text-[13px] font-bold text-gray-700 hover:border-[#C8102E] hover:text-[#C8102E] transition-colors text-left"
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
+    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 md:hidden">
+      <div className="grid grid-cols-4">
+        <button onClick={aoIrInicio} className={classeItem(ativa === "inicio")}>
+          <Home size={20} />
+          <span className="text-[10px] font-bold">Início</span>
+        </button>
+        <button onClick={aoAbrirNotificacoes} className={classeItem(ativa === "notificacoes")}>
+          <div className="relative">
+            <Bell size={20} />
+            {qtdNotificacoes > 0 && (
+              <span className="absolute -top-1.5 -right-2 bg-[#C8102E] text-white text-[9px] font-black rounded-full min-w-[15px] h-[15px] px-0.5 flex items-center justify-center">
+                {qtdNotificacoes}
+              </span>
+            )}
           </div>
-        </div>
-      )}
+          <span className="text-[10px] font-bold">Notificações</span>
+        </button>
+        <button onClick={aoAbrirCarrinho} className={classeItem(false)}>
+          <div className="relative">
+            <ShoppingCart size={20} />
+            {qtdCarrinho > 0 && (
+              <span className="absolute -top-1.5 -right-2 bg-[#C8102E] text-white text-[9px] font-black rounded-full min-w-[15px] h-[15px] px-0.5 flex items-center justify-center">
+                {qtdCarrinho}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] font-bold">Carrinho</span>
+        </button>
+        <button onClick={aoAbrirPerfil} className={classeItem(ativa === "perfil")}>
+          <User size={20} />
+          <span className="text-[10px] font-bold">Eu</span>
+        </button>
+      </div>
+    </nav>
+  );
+}
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 md:hidden">
-        <div className="grid grid-cols-4">
-          <button onClick={aoIrInicio} className={classeItem(ativa === "inicio")}>
-            <Home size={20} />
-            <span className="text-[10px] font-bold">Início</span>
+// ─── Tela Notificações do Cliente ─────────────────────────────────────────────
+
+// Avisos sobre o andamento dos pedidos do cliente (substitui "Categorias" no
+// menu inferior do celular)
+const NOTIFICACAO_POR_STATUS: Record<string, { icon: React.ReactNode; texto: (id: string) => string; cor: string }> = {
+  Processando: {
+    icon: <Package size={18} className="text-amber-500" />,
+    texto: (id) => `Seu pedido ${id} está sendo preparado.`,
+    cor: "bg-amber-50",
+  },
+  "Em trânsito": {
+    icon: <Truck size={18} className="text-blue-500" />,
+    texto: (id) => `Seu pedido ${id} está a caminho!`,
+    cor: "bg-blue-50",
+  },
+  Entregue: {
+    icon: <Check size={18} className="text-emerald-600" />,
+    texto: (id) => `Seu pedido ${id} foi entregue.`,
+    cor: "bg-emerald-50",
+  },
+  Cancelado: {
+    icon: <X size={18} className="text-red-500" />,
+    texto: (id) => `Seu pedido ${id} foi cancelado.`,
+    cor: "bg-red-50",
+  },
+};
+
+function TelaNotificacoesCliente({ pedidos, aoVoltar }: { pedidos: Pedido[]; aoVoltar: () => void }) {
+  return (
+    <div className="min-h-screen bg-[#FBF4EA] pb-20 md:pb-10" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+      <div className="bg-[#C8102E] px-4 py-4">
+        <div className="max-w-[720px] mx-auto flex items-center gap-3">
+          <button onClick={aoVoltar} className="text-white/90 hover:text-white transition-colors">
+            <ChevronLeft size={22} />
           </button>
-          <button onClick={() => setCategoriasAbertas(true)} className={classeItem(false)}>
-            <Menu size={20} />
-            <span className="text-[10px] font-bold">Categorias</span>
-          </button>
-          <button onClick={aoAbrirCarrinho} className={classeItem(false)}>
-            <div className="relative">
-              <ShoppingCart size={20} />
-              {qtdCarrinho > 0 && (
-                <span className="absolute -top-1.5 -right-2 bg-[#C8102E] text-white text-[9px] font-black rounded-full min-w-[15px] h-[15px] px-0.5 flex items-center justify-center">
-                  {qtdCarrinho}
+          <h1 className="text-white font-black text-lg">Notificações</h1>
+        </div>
+      </div>
+
+      <div className="max-w-[720px] mx-auto px-4 py-5 space-y-2.5">
+        {pedidos.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 py-16 text-center text-gray-400">
+            <Bell size={36} strokeWidth={1} className="mx-auto mb-3" />
+            <p className="font-medium text-[13px]">Nenhuma notificação por enquanto.</p>
+            <p className="text-[12px] mt-1">O andamento das suas compras vai aparecer aqui.</p>
+          </div>
+        ) : (
+          pedidos.map((o) => {
+            const n = NOTIFICACAO_POR_STATUS[o.status] ?? {
+              icon: <Package size={18} className="text-gray-400" />,
+              texto: (id: string) => `Pedido ${id}: ${o.status}`,
+              cor: "bg-gray-50",
+            };
+            return (
+              <div key={o.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-3">
+                <span className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${n.cor}`}>
+                  {n.icon}
                 </span>
-              )}
-            </div>
-            <span className="text-[10px] font-bold">Carrinho</span>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-gray-800">{n.texto(o.id)}</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">{o.items} · {formatarMoeda(o.total)} · {o.date}</p>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Pop-up: conta ativada como Vendedor ───────────────────────────────────────
+
+function ModalVendedorAtivado({ aoFechar, aoAbrirPainel }: { aoFechar: () => void; aoAbrirPainel: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center">
+        <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-100 flex items-center justify-center">
+          <Check size={28} className="text-emerald-600" strokeWidth={3} />
+        </div>
+        <h3 className="font-black text-gray-900 text-lg mb-2">Conta ativada como Vendedor!</h3>
+        <p className="text-[13px] text-gray-500 mb-5">
+          Você já pode divulgar os produtos da loja com o seu código de venda pessoal e ganhar comissão em cada venda.
+        </p>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={aoAbrirPainel}
+            className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-3 rounded-xl transition-colors text-sm"
+          >
+            Ir para o Painel do Vendedor
           </button>
-          <button onClick={aoAbrirPerfil} className={classeItem(ativa === "perfil")}>
-            <User size={20} />
-            <span className="text-[10px] font-bold">Eu</span>
+          <button onClick={aoFechar} className="text-gray-500 hover:text-gray-700 font-semibold text-[13px] py-2">
+            Continuar navegando
           </button>
         </div>
-      </nav>
-    </>
+      </div>
+    </div>
   );
 }
 
 // ─── Tela Perfil do Cliente ───────────────────────────────────────────────────
 
 // Perfil do cliente: pedidos por status (Preparando, A caminho, Entregues,
-// Cancelados), cupons disponíveis e atalhos para as categorias da loja
+// Cancelados), cupons disponíveis, atalhos para as categorias da loja e
+// ativação do código de vendedor (quando a conta ainda não tem cargo)
 function TelaPerfil({
   usuario,
   pedidos,
@@ -2099,6 +2331,8 @@ function TelaPerfil({
   aoSair,
   rotuloPainel,
   aoAbrirPainel,
+  cargoUsuario,
+  aoAtivarCodigo,
 }: {
   usuario: Usuario;
   pedidos: Pedido[];
@@ -2109,10 +2343,24 @@ function TelaPerfil({
   aoSair: () => void;
   rotuloPainel: string | null;
   aoAbrirPainel: () => void;
+  cargoUsuario?: Cargo;
+  aoAtivarCodigo: (codigo: string) => string | null;
 }) {
   // null = mostra todos os pedidos; senão filtra pelo status escolhido
   const [filtroStatus, setFiltroStatus] = useState<string | null>(null);
   const [cupomCopiado, setCupomCopiado] = useState("");
+  const [codigoAtivar, setCodigoAtivar] = useState("");
+  const [erroAtivar, setErroAtivar] = useState("");
+  const [ativando, setAtivando] = useState(false);
+
+  const ativarCodigo = () => {
+    setAtivando(true);
+    const resultado = aoAtivarCodigo(codigoAtivar);
+    setAtivando(false);
+    if (resultado) { setErroAtivar(resultado); return; }
+    setErroAtivar("");
+    setCodigoAtivar("");
+  };
 
   const atalhos = [
     { status: "Processando", rotulo: "Preparando", icon: <Package size={20} /> },
@@ -2167,6 +2415,36 @@ function TelaPerfil({
       </div>
 
       <div className="max-w-[720px] mx-auto px-4 -mt-5 space-y-4">
+        {/* Ativar código de vendedor: só aparece pra quem ainda não tem cargo */}
+        {!cargoUsuario && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <h3 className="font-black text-gray-900 text-[15px] mb-1">Tem um código de vendedor?</h3>
+            <p className="text-[12px] text-gray-400 mb-3">
+              Recebeu um código do seu recrutador? Ative aqui e comece a divulgar os produtos da loja ganhando comissão em cada venda.
+            </p>
+            <div className="flex gap-2 flex-col sm:flex-row">
+              <input
+                value={codigoAtivar}
+                onChange={(e) => { setCodigoAtivar(e.target.value.toUpperCase()); setErroAtivar(""); }}
+                placeholder="Ex.: CP-7K2M9X"
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#C8102E] transition-colors font-mono"
+              />
+              <button
+                onClick={ativarCodigo}
+                disabled={ativando || !codigoAtivar.trim()}
+                className="bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-50 text-white font-black px-5 py-2.5 rounded-xl transition-colors text-sm"
+              >
+                Ativar
+              </button>
+            </div>
+            {erroAtivar && (
+              <div className="mt-3 bg-red-50 border border-red-200 text-red-600 text-[12px] font-medium px-3 py-2.5 rounded-lg">
+                {erroAtivar}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Meus pedidos: atalhos por status */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <div className="flex items-center justify-between mb-3">
@@ -2298,7 +2576,7 @@ function CabecalhoLoja({
   aoAbrirPainel,
   rotuloPainel,
   aoClicarEntrar,
-  aoSair,
+  aoAbrirPerfil,
   busca,
   aoBuscar,
   usuario,
@@ -2308,12 +2586,11 @@ function CabecalhoLoja({
   aoAbrirPainel: () => void;
   rotuloPainel: string | null;
   aoClicarEntrar: () => void;
-  aoSair: () => void;
+  aoAbrirPerfil: () => void;
   busca: string;
   aoBuscar: (v: string) => void;
   usuario: Usuario | null;
 }) {
-  const [perfilAberto, setPerfilAberto] = useState(false);
 
   return (
     <header>
@@ -2321,7 +2598,7 @@ function CabecalhoLoja({
         Coração Presente · Frete grátis acima de R$&nbsp;299 · 0800 773 2578 · Atendimento 24h
       </div>
       <div className="bg-[#C8102E] py-3 px-4 shadow-md">
-        <div className="max-w-[1280px] mx-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-3 md:gap-x-4">
+        <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-3 md:gap-x-4">
           <div className="flex-shrink-0">
             <Logo />
           </div>
@@ -2354,37 +2631,17 @@ function CabecalhoLoja({
               </button>
             )}
 
-            {/* Perfil */}
-            <div className="relative">
-              <button
-                onClick={() => (usuario ? setPerfilAberto((v) => !v) : aoClicarEntrar())}
-                className="flex flex-col items-center gap-0.5 px-2.5 md:px-3 py-1.5 rounded-lg text-white hover:bg-white/15 transition-colors"
-              >
-                <User size={19} />
-                <span className="text-[9px] md:text-[10px] font-semibold max-w-[64px] truncate">
-                  {usuario ? usuario.name.split(" ")[0] : "Entrar"}
-                </span>
-              </button>
-
-              {perfilAberto && usuario && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setPerfilAberto(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-gray-100">
-                      <div className="text-[13px] font-black text-gray-900 truncate">{usuario.name}</div>
-                      <div className="text-[11px] text-gray-400 truncate">{usuario.email}</div>
-                    </div>
-                    <button
-                      onClick={() => { setPerfilAberto(false); aoSair(); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-3 text-[13px] font-bold text-red-500 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut size={15} />
-                      Sair da conta
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            {/* Perfil: leva direto para a tela de perfil (pedidos, cupons,
+                categorias etc.) — igual no mobile e no desktop */}
+            <button
+              onClick={() => (usuario ? aoAbrirPerfil() : aoClicarEntrar())}
+              className="flex flex-col items-center gap-0.5 px-2.5 md:px-3 py-1.5 rounded-lg text-white hover:bg-white/15 transition-colors"
+            >
+              <User size={19} />
+              <span className="text-[9px] md:text-[10px] font-semibold max-w-[64px] truncate">
+                {usuario ? usuario.name.split(" ")[0] : "Entrar"}
+              </span>
+            </button>
 
             <button
               onClick={aoAbrirCarrinho}
@@ -2420,7 +2677,7 @@ function MenuCategorias({ categorias, selecionada, aoSelecionar }: {
 }) {
   return (
     <nav className="bg-[#8C1626] sticky top-0 z-30 shadow-sm">
-      <div className="max-w-[1280px] mx-auto px-4">
+      <div className="max-w-[1440px] mx-auto px-4">
         <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide md:justify-center">
           {categorias.map((c) => (
             <button
@@ -2454,31 +2711,31 @@ const BANNERS = [
     category: "Perfumes",
   },
   {
-    image: "https://images.unsplash.com/photo-1593359677879-a4bb92f4834c?w=1200&h=400&fit=crop&auto=format",
-    tag: "TV DAY",
-    title: "Smart TVs 4K a partir de R$ 1.299",
+    image: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=1200&h=400&fit=crop&auto=format",
+    tag: "SEMANA DA BELEZA",
+    title: "Cosméticos com até 30% OFF",
     subtitle: "Frete grátis para todo o Brasil · Entrega expressa",
     cta: "Ver Ofertas",
     accent: "#E8B84B",
-    category: "TVs",
+    category: "Cosméticos",
   },
   {
-    image: "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=1200&h=400&fit=crop&auto=format",
-    tag: "TECH WEEK",
-    title: "Notebooks Intel i5 a partir de R$ 2.499",
-    subtitle: "SSD 512GB · 16GB RAM · Garantia 12 meses",
+    image: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=1200&h=400&fit=crop&auto=format",
+    tag: "CASA NOVA",
+    title: "Decoração com preços especiais",
+    subtitle: "Transforme sua casa com o menor preço",
     cta: "Aproveitar",
     accent: "#E8B84B",
-    category: "Notebooks",
+    category: "Decoração",
   },
   {
-    image: "https://images.unsplash.com/photo-1607016284897-76561b521e4e?w=1200&h=400&fit=crop&auto=format",
-    tag: "GAMER WEEK",
-    title: "PS5 Slim com até R$ 500 de desconto",
+    image: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1200&h=400&fit=crop&auto=format",
+    tag: "VIDA ATIVA",
+    title: "Academia: equipamentos com até R$ 100 de desconto",
     subtitle: "Estoque limitado · Aproveite enquanto dura",
     cta: "Garantir o meu",
     accent: "#E8B84B",
-    category: "Games",
+    category: "Academia",
   },
 ];
 
@@ -2498,9 +2755,9 @@ function BannerRotativo({ aoClicarBanner }: { aoClicarBanner: (category: string)
   const proximoBanner = () => { setBannerAtivo((a) => (a + 1) % BANNERS.length); setPausado(true); };
 
   return (
-    <div className="max-w-[1280px] mx-auto px-4 pt-5">
+    <div className="max-w-[1440px] mx-auto px-4 pt-5">
       <div
-        className="relative rounded-2xl overflow-hidden h-[185px] md:h-[315px] bg-[#C8102E]"
+        className="relative overflow-hidden h-[210px] md:h-[315px] bg-[#C8102E]"
         onMouseEnter={() => setPausado(true)}
         onMouseLeave={() => setPausado(false)}
       >
@@ -2519,19 +2776,19 @@ function BannerRotativo({ aoClicarBanner }: { aoClicarBanner: (category: string)
           </div>
         ))}
 
-        <div className="relative z-10 h-full flex flex-col justify-center px-8 md:px-14 text-white">
-          <span className="bg-[#E8B84B] text-[#4A1218] text-[10px] font-black px-3 py-1 rounded-full w-fit mb-3 tracking-wider">
+        <div className="relative z-10 h-full flex flex-col justify-center pl-11 pr-5 md:px-14 text-white">
+          <span className="bg-[#E8B84B] text-[#4A1218] text-[9px] md:text-[10px] font-black px-2.5 py-1 rounded-full w-fit mb-1.5 md:mb-3 tracking-wider">
             {BANNERS[bannerAtivo].tag}
           </span>
-          <h1 className="text-2xl md:text-4xl font-black leading-tight mb-2 max-w-md drop-shadow-sm">
+          <h1 className="text-base md:text-4xl font-black leading-tight mb-1 md:mb-2 max-w-[220px] md:max-w-md line-clamp-2 drop-shadow-sm">
             {BANNERS[bannerAtivo].title}
           </h1>
-          <p className="text-sm md:text-base text-white/70 mb-5 max-w-xs">
+          <p className="text-[11px] md:text-base text-white/70 mb-2 md:mb-5 max-w-[220px] md:max-w-xs line-clamp-1 md:line-clamp-none">
             {BANNERS[bannerAtivo].subtitle}
           </p>
           <button
             onClick={() => aoClicarBanner(BANNERS[bannerAtivo].category)}
-            className="bg-[#E8B84B] text-[#4A1218] font-black text-sm px-7 py-2.5 rounded-xl w-fit hover:bg-[#F0C767] hover:scale-105 active:scale-95 transition-all shadow-lg"
+            className="bg-[#E8B84B] text-[#4A1218] font-black text-[12px] md:text-sm px-4 py-2 md:px-7 md:py-2.5 rounded-xl w-fit hover:bg-[#F0C767] hover:scale-105 active:scale-95 transition-all shadow-lg"
           >
             {BANNERS[bannerAtivo].cta}
           </button>
@@ -2610,24 +2867,26 @@ function CartaoProduto({ produto, aoAdicionarAoCarrinho, aoFavoritar, estaFavori
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex flex-col group">
-      {produto.badge && (
-        <div className={`${CORES_SELO[produto.badge] || "bg-[#C8102E]"} text-white text-[8px] md:text-[9px] font-black px-2 md:px-3 py-1 tracking-wider`}>
-          {produto.badge}
-        </div>
-      )}
       <div
         className="relative p-2.5 md:p-4 bg-gray-50/70 cursor-pointer"
         onClick={() => aoAbrirProduto?.(produto)}
       >
-        {temDesconto && (
-          <div className="absolute top-2 left-2 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md z-10">
-            -{pctDesconto(produto.originalPrice!, produto.price)}%
-          </div>
-        )}
+        <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
+          {produto.badge && (
+            <span className={`${CORES_SELO[produto.badge] || "bg-[#C8102E]"} text-white text-[8px] md:text-[9px] font-black px-2 py-1 rounded-full tracking-wider`}>
+              {produto.badge}
+            </span>
+          )}
+          {temDesconto && (
+            <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md">
+              -{pctDesconto(produto.originalPrice!, produto.price)}%
+            </span>
+          )}
+        </div>
         <ImagemProduto
           src={produto.image}
           alt={produto.name}
-          className="w-full h-[90px] md:h-[130px] object-contain group-hover:scale-[1.04] transition-transform duration-300"
+          className="w-full h-[115px] md:h-[155px] object-cover group-hover:scale-[1.04] transition-transform duration-300"
         />
         <button
           onClick={(e) => { e.stopPropagation(); aoFavoritar(produto.id); }}
@@ -2784,12 +3043,12 @@ function PaginaProduto({
   );
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-5">
+    <main className="max-w-[1440px] mx-auto px-4 py-5">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-[12px] text-gray-500 font-medium mb-4 flex-wrap">
         <button onClick={aoVoltar} className="hover:text-[#C8102E] transition-colors">Início</button>
         <ChevronRight size={13} />
-        <span>{produto.category}</span>
+        <span>{categoriaExibida(produto.category)}</span>
         <ChevronRight size={13} />
         <span className="text-gray-800 font-semibold line-clamp-1">{produto.name}</span>
       </div>
@@ -2944,7 +3203,7 @@ function PaginaProduto({
               ? produto.description.split("\n").filter(Boolean)
               : [
                   `Marca: ${produto.brand}`,
-                  `Categoria: ${produto.category}`,
+                  `Categoria: ${categoriaExibida(produto.category)}`,
                   "Garantia de 12 meses",
                   produto.freeShipping ? "Frete grátis para todo o Brasil" : "Consulte o frete para sua região",
                 ]
@@ -2976,38 +3235,12 @@ function PaginaProduto({
   );
 }
 
-// ─── Trust Section ────────────────────────────────────────────────────────────
-
-function SecaoConfianca() {
-  const items = [
-    { icon: <Shield size={26} />, title: "Compra Garantida", desc: "Devolução em até 30 dias" },
-    { icon: <Truck size={26} />, title: "Entrega Rápida", desc: "Receba em casa ou na loja" },
-    { icon: <CreditCard size={26} />, title: "12x Sem Juros", desc: "No cartão e parceiros" },
-    { icon: <RotateCcw size={26} />, title: "Troca Fácil", desc: "Sem burocracia ou custo" },
-  ];
-  return (
-    <section className="max-w-[1280px] mx-auto px-4 pb-8">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {items.map((item) => (
-          <div key={item.title} className="bg-white rounded-2xl p-4 flex items-center gap-3 border border-gray-100 shadow-sm">
-            <div className="text-[#C8102E] flex-shrink-0">{item.icon}</div>
-            <div>
-              <div className="font-bold text-[13px] text-gray-800">{item.title}</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">{item.desc}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 // ─── Store Footer ─────────────────────────────────────────────────────────────
 
 function RodapeLoja() {
   return (
     <footer className="bg-[#4A1218] text-white mt-2">
-      <div className="max-w-[1280px] mx-auto px-4 py-10">
+      <div className="max-w-[1440px] mx-auto px-4 py-10">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
           <div>
             <Logo small />
@@ -3150,7 +3383,7 @@ function PaginaCarrinho({
     <div className="min-h-screen bg-[#FBF4EA]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Header */}
       <div className="bg-[#C8102E] py-3 px-4 shadow-md">
-        <div className="max-w-[1280px] mx-auto flex items-center gap-4">
+        <div className="max-w-[1440px] mx-auto flex items-center gap-4">
           <button onClick={aoVoltar} className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-semibold transition-colors">
             <ChevronLeft size={18} />
             Continuar comprando
@@ -3163,7 +3396,7 @@ function PaginaCarrinho({
       </div>
 
       {/* Breadcrumb */}
-      <div className="max-w-[1280px] mx-auto px-4 py-3">
+      <div className="max-w-[1440px] mx-auto px-4 py-3">
         <div className="flex items-center gap-2 text-[12px] text-gray-500 font-medium">
           <button onClick={aoVoltar} className="hover:text-[#C8102E] transition-colors">Início</button>
           <ChevronRight size={13} />
@@ -3172,7 +3405,7 @@ function PaginaCarrinho({
       </div>
 
       {items.length === 0 ? (
-        <div className="max-w-[1280px] mx-auto px-4 py-20 text-center">
+        <div className="max-w-[1440px] mx-auto px-4 py-20 text-center">
           <ShoppingCart size={64} strokeWidth={1} className="mx-auto mb-5 text-gray-300" />
           <h2 className="text-2xl font-black text-gray-800 mb-2">Seu carrinho está vazio</h2>
           <p className="text-gray-500 mb-6">Adicione produtos e volte aqui para finalizar sua compra.</p>
@@ -3181,7 +3414,7 @@ function PaginaCarrinho({
           </button>
         </div>
       ) : (
-        <div className="max-w-[1280px] mx-auto px-4 pb-12">
+        <div className="max-w-[1440px] mx-auto px-4 pb-12">
           <div className="flex gap-6 flex-col lg:flex-row">
             {/* Items */}
             <div className="flex-1 space-y-3">
@@ -3488,90 +3721,67 @@ function PaginaCarrinho({
 
 // ─── Tela de Pagamento PIX ─────────────────────────────────────────────────────
 
-// CRC16-CCITT exigido pelo padrão BR Code do Banco Central (último campo do PIX)
-function crc16Pix(payload: string) {
-  let crc = 0xffff;
-  for (let i = 0; i < payload.length; i++) {
-    crc ^= payload.charCodeAt(i) << 8;
-    for (let j = 0; j < 8; j++) {
-      crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
-    }
-  }
-  return crc.toString(16).toUpperCase().padStart(4, "0");
-}
-
-// Monta um campo EMV do BR Code: id + tamanho (2 dígitos) + valor
-function campoPix(id: string, valor: string) {
-  return id + String(valor.length).padStart(2, "0") + valor;
-}
-
-// Gera o código PIX "copia e cola" (BR Code) com o valor da compra e um
-// identificador de transação — é este texto que também vira o QR Code.
-// A chave PIX vem das Configurações da loja (painel Admin).
-function gerarPayloadPix(valor: number, txid: string, chavePix: string) {
-  const contaComerciante = campoPix("00", "br.gov.bcb.pix") + campoPix("01", chavePix);
-  const semCRC =
-    campoPix("00", "01") +
-    campoPix("26", contaComerciante) +
-    campoPix("52", "0000") +
-    campoPix("53", "986") +
-    campoPix("54", valor.toFixed(2)) +
-    campoPix("58", "BR") +
-    campoPix("59", "CORACAO PRESENTE") +
-    campoPix("60", "CURITIBA") +
-    campoPix("62", campoPix("05", txid)) +
-    "6304";
-  return semCRC + crc16Pix(semCRC);
-}
-
 // O código PIX expira em 30 minutos
 const VALIDADE_PIX_MS = 30 * 60 * 1000;
 
-// Endereço do backend de cobranças PIX (pasta backend/ do projeto).
-// Com o backend ligado, o QR é a cobrança OFICIAL do Sicredi e o pedido é
-// confirmado sozinho quando o cliente paga. Desligado, o site usa o QR
-// estático com a chave PIX das Configurações (confirmação manual).
-// Em produção, troque para o endereço público do seu servidor.
-const URL_BACKEND_PIX = "http://localhost:3333";
+// Endereço do backend (banco de dados + cobranças PIX oficiais do Sicredi).
+// Hospedagem definitiva: HostGator, com o backend-php publicado no mesmo
+// domínio do site (veja backend-php/README.md). Antes de rodar "npm run
+// build" para publicar, crie um arquivo ".env" (copie de .env.example) com
+// VITE_BACKEND_URL=https://www.seusite.com.br — o mesmo domínio de sempre.
+// Sem esse arquivo, usa o backend local (XAMPP em http://localhost:3333),
+// que só funciona na sua própria máquina — por isso o aviso de "banco
+// desconectado" quando publicado sem essa variável definida.
+const URL_BACKEND_PIX = (import.meta as any).env?.VITE_BACKEND_URL || "http://localhost:3333";
 
 // Página do pagamento PIX: QR Code + código copia e cola com expiração de 30 min
 function TelaPix({
   total,
   aoConfirmar,
   aoVoltar,
-  chavePix,
 }: {
   total: number;
   aoConfirmar: () => void;
   aoVoltar: () => void;
-  chavePix: string;
 }) {
   // Identificador da transação (muda quando um novo código é gerado)
   const [txid, setTxid] = useState(() => `CP${String(Date.now()).slice(-10)}`);
   const [expiraEm, setExpiraEm] = useState(() => Date.now() + VALIDADE_PIX_MS);
   const [agora, setAgora] = useState(Date.now());
   const [copiado, setCopiado] = useState(false);
-  // Cobrança oficial criada pelo backend Sicredi (null = usa o QR estático)
+  // Cobrança oficial criada pelo backend Sicredi — só existe QR quando o
+  // backend confirma a cobrança de verdade (sem confirmação manual: o pedido
+  // só conclui quando o site verificar que o PIX caiu na conta do Sicredi)
   const [payloadBackend, setPayloadBackend] = useState<string | null>(null);
   const [txidBackend, setTxidBackend] = useState<string | null>(null);
+  const [carregandoCobranca, setCarregandoCobranca] = useState(true);
+  const [erroCobranca, setErroCobranca] = useState(false);
 
-  // Tenta criar a cobrança oficial no backend; sem backend, segue no modo estático
+  // Cria a cobrança oficial no backend. Sem backend (ou sem Sicredi
+  // configurado), não há como confirmar o pagamento sozinho — mostra erro
+  // em vez de um QR que ninguém consegue verificar de verdade.
   useEffect(() => {
-    if (!URL_BACKEND_PIX) return;
     let cancelado = false;
+    setCarregandoCobranca(true);
+    setErroCobranca(false);
     fetch(`${URL_BACKEND_PIX}/api/pix/cobranca`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ valor: total }),
     })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((dados) => {
-        if (!cancelado && dados?.pixCopiaECola) {
-          setPayloadBackend(dados.pixCopiaECola);
-          setTxidBackend(dados.txid ?? null);
-        }
+        if (cancelado) return;
+        if (!dados?.pixCopiaECola) throw new Error();
+        setPayloadBackend(dados.pixCopiaECola);
+        setTxidBackend(dados.txid ?? null);
+        setCarregandoCobranca(false);
       })
-      .catch(() => {}); // backend desligado: sem problema, usa o QR estático
+      .catch(() => {
+        if (cancelado) return;
+        setErroCobranca(true);
+        setCarregandoCobranca(false);
+      });
     return () => { cancelado = true; };
   }, [txid, total]);
 
@@ -3601,18 +3811,19 @@ function TelaPix({
   const minutos = String(Math.floor(restanteMs / 60000)).padStart(2, "0");
   const segundos = String(Math.floor((restanteMs % 60000) / 1000)).padStart(2, "0");
 
-  // Usa a cobrança oficial do Sicredi quando o backend responde;
-  // sem backend, gera o código estático com a chave PIX das Configurações
-  const payload = payloadBackend ?? gerarPayloadPix(total, txid, chavePix);
-  const urlQrCode = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(payload)}`;
+  const urlQrCode = payloadBackend
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(payloadBackend)}`
+    : null;
 
   const copiarCodigo = () => {
-    navigator.clipboard?.writeText(payload).catch(() => {});
+    if (!payloadBackend) return;
+    navigator.clipboard?.writeText(payloadBackend).catch(() => {});
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2000);
   };
 
-  // Gera um novo código PIX com mais 30 minutos de validade
+  // Gera um novo código PIX com mais 30 minutos de validade (também usado
+  // para tentar de novo depois de um erro ao criar a cobrança)
   const gerarNovoCodigo = () => {
     setPayloadBackend(null); // descarta a cobrança antiga (uma nova será criada)
     setTxidBackend(null);
@@ -3624,7 +3835,7 @@ function TelaPix({
     <div className="min-h-screen bg-[#FBF4EA]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Header */}
       <div className="bg-[#C8102E] py-3 px-4 shadow-md">
-        <div className="max-w-[1280px] mx-auto flex items-center gap-4">
+        <div className="max-w-[1440px] mx-auto flex items-center gap-4">
           <button onClick={aoVoltar} className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-semibold transition-colors">
             <ChevronLeft size={18} />
             Voltar ao carrinho
@@ -3650,93 +3861,118 @@ function TelaPix({
           </div>
 
           <div className="p-6 space-y-4">
-            {/* Contagem regressiva de expiração */}
-            <div
-              className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-bold ${
-                expirado
-                  ? "bg-red-50 border border-red-200 text-red-600"
-                  : acabando
-                  ? "bg-amber-50 border border-amber-200 text-amber-700"
-                  : "bg-gray-50 border border-gray-200 text-gray-600"
-              }`}
-            >
-              {expirado ? "Código expirado" : <>Este código expira em <span className="font-mono font-black">{minutos}:{segundos}</span></>}
-            </div>
-
-            {/* QR Code */}
-            <div className="flex justify-center">
-              {expirado ? (
-                <div className="w-[240px] h-[240px] rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-3 text-center p-4">
-                  <RotateCcw size={28} className="text-gray-300" />
-                  <p className="text-[13px] text-gray-500 font-semibold">
-                    O tempo de pagamento acabou.<br />Gere um novo código para continuar.
+            {erroCobranca && !expirado ? (
+              <>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
+                  <X size={28} className="text-red-500 mx-auto mb-2" />
+                  <p className="text-[14px] font-bold text-red-700">
+                    Não foi possível confirmar pagamentos automáticos agora
+                  </p>
+                  <p className="text-[12px] text-red-500 mt-1">
+                    Sua compra não foi cobrada. Tente novamente em instantes ou volte mais tarde.
                   </p>
                 </div>
-              ) : (
-                <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-sm">
-                  <img
-                    src={urlQrCode}
-                    alt="QR Code PIX"
-                    width={240}
-                    height={240}
-                    className="rounded-lg"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Código copia e cola */}
-            {!expirado && (
-              <div>
-                <p className="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">PIX copia e cola</p>
-                <div className="flex gap-2">
-                  <div className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 font-mono text-[11px] text-gray-600 truncate bg-gray-50">
-                    {payload}
-                  </div>
-                  <button
-                    onClick={copiarCodigo}
-                    className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold text-[13px] px-4 py-2.5 rounded-xl transition-colors flex-shrink-0"
-                  >
-                    {copiado ? "Copiado!" : "Copiar"}
-                  </button>
-                </div>
+                <button
+                  onClick={gerarNovoCodigo}
+                  className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-4 rounded-xl transition-colors text-base flex items-center justify-center gap-2"
+                >
+                  <RotateCcw size={17} />
+                  Tentar novamente
+                </button>
+              </>
+            ) : carregandoCobranca && !expirado ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-10">
+                <div className="w-8 h-8 border-[3px] border-gray-200 border-t-[#C8102E] rounded-full animate-spin" />
+                <p className="text-[13px] text-gray-500 font-semibold">Gerando cobrança PIX segura...</p>
               </div>
-            )}
-
-            {/* Passo a passo */}
-            {!expirado && (
-              <div className="bg-gray-50 rounded-xl p-4 space-y-1.5">
-                {[
-                  "Abra o app do seu banco e escolha pagar com PIX",
-                  "Escaneie o QR Code ou cole o código copia e cola",
-                  "Confira o valor e confirme — a aprovação é imediata",
-                ].map((passo, i) => (
-                  <div key={passo} className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[11px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">
-                      {i + 1}
-                    </span>
-                    <span className="text-[12px] text-gray-600 font-medium">{passo}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {expirado ? (
-              <button
-                onClick={gerarNovoCodigo}
-                className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-4 rounded-xl transition-colors text-base flex items-center justify-center gap-2"
-              >
-                <RotateCcw size={17} />
-                Gerar novo código PIX
-              </button>
             ) : (
-              <button
-                onClick={aoConfirmar}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl transition-colors text-base flex items-center justify-center gap-2"
-              >
-                <Check size={18} />
-                Já fiz o pagamento
-              </button>
+              <>
+                {/* Contagem regressiva de expiração */}
+                <div
+                  className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-bold ${
+                    expirado
+                      ? "bg-red-50 border border-red-200 text-red-600"
+                      : acabando
+                      ? "bg-amber-50 border border-amber-200 text-amber-700"
+                      : "bg-gray-50 border border-gray-200 text-gray-600"
+                  }`}
+                >
+                  {expirado ? "Código expirado" : <>Este código expira em <span className="font-mono font-black">{minutos}:{segundos}</span></>}
+                </div>
+
+                {/* QR Code */}
+                <div className="flex justify-center">
+                  {expirado || !urlQrCode ? (
+                    <div className="w-[240px] h-[240px] rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-3 text-center p-4">
+                      <RotateCcw size={28} className="text-gray-300" />
+                      <p className="text-[13px] text-gray-500 font-semibold">
+                        O tempo de pagamento acabou.<br />Gere um novo código para continuar.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-sm">
+                      <img
+                        src={urlQrCode}
+                        alt="QR Code PIX"
+                        width={240}
+                        height={240}
+                        className="rounded-lg"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Código copia e cola */}
+                {!expirado && payloadBackend && (
+                  <div>
+                    <p className="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">PIX copia e cola</p>
+                    <div className="flex gap-2">
+                      <div className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 font-mono text-[11px] text-gray-600 truncate bg-gray-50">
+                        {payloadBackend}
+                      </div>
+                      <button
+                        onClick={copiarCodigo}
+                        className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold text-[13px] px-4 py-2.5 rounded-xl transition-colors flex-shrink-0"
+                      >
+                        {copiado ? "Copiado!" : "Copiar"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Passo a passo */}
+                {!expirado && payloadBackend && (
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-1.5">
+                    {[
+                      "Abra o app do seu banco e escolha pagar com PIX",
+                      "Escaneie o QR Code ou cole o código copia e cola",
+                      "Confira o valor e confirme",
+                    ].map((passo, i) => (
+                      <div key={passo} className="flex items-start gap-2.5">
+                        <span className="w-5 h-5 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[11px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">
+                          {i + 1}
+                        </span>
+                        <span className="text-[12px] text-gray-600 font-medium">{passo}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {expirado ? (
+                  <button
+                    onClick={gerarNovoCodigo}
+                    className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-4 rounded-xl transition-colors text-base flex items-center justify-center gap-2"
+                  >
+                    <RotateCcw size={17} />
+                    Gerar novo código PIX
+                  </button>
+                ) : (
+                  <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold py-4 rounded-xl text-[13px] flex items-center justify-center gap-2.5">
+                    <div className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin" />
+                    Aguardando confirmação do pagamento — o pedido conclui sozinho assim que o PIX cair
+                  </div>
+                )}
+              </>
             )}
             <button
               onClick={aoVoltar}
@@ -3780,7 +4016,7 @@ function TelaPagamento({
     <div className="min-h-screen bg-[#FBF4EA]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Header */}
       <div className="bg-[#C8102E] py-3 px-4 shadow-md">
-        <div className="max-w-[1280px] mx-auto flex items-center gap-4">
+        <div className="max-w-[1440px] mx-auto flex items-center gap-4">
           <button onClick={aoVoltar} className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-semibold transition-colors">
             <ChevronLeft size={18} />
             Voltar ao carrinho
@@ -3905,7 +4141,7 @@ function PainelAdmin({
   aoRecrutar?: (nome: string, email: string) => string | null;
   // Código de venda pessoal da conta logada (mostrado no topo do painel)
   codigoVenda?: string;
-  // Comissão do recrutador em fração (ex.: 0.02 = 2%)
+  // Comissão do recrutador em fração (ex.: 0.03 = 3%)
   comissaoPct?: number;
   cupons?: Cupom[];
   aoSalvarCupom?: (c: Cupom) => void;
@@ -3919,13 +4155,17 @@ function PainelAdmin({
   const [notifAberta, setNotifAberta] = useState(false);
   const [notifVistas, setNotifVistas] = useState<number>(() => lerArmazenamento<number>("cp_notif_seen", 0));
 
+  // Alertas de estoque esgotado só fazem sentido para o Admin — recrutadores,
+  // vendedores e o Master não veem esse tipo de notificação
   const notificacoes = [
-    ...alertasEstoque.slice(0, 5).map((a) => ({
-      icon: <Package size={18} className="text-red-500" />,
-      title: "Produto esgotado!",
-      desc: `${a.name} — reponha o estoque`,
-      date: a.date,
-    })),
+    ...(modo === "admin"
+      ? alertasEstoque.slice(0, 5).map((a) => ({
+          icon: <Package size={18} className="text-red-500" />,
+          title: "Produto esgotado!",
+          desc: `${a.name} — reponha o estoque`,
+          date: a.date,
+        }))
+      : []),
     ...pedidos.slice(0, 8).map((o) => ({
       icon: <ShoppingCart size={18} className="text-[#C8102E]" />,
       title: `Novo pedido ${o.id}`,
@@ -3933,7 +4173,7 @@ function PainelAdmin({
       date: o.date,
     })),
   ];
-  const totalEventos = pedidos.length + alertasEstoque.length;
+  const totalEventos = pedidos.length + (modo === "admin" ? alertasEstoque.length : 0);
   const naoLidas = Math.max(0, totalEventos - notifVistas);
 
   const alternarNotificacoes = () => {
@@ -3944,7 +4184,8 @@ function PainelAdmin({
   // Menu lateral muda conforme o modo do painel:
   // Admin: tudo · Master: SEM Produtos, COM Equipe · Recrutador: vendedores e
   // comissões (sem produtos — vendedor não recruta e recrutador não vende) ·
-  // Vendedor: apenas os próprios produtos e vendas
+  // Vendedor: só divulga os produtos da loja (não tem catálogo próprio) e
+  // acompanha as vendas creditadas ao código dele
   const menusPorModo: Record<string, { id: string; label: string; icon: React.ReactNode }[]> = {
     admin: [
       { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} /> },
@@ -3967,7 +4208,6 @@ function PainelAdmin({
       { id: "comissoes", label: "Comissões", icon: <TrendingUp size={17} /> },
     ],
     vendedor: [
-      { id: "produtos", label: "Meus Produtos", icon: <Package size={17} /> },
       { id: "pedidos", label: "Minhas Vendas", icon: <ShoppingBag size={17} /> },
     ],
   };
@@ -3982,7 +4222,7 @@ function PainelAdmin({
 
   const titulosPaginas: Record<string, string> = {
     dashboard: "Dashboard",
-    produtos: modo === "vendedor" ? "Meus Produtos" : "Gestão de Produtos",
+    produtos: "Gestão de Produtos",
     pedidos: modo === "vendedor" ? "Minhas Vendas" : "Pedidos",
     equipe: "Equipe & Cargos",
     vendedores: "Meus Vendedores",
@@ -3995,31 +4235,45 @@ function PainelAdmin({
   };
 
   // Vendas do mês para o cartão de nível — o sistema de progressão aparece
-  // SOMENTE nos painéis de recrutador e vendedor (não no Admin nem no Master)
+  // SOMENTE nos painéis de recrutador e vendedor (não no Admin nem no Master).
+  // vendasTotaisNivel (vitalícias) decide o bônus de nível Ouro/Diamante e a
+  // comissão por venda mostrada nas Minhas Vendas do vendedor.
   const mesAtualNivel = NOMES_MESES[new Date().getMonth()];
   let vendasDoMesNivel = 0;
+  let vendasTotaisNivel = 0;
   if (modo === "vendedor") {
     // O painel do vendedor já recebe apenas os pedidos dele
-    vendasDoMesNivel = pedidos
-      .filter((o) => o.status !== "Cancelado" && o.month === mesAtualNivel)
+    const validosVendedor = pedidos.filter((o) => o.status !== "Cancelado");
+    vendasDoMesNivel = validosVendedor
+      .filter((o) => o.month === mesAtualNivel)
       .reduce((acum, o) => acum + o.total, 0);
+    vendasTotaisNivel = validosVendedor.reduce((acum, o) => acum + o.total, 0);
   } else if (modo === "recrutador" && usuario) {
-    // Recrutador: vendas do mês da equipe dele + as com o próprio código
+    // Recrutador: vendas da equipe dele + as com o próprio código
     const emailRecrutador = usuario.email.toLowerCase();
     const equipeAtiva = recrutamentos
       .filter((r) => r.recrutador === emailRecrutador && r.ativado)
       .map((r) => r.email.toLowerCase());
-    vendasDoMesNivel = pedidos
-      .filter(
-        (o) =>
-          o.status !== "Cancelado" &&
-          o.month === mesAtualNivel &&
-          o.vendedor &&
-          (equipeAtiva.includes(o.vendedor.toLowerCase()) ||
-            o.vendedor.toLowerCase() === emailRecrutador)
-      )
+    const validosEquipe = pedidos.filter(
+      (o) =>
+        o.status !== "Cancelado" &&
+        o.vendedor &&
+        (equipeAtiva.includes(o.vendedor.toLowerCase()) || o.vendedor.toLowerCase() === emailRecrutador)
+    );
+    vendasDoMesNivel = validosEquipe
+      .filter((o) => o.month === mesAtualNivel)
       .reduce((acum, o) => acum + o.total, 0);
+    vendasTotaisNivel = validosEquipe.reduce((acum, o) => acum + o.total, 0);
   }
+
+  // Dashboard: só o Admin enxerga o desempenho geral (todos os recrutadores,
+  // vendedores e vendas diretas). O Master tem o gráfico das próprias vendas
+  // (creditadas ao código de venda dele), como qualquer outra conta.
+  const pedidosDashboard =
+    modo === "master" && usuario
+      ? pedidos.filter((o) => o.vendedor?.toLowerCase() === usuario.email.toLowerCase())
+      : pedidos;
+  const tituloDashboard = modo === "admin" ? "Desempenho da Empresa" : "Minhas Vendas";
 
   return (
     <div className="flex h-screen bg-[#FBF4EA] overflow-hidden" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -4146,14 +4400,33 @@ function PainelAdmin({
           {/* Progressão de nível: só para recrutadores e vendedores */}
           {(modo === "recrutador" || modo === "vendedor") && (
             <div className="mb-5">
-              <CartaoNivelVendedor vendasDoMes={vendasDoMesNivel} />
+              <CartaoNivelVendedor vendasDoMes={vendasDoMesNivel} vendasTotais={vendasTotaisNivel} />
             </div>
           )}
-          {pagina === "dashboard" && <PaginaDashboard pedidos={pedidos} clientes={clientes} aoVerTodosPedidos={() => setPagina("pedidos")} />}
-          {pagina === "produtos" && modo !== "master" && modo !== "recrutador" && (
+          {pagina === "dashboard" && (
+            <PaginaDashboard
+              pedidos={pedidosDashboard}
+              clientes={clientes}
+              titulo={tituloDashboard}
+              aoVerTodosPedidos={() => setPagina("pedidos")}
+            />
+          )}
+          {pagina === "produtos" && modo === "admin" && (
             <PaginaProdutosAdmin produtos={produtos} aoSalvar={aoSalvarProduto} aoExcluir={aoExcluirProduto} />
           )}
-          {pagina === "pedidos" && <PaginaPedidosAdmin pedidos={pedidos} aoAtualizarStatus={aoAtualizarStatusPedido} />}
+          {pagina === "pedidos" && (
+            <PaginaPedidosAdmin
+              pedidos={pedidos}
+              aoAtualizarStatus={aoAtualizarStatusPedido}
+              comissaoPct={
+                modo === "vendedor"
+                  ? comissaoFracaoPorNivel(vendasTotaisNivel)
+                  : modo === "master"
+                  ? comissaoPct
+                  : undefined
+              }
+            />
+          )}
           {pagina === "equipe" && modo === "master" && cargos && aoDefinirCargo && (
             <PaginaEquipeMaster
               clientes={clientes}
@@ -4167,6 +4440,8 @@ function PainelAdmin({
               emailRecrutador={usuario.email}
               recrutamentos={recrutamentos}
               aoRecrutar={aoRecrutar}
+              pedidos={pedidos}
+              comissaoPct={comissaoPct ?? 0.03}
             />
           )}
           {pagina === "comissoes" && modo === "recrutador" && usuario && (
@@ -4180,7 +4455,6 @@ function PainelAdmin({
           {pagina === "supervisao" && modo === "admin" && cargos && (
             <PaginaSupervisaoAdmin
               pedidos={pedidos}
-              produtos={produtos}
               clientes={clientes}
               cargos={cargos}
               recrutamentos={recrutamentos}
@@ -4221,19 +4495,38 @@ function PaginaEquipeMaster({
   cargos,
   aoDefinirCargo,
   recrutamentos,
+  comissaoPct = 0.03,
 }: {
   clientes: Cliente[];
   cargos: Record<string, Cargo>;
   aoDefinirCargo: (email: string, cargo: Cargo | null) => void;
   recrutamentos: Recrutamento[];
+  comissaoPct?: number;
 }) {
   // Dar cargo direto por e-mail (necessário para criar o primeiro recrutador,
   // já que a lista abaixo só mostra quem entrou com código de vendedor)
   const [emailCargo, setEmailCargo] = useState("");
+  const [erroCargo, setErroCargo] = useState("");
 
+  // Só dá cargo a quem já é cliente cadastrado no site E entrou com o login
+  // real do Google (e-mail verificado pela própria Google, não digitado à mão)
   const darCargoPorEmail = (cargo: Cargo) => {
     const chave = emailCargo.trim().toLowerCase();
-    if (!chave || chave === EMAIL_ADMIN || chave === EMAIL_MASTER) return;
+    if (!chave) return;
+    if (chave === EMAIL_ADMIN || chave === EMAIL_MASTER) {
+      setErroCargo("Este e-mail é reservado.");
+      return;
+    }
+    const cliente = clientes.find((c) => c.email.toLowerCase() === chave);
+    if (!cliente) {
+      setErroCargo("Este e-mail ainda não tem cadastro na loja.");
+      return;
+    }
+    if (!cliente.viaGoogle) {
+      setErroCargo("Este e-mail precisa ter entrado com o login do Google para ser verificado.");
+      return;
+    }
+    setErroCargo("");
     aoDefinirCargo(chave, cargo);
     setEmailCargo("");
   };
@@ -4278,12 +4571,12 @@ function PaginaEquipeMaster({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <h3 className="font-black text-gray-900 text-[15px] mb-1">Dar cargo por e-mail</h3>
         <p className="text-[12px] text-gray-400 mb-3">
-          Dá o cargo diretamente a qualquer conta — use para nomear os seus recrutadores.
+          Dá o cargo a uma conta já cadastrada na loja com login do Google (e-mail verificado) — use para nomear os seus recrutadores.
         </p>
         <div className="flex gap-2 flex-col md:flex-row">
           <input
             value={emailCargo}
-            onChange={(e) => setEmailCargo(e.target.value)}
+            onChange={(e) => { setEmailCargo(e.target.value); setErroCargo(""); }}
             placeholder="E-mail da conta"
             type="email"
             className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#C8102E] transition-colors"
@@ -4301,13 +4594,18 @@ function PaginaEquipeMaster({
             Tornar Vendedor
           </button>
         </div>
+        {erroCargo && (
+          <div className="mt-3 bg-red-50 border border-red-200 text-red-600 text-[12px] font-medium px-3 py-2.5 rounded-lg">
+            {erroCargo}
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-black text-gray-900 text-[15px]">Usuários e cargos</h3>
           <p className="text-[12px] text-gray-400 mt-0.5">
-            Somente quem se cadastrou com um código de vendedor válido aparece aqui. Recrutador cadastra vendedores e ganha 2% sobre as vendas deles. Vendedor gerencia os próprios produtos e não pode recrutar.
+            Somente quem se cadastrou com um código de vendedor válido aparece aqui. Recrutador cadastra vendedores e ganha {(comissaoPct * 100).toFixed(0)}% sobre as vendas deles. Vendedor gerencia os próprios produtos e não pode recrutar. Vendedores e recrutadores ganham ainda um bônus de nível: {formatarMoeda(BONUS_NIVEL_OURO)} ao atingir o nível Ouro e {formatarMoeda(BONUS_NIVEL_DIAMANTE)} ao atingir o nível Diamante.
           </p>
         </div>
         {usuariosDaEquipe.length === 0 ? (
@@ -4412,10 +4710,14 @@ function PaginaVendedoresRecrutador({
   emailRecrutador,
   recrutamentos,
   aoRecrutar,
+  pedidos,
+  comissaoPct,
 }: {
   emailRecrutador: string;
   recrutamentos: Recrutamento[];
   aoRecrutar: (nome: string, email: string) => string | null;
+  pedidos: Pedido[];
+  comissaoPct: number;
 }) {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
@@ -4446,7 +4748,9 @@ function PaginaVendedoresRecrutador({
         <h3 className="font-black text-gray-900 text-[15px] mb-1">Cadastrar novo vendedor</h3>
         <p className="text-[12px] text-gray-400 mb-4">
           Informe os dados do vendedor. Um código será gerado — entregue-o à pessoa para que ela
-          ative a conta ao se cadastrar na loja. Você ganha 2% sobre cada venda dela.
+          ative a conta ao se cadastrar na loja. Você ganha {(comissaoPct * 100).toFixed(0)}% sobre cada venda dela.
+          Ao atingir o nível Ouro ou Diamante em vendas totais, o próprio vendedor ganha um bônus de
+          {" "}{formatarMoeda(BONUS_NIVEL_OURO)} ou {formatarMoeda(BONUS_NIVEL_DIAMANTE)}, respectivamente.
         </p>
         <div className="flex gap-2 flex-col md:flex-row">
           <input
@@ -4487,35 +4791,47 @@ function PaginaVendedoresRecrutador({
           </div>
         ) : (
           <div className="divide-y divide-gray-50">
-            {meusVendedores.map((r) => (
-              <div key={r.codigo} className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-black flex items-center justify-center flex-shrink-0">
-                    {r.nome[0]}
+            {meusVendedores.map((r) => {
+              const vendidoPeloVendedor = r.ativado ? totalVendidoPor(r.email, pedidos) : 0;
+              const bonusNivelVendedor = bonusDeNivel(vendidoPeloVendedor);
+              return (
+                <div key={r.codigo} className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-black flex items-center justify-center flex-shrink-0">
+                      {r.nome[0]}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-bold text-gray-800 truncate">{r.nome}</div>
+                      <div className="text-[11px] text-gray-400 truncate">{r.email} · {r.date}</div>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-gray-800 truncate">{r.nome}</div>
-                    <div className="text-[11px] text-gray-400 truncate">{r.email} · {r.date}</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => copiarCodigo(r.codigo)}
+                      title="Copiar código"
+                      className="font-mono text-[12px] font-bold text-[#C8102E] bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                      {copiado === r.codigo ? "Copiado!" : r.codigo}
+                    </button>
+                    {bonusNivelVendedor > 0 && (
+                      <span
+                        title={`Bônus de nível ganho pelo vendedor: ${formatarMoeda(bonusNivelVendedor)}`}
+                        className="text-[10px] font-black px-2.5 py-1 rounded-full bg-purple-50 text-purple-600"
+                      >
+                        🎁 Bônus de nível: {formatarMoeda(bonusNivelVendedor)}
+                      </span>
+                    )}
+                    <span
+                      className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                        r.ativado ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                      }`}
+                    >
+                      {r.ativado ? "ATIVO" : "PENDENTE"}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => copiarCodigo(r.codigo)}
-                    title="Copiar código"
-                    className="font-mono text-[12px] font-bold text-[#C8102E] bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors"
-                  >
-                    {copiado === r.codigo ? "Copiado!" : r.codigo}
-                  </button>
-                  <span
-                    className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
-                      r.ativado ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
-                    }`}
-                  >
-                    {r.ativado ? "ATIVO" : "PENDENTE"}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -4525,7 +4841,7 @@ function PaginaVendedoresRecrutador({
 
 // ─── Página Comissões (Recrutador) ────────────────────────────────────────────
 
-// Mostra os 2% que o recrutador ganha sobre cada venda dos seus vendedores
+// Mostra os percentual configurado que o recrutador ganha sobre cada venda dos seus vendedores
 // ativos. Pedidos cancelados não geram comissão.
 function PaginaComissoesRecrutador({
   emailRecrutador,
@@ -4536,7 +4852,7 @@ function PaginaComissoesRecrutador({
   emailRecrutador: string;
   recrutamentos: Recrutamento[];
   pedidos: Pedido[];
-  comissao: number; // fração (ex.: 0.02 = 2%)
+  comissao: number; // fração (ex.: 0.03 = 3%)
 }) {
   const meusAtivos = recrutamentos.filter(
     (r) => r.recrutador === emailRecrutador.toLowerCase() && r.ativado
@@ -4557,16 +4873,32 @@ function PaginaComissoesRecrutador({
   );
   const totalComCodigo = vendasComCodigo.reduce((acum, o) => acum + o.total, 0);
 
+  // Bônus de nível: pago à própria conta do recrutador quando as vendas
+  // totais dele (equipe ativa + vendas com o próprio código) atingem o
+  // nível Ouro (R$100) ou Diamante (R$150)
+  const totalNivelProprio = totalVendido + totalComCodigo;
+  const bonusNivel = bonusDeNivel(totalNivelProprio);
+
+  // Gráfico próprio do recrutador: equipe + vendas com o próprio código,
+  // mês a mês (cada conta só vê o desempenho dela — só o Admin vê o geral)
+  const agora = new Date();
+  const todasAsVendas = [...vendas, ...vendasComCodigo];
+  const dadosVendas = NOMES_MESES.slice(0, agora.getMonth() + 1).map((m) => ({
+    month: m,
+    vendas: todasAsVendas.filter((o) => o.month === m).reduce((acum, o) => acum + o.total, 0),
+  }));
+
   const cartoes = [
     { label: `Comissão acumulada (${comissao * 100}%)`, valor: formatarMoeda(totalComissao), icone: <TrendingUp size={22} className="text-emerald-600" /> },
     { label: "Total vendido pela equipe", valor: formatarMoeda(totalVendido), icone: <TrendingUp size={22} className="text-[#C8102E]" /> },
     { label: "Vendas com seu código", valor: formatarMoeda(totalComCodigo), icone: <Tag size={22} className="text-[#C8102E]" /> },
     { label: "Vendedores ativos", valor: String(meusAtivos.length), icone: <ShoppingBag size={22} className="text-[#C8102E]" /> },
+    { label: "Bônus de nível (Ouro/Diamante)", valor: formatarMoeda(bonusNivel), icone: <Award size={22} className="text-purple-600" /> },
   ];
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
         {cartoes.map((c) => (
           <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             <span className="flex-shrink-0">{c.icone}</span>
@@ -4576,6 +4908,39 @@ function PaginaComissoesRecrutador({
             </div>
           </div>
         ))}
+      </div>
+
+      {bonusNivel > 0 && (
+        <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center gap-3">
+          <Award size={20} className="text-purple-600 flex-shrink-0" />
+          <p className="text-[12px] text-purple-700 font-medium">
+            Você já ganhou <span className="font-black">{formatarMoeda(bonusNivel)}</span> em bônus de nível — suas
+            vendas totais de {formatarMoeda(totalNivelProprio)} atingiram o nível Ouro
+            {totalNivelProprio >= NIVEIS_VENDEDOR[3].min ? " e o nível Diamante" : ""}.
+          </p>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+        <h3 className="font-black text-gray-800 mb-4">Minhas Vendas — {agora.getFullYear()}</h3>
+        <ResponsiveContainer width="100%" height={210}>
+          <AreaChart data={dadosVendas} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id="gradVendasRecrutador" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#C8102E" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="#C8102E" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" />
+            <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+            <Tooltip
+              formatter={(v: any) => [`R$ ${Number(v).toLocaleString("pt-BR")}`, ""]}
+              contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)", fontSize: 12 }}
+            />
+            <Area type="monotone" dataKey="vendas" stroke="#C8102E" strokeWidth={2.5} fill="url(#gradVendasRecrutador)" name="Vendas" />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -4666,18 +5031,16 @@ function PaginaComissoesRecrutador({
 // esta página é a supervisão completa, exclusiva do Admin.
 function PaginaSupervisaoAdmin({
   pedidos,
-  produtos,
   clientes,
   cargos,
   recrutamentos,
   comissao,
 }: {
   pedidos: Pedido[];
-  produtos: Produto[];
   clientes: Cliente[];
   cargos: Record<string, Cargo>;
   recrutamentos: Recrutamento[];
-  comissao: number; // fração (ex.: 0.02 = 2%)
+  comissao: number; // fração (ex.: 0.03 = 3%)
 }) {
   // Nome amigável de uma conta (cliente cadastrado ou nome dado pelo recrutador)
   const nomeDe = (email: string) =>
@@ -4690,7 +5053,7 @@ function PaginaSupervisaoAdmin({
   const recrutadores = Object.keys(cargos).filter((e) => cargos[e] === "recrutador");
   const vendedores = Object.keys(cargos).filter((e) => cargos[e] === "vendedor");
 
-  // Resumo de cada recrutador: equipe, vendas da equipe e comissão de 2%
+  // Resumo de cada recrutador: equipe, vendas da equipe e comissão configurada
   const dadosRecrutadores = recrutadores.map((email) => {
     const equipe = recrutamentos.filter((r) => r.recrutador === email);
     const ativos = equipe.filter((r) => r.ativado).map((r) => r.email.toLowerCase());
@@ -4699,6 +5062,10 @@ function PaginaSupervisaoAdmin({
     );
     const totalEquipe = vendasEquipe.reduce((acum, o) => acum + o.total, 0);
     const vendasProprias = vendasValidas.filter((o) => o.vendedor?.toLowerCase() === email);
+    const totalProprio = vendasProprias.reduce((acum, o) => acum + o.total, 0);
+    // Bônus de nível: o próprio recrutador ganha ao atingir Ouro/Diamante
+    // em vendas totais (equipe ativa + vendas com o próprio código)
+    const bonus = bonusDeNivel(totalEquipe + totalProprio);
     return {
       email,
       nome: nomeDe(email),
@@ -4707,26 +5074,34 @@ function PaginaSupervisaoAdmin({
       vendedoresAtivos: ativos.length,
       totalEquipe,
       comissao: totalEquipe * comissao,
-      totalProprio: vendasProprias.reduce((acum, o) => acum + o.total, 0),
+      totalProprio,
+      bonus,
     };
   });
 
-  // Resumo de cada vendedor: recrutador, produtos e vendas
+  // Resumo de cada vendedor: recrutador, vendas, comissão do nível atual e
+  // bônus de nível (Ouro/Diamante) sobre as vendas totais. Vendedor não tem
+  // catálogo próprio — só divulga os produtos da loja com o código dele.
   const dadosVendedores = vendedores.map((email) => {
     const vinculo = recrutamentos.find((r) => r.email.toLowerCase() === email && r.ativado);
     const vendas = vendasValidas.filter((o) => o.vendedor?.toLowerCase() === email);
+    const totalVendido = vendas.reduce((acum, o) => acum + o.total, 0);
     return {
       email,
       nome: nomeDe(email),
       codigo: codigoVendaDe(email),
       recrutador: vinculo ? nomeDe(vinculo.recrutador) : "—",
-      totalProdutos: produtos.filter((p) => p.owner?.toLowerCase() === email).length,
       qtdVendas: vendas.length,
-      totalVendido: vendas.reduce((acum, o) => acum + o.total, 0),
+      totalVendido,
+      comissao: totalVendido * comissaoFracaoPorNivel(totalVendido),
+      bonus: bonusDeNivel(totalVendido),
     };
   });
 
   const comissaoTotal = dadosRecrutadores.reduce((acum, r) => acum + r.comissao, 0);
+  const bonusRecrutadoresTotal = dadosRecrutadores.reduce((acum, r) => acum + r.bonus, 0);
+  const bonusVendedoresTotal = dadosVendedores.reduce((acum, v) => acum + v.bonus, 0);
+  const bonusTotal = bonusRecrutadoresTotal + bonusVendedoresTotal;
   const vendidoPorVendedores = dadosVendedores.reduce((acum, v) => acum + v.totalVendido, 0);
 
   const cartoes = [
@@ -4734,11 +5109,12 @@ function PaginaSupervisaoAdmin({
     { label: "Vendedores", valor: String(vendedores.length), icone: <ShoppingBag size={22} className="text-[#C8102E]" /> },
     { label: "Vendido por vendedores", valor: formatarMoeda(vendidoPorVendedores), icone: <TrendingUp size={22} className="text-[#C8102E]" /> },
     { label: `Comissões a pagar (${comissao * 100}%)`, valor: formatarMoeda(comissaoTotal), icone: <TrendingUp size={22} className="text-emerald-600" /> },
+    { label: "Bônus de nível a pagar", valor: formatarMoeda(bonusTotal), icone: <Award size={22} className="text-purple-600" /> },
   ];
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {cartoes.map((c) => (
           <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             <span className="flex-shrink-0">{c.icone}</span>
@@ -4754,7 +5130,7 @@ function PaginaSupervisaoAdmin({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-black text-gray-900 text-[15px]">Recrutadores</h3>
-          <p className="text-[12px] text-gray-400 mt-0.5">Equipes, vendas e a comissão de 2% de cada recrutador.</p>
+          <p className="text-[12px] text-gray-400 mt-0.5">Equipes, vendas, a comissão de {comissao * 100}% e o bônus de nível (Ouro/Diamante) de cada recrutador.</p>
         </div>
         {dadosRecrutadores.length === 0 ? (
           <div className="px-5 py-10 text-center text-gray-400 text-[13px]">
@@ -4771,6 +5147,7 @@ function PaginaSupervisaoAdmin({
                   <th className="text-left px-5 py-3.5 font-semibold hidden lg:table-cell">Vendas da equipe</th>
                   <th className="text-left px-5 py-3.5 font-semibold hidden lg:table-cell">Vendas próprias</th>
                   <th className="text-left px-5 py-3.5 font-semibold">Comissão ({comissao * 100}%)</th>
+                  <th className="text-left px-5 py-3.5 font-semibold">Bônus de nível</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -4795,6 +5172,7 @@ function PaginaSupervisaoAdmin({
                     <td className="px-5 py-4 font-semibold text-gray-800 hidden lg:table-cell">{formatarMoeda(r.totalEquipe)}</td>
                     <td className="px-5 py-4 font-semibold text-gray-800 hidden lg:table-cell">{formatarMoeda(r.totalProprio)}</td>
                     <td className="px-5 py-4 font-black text-emerald-600">{formatarMoeda(r.comissao)}</td>
+                    <td className="px-5 py-4 font-black text-purple-600">{formatarMoeda(r.bonus)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -4807,7 +5185,7 @@ function PaginaSupervisaoAdmin({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-black text-gray-900 text-[15px]">Vendedores</h3>
-          <p className="text-[12px] text-gray-400 mt-0.5">Produtos, vendas e o recrutador responsável por cada vendedor.</p>
+          <p className="text-[12px] text-gray-400 mt-0.5">Vendas, a comissão do nível atual e o bônus de nível (Ouro/Diamante) de cada vendedor.</p>
         </div>
         {dadosVendedores.length === 0 ? (
           <div className="px-5 py-10 text-center text-gray-400 text-[13px]">
@@ -4821,9 +5199,10 @@ function PaginaSupervisaoAdmin({
                   <th className="text-left px-5 py-3.5 font-semibold">Vendedor</th>
                   <th className="text-left px-5 py-3.5 font-semibold hidden md:table-cell">Código</th>
                   <th className="text-left px-5 py-3.5 font-semibold hidden lg:table-cell">Recrutador</th>
-                  <th className="text-left px-5 py-3.5 font-semibold">Produtos</th>
                   <th className="text-left px-5 py-3.5 font-semibold">Vendas</th>
                   <th className="text-left px-5 py-3.5 font-semibold">Total vendido</th>
+                  <th className="text-left px-5 py-3.5 font-semibold">Comissão</th>
+                  <th className="text-left px-5 py-3.5 font-semibold">Bônus de nível</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -4842,9 +5221,10 @@ function PaginaSupervisaoAdmin({
                     </td>
                     <td className="px-5 py-4 font-mono text-[12px] text-[#C8102E] font-bold hidden md:table-cell">{v.codigo}</td>
                     <td className="px-5 py-4 text-gray-600 hidden lg:table-cell">{v.recrutador}</td>
-                    <td className="px-5 py-4 font-semibold text-gray-800">{v.totalProdutos}</td>
                     <td className="px-5 py-4 font-semibold text-gray-800">{v.qtdVendas}</td>
                     <td className="px-5 py-4 font-black text-gray-900">{formatarMoeda(v.totalVendido)}</td>
+                    <td className="px-5 py-4 font-black text-emerald-600">{formatarMoeda(v.comissao)}</td>
+                    <td className="px-5 py-4 font-black text-purple-600">{formatarMoeda(v.bonus)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -4858,7 +5238,7 @@ function PaginaSupervisaoAdmin({
 
 // ─── Seller Level Card ────────────────────────────────────────────────────────
 
-function CartaoNivelVendedor({ vendasDoMes }: { vendasDoMes: number }) {
+function CartaoNivelVendedor({ vendasDoMes, vendasTotais = 0 }: { vendasDoMes: number; vendasTotais?: number }) {
   const indiceNivel = obterNivelVendedor(vendasDoMes);
   const nivelAtual = NIVEIS_VENDEDOR[indiceNivel];
   const proximoNivel = NIVEIS_VENDEDOR[indiceNivel + 1];
@@ -4868,6 +5248,9 @@ function CartaoNivelVendedor({ vendasDoMes }: { vendasDoMes: number }) {
     : 100;
 
   const valorFaltante = proximoNivel ? proximoNivel.min - vendasDoMes : 0;
+
+  // Bônus de nível: pago uma vez, com base nas vendas totais (vitalícias)
+  const bonusNivel = bonusDeNivel(vendasTotais);
 
   return (
     <div className={`bg-white rounded-2xl border-2 ${nivelAtual.border} shadow-sm overflow-hidden`}>
@@ -4905,6 +5288,15 @@ function CartaoNivelVendedor({ vendasDoMes }: { vendasDoMes: number }) {
       </div>
 
       <div className="p-5">
+        {bonusNivel > 0 && (
+          <div className="mb-5 bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center gap-2.5">
+            <Award size={20} className="text-purple-600 flex-shrink-0" />
+            <p className="text-[12px] text-purple-700 font-medium">
+              Você já ganhou <span className="font-black">{formatarMoeda(bonusNivel)}</span> em bônus de nível ao
+              atingir o nível {vendasTotais >= NIVEIS_VENDEDOR[3].min ? "Diamante" : "Ouro"} em vendas totais.
+            </p>
+          </div>
+        )}
         {/* Progress to proximoBanner */}
         {proximoNivel && (
           <div className="mb-5">
@@ -4988,7 +5380,7 @@ function CartaoNivelVendedor({ vendasDoMes }: { vendasDoMes: number }) {
 
 // ─── Dashboard Page ───────────────────────────────────────────────────────────
 
-function PaginaDashboard({ pedidos, clientes, aoVerTodosPedidos }: { pedidos: Pedido[]; clientes: Cliente[]; aoVerTodosPedidos: () => void }) {
+function PaginaDashboard({ pedidos, clientes, titulo = "Desempenho da Empresa", aoVerTodosPedidos }: { pedidos: Pedido[]; clientes: Cliente[]; titulo?: string; aoVerTodosPedidos: () => void }) {
   const agora = new Date();
   const mesAtual = NOMES_MESES[agora.getMonth()];
   const pedidosValidos = pedidos.filter((o) => o.status !== "Cancelado");
@@ -5002,10 +5394,12 @@ function PaginaDashboard({ pedidos, clientes, aoVerTodosPedidos }: { pedidos: Pe
     vendas: pedidosValidos.filter((o) => o.month === m).reduce((acum, o) => acum + o.total, 0),
   }));
 
-  // Participação por categoria a partir das vendas reais
+  // Participação por categoria a partir das vendas reais (pedidos antigos com
+  // uma categoria que não existe mais caem em "Outros" — ver categoriaExibida)
   const totaisPorCategoria: Record<string, number> = {};
   pedidosValidos.forEach((o) => {
-    totaisPorCategoria[o.category] = (totaisPorCategoria[o.category] || 0) + o.total;
+    const nome = categoriaExibida(o.category);
+    totaisPorCategoria[nome] = (totaisPorCategoria[nome] || 0) + o.total;
   });
   const totalVendido = Object.values(totaisPorCategoria).reduce((a, b) => a + b, 0);
   const dadosCategoria = Object.entries(totaisPorCategoria)
@@ -5042,7 +5436,7 @@ function PaginaDashboard({ pedidos, clientes, aoVerTodosPedidos }: { pedidos: Pe
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-black text-gray-800">Minhas Vendas — {agora.getFullYear()}</h3>
+            <h3 className="font-black text-gray-800">{titulo} — {agora.getFullYear()}</h3>
             <div className="flex items-center gap-4 text-[11px] font-semibold">
               <span className="flex items-center gap-1.5"><span className="w-3 h-1 bg-[#C8102E] rounded inline-block" />Vendas</span>
             </div>
@@ -5297,7 +5691,14 @@ function FormularioProduto({
 }) {
   const [name, setName] = useState(inicial?.name || "");
   const [brand, setBrand] = useState(inicial?.brand || "");
-  const [cat, setCat] = useState(inicial?.category || "Perfumes");
+  // Categorias válidas hoje — se o produto foi salvo com uma categoria antiga
+  // que não existe mais na lista, cai para a primeira opção válida em vez de
+  // manter o valor antigo "escondido" no estado (o <select> mostraria a opção
+  // certa visualmente, mas salvaria a categoria antiga de qualquer forma).
+  const categoriasValidas = CATEGORIAS.filter((c) => c !== "Todos");
+  const [cat, setCat] = useState(
+    inicial?.category && categoriasValidas.includes(inicial.category) ? inicial.category : categoriasValidas[0]
+  );
   const [price, setPrice] = useState(inicial ? String(inicial.price) : "");
   const [originalPrice, setOriginalPrice] = useState(inicial?.originalPrice ? String(inicial.originalPrice) : "");
   const [stock, setStock] = useState(inicial ? String(inicial.stock) : "");
@@ -5580,9 +5981,13 @@ function FormularioProduto({
 function PaginaPedidosAdmin({
   pedidos,
   aoAtualizarStatus,
+  comissaoPct,
 }: {
   pedidos: Pedido[];
   aoAtualizarStatus: (id: string, status: string) => void;
+  // Quando informada, mostra quanto a conta logada ganha de comissão em cada
+  // venda (vendedor: comissão do nível atual · master: comissão configurada)
+  comissaoPct?: number;
 }) {
   const [filtroStatus, setFiltroStatus] = useState("Todos");
   const [pedidoSelecionado, setPedidoSelecionado] = useState<Pedido | null>(null);
@@ -5592,6 +5997,7 @@ function PaginaPedidosAdmin({
     acum[s] = s === "Todos" ? pedidos.length : pedidos.filter((o) => o.status === s).length;
     return acum;
   }, {} as Record<string, number>);
+  const mostrarComissao = comissaoPct !== undefined;
 
   return (
     <div className="space-y-4">
@@ -5623,13 +6029,14 @@ function PaginaPedidosAdmin({
                 <th className="text-left px-5 py-3.5 font-semibold">Total</th>
                 <th className="text-left px-5 py-3.5 font-semibold hidden lg:table-cell">Data</th>
                 <th className="text-left px-5 py-3.5 font-semibold">Status</th>
+                {mostrarComissao && <th className="text-left px-5 py-3.5 font-semibold">Sua comissão</th>}
                 <th className="px-5 py-3.5" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {visiveis.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-gray-400 text-[13px]">
+                  <td colSpan={mostrarComissao ? 8 : 7} className="px-5 py-12 text-center text-gray-400 text-[13px]">
                     Nenhum pedido encontrado — as compras dos clientes aparecerão aqui.
                   </td>
                 </tr>
@@ -5649,6 +6056,11 @@ function PaginaPedidosAdmin({
                   <td className="px-5 py-4 font-black text-gray-900">{formatarMoeda(o.total)}</td>
                   <td className="px-5 py-4 text-[12px] text-gray-400 hidden lg:table-cell">{o.date}</td>
                   <td className="px-5 py-4"><SeloStatus status={o.status} /></td>
+                  {mostrarComissao && (
+                    <td className="px-5 py-4 font-black text-emerald-600">
+                      {o.status === "Cancelado" ? "—" : `+${formatarMoeda(o.total * (comissaoPct ?? 0))}`}
+                    </td>
+                  )}
                   <td className="px-5 py-4">
                     <button
                       onClick={() => setPedidoSelecionado(o)}
@@ -5693,7 +6105,7 @@ function ModalDetalhesPedido({
     { label: "Cliente", value: pedido.customer },
     { label: "E-mail", value: pedido.email },
     { label: "Produto", value: pedido.items },
-    { label: "Categoria", value: pedido.category },
+    { label: "Categoria", value: categoriaExibida(pedido.category) },
     { label: "Data da compra", value: pedido.date },
     // Endereço de entrega informado pelo cliente no carrinho
     ...(pedido.endereco ? [{ label: "Endereço de entrega", value: pedido.endereco }] : []),
