@@ -106,6 +106,13 @@ function criar_tabelas(PDO $pdo): void {
         date VARCHAR(16)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+    // Vínculo Master ⇄ MasterPlus: guarda, para cada Master promovido por um
+    // MasterPlus, o e-mail de quem o promoveu (usado no repasse de 1%)
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vinculos_masterplus (
+        master VARCHAR(255) PRIMARY KEY,
+        masterplus VARCHAR(255) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS cupons (
         codigo VARCHAR(32) PRIMARY KEY,
         percentual INT NOT NULL,
@@ -118,6 +125,16 @@ function criar_tabelas(PDO $pdo): void {
         id BIGINT PRIMARY KEY,
         name TEXT,
         date VARCHAR(16)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS banners (
+        id BIGINT PRIMARY KEY,
+        image LONGTEXT,
+        tag VARCHAR(64),
+        title VARCHAR(255),
+        subtitle VARCHAR(255),
+        cta VARCHAR(64),
+        category VARCHAR(64)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS config (

@@ -68,6 +68,11 @@ if ($metodo === "GET") {
             "date" => $r["date"],
         ], $pdo->query("SELECT * FROM recrutamentos")->fetchAll());
 
+        $vinculosMasterPlus = new stdClass();
+        foreach ($pdo->query("SELECT master, masterplus FROM vinculos_masterplus")->fetchAll() as $linha) {
+            $vinculosMasterPlus->{$linha["master"]} = $linha["masterplus"];
+        }
+
         $cupons = array_map(fn($c) => [
             "codigo" => $c["codigo"],
             "percentual" => (int) $c["percentual"],
@@ -81,6 +86,16 @@ if ($metodo === "GET") {
             "name" => $a["name"],
             "date" => $a["date"],
         ], $pdo->query("SELECT * FROM alertas_estoque")->fetchAll());
+
+        $banners = array_map(fn($b) => [
+            "id" => (int) $b["id"],
+            "image" => $b["image"],
+            "tag" => $b["tag"],
+            "title" => $b["title"],
+            "subtitle" => $b["subtitle"],
+            "cta" => $b["cta"],
+            "category" => $b["category"],
+        ], $pdo->query("SELECT * FROM banners")->fetchAll());
 
         $configLinha = $pdo->query("SELECT * FROM config WHERE id = 1")->fetch();
         $config = $configLinha ? [
@@ -98,8 +113,10 @@ if ($metodo === "GET") {
             "clientes" => $clientes,
             "cargos" => $cargos,
             "recrutamentos" => $recrutamentos,
+            "vinculosMasterPlus" => $vinculosMasterPlus,
             "cupons" => $cupons,
             "alertasEstoque" => $alertas,
+            "banners" => $banners,
             "config" => $config,
         ]);
     } catch (Throwable $e) {
@@ -143,11 +160,23 @@ if ($metodo === "PUT" || $metodo === "POST") {
                     "codigo", "recrutador", "nome", "email", "ativado", "date",
                 ], is_array($dados) ? $dados : []);
                 break;
+            case "vinculosMasterPlus":
+                $linhas = [];
+                foreach ((array) ($dados ?? []) as $master => $masterplus) {
+                    $linhas[] = ["master" => $master, "masterplus" => $masterplus];
+                }
+                regravar($pdo, "vinculos_masterplus", ["master", "masterplus"], $linhas);
+                break;
             case "cupons":
                 regravar($pdo, "cupons", ["codigo", "percentual", "validade", "ativo", "usos"], is_array($dados) ? $dados : []);
                 break;
             case "alertasEstoque":
                 regravar($pdo, "alertas_estoque", ["id", "name", "date"], is_array($dados) ? $dados : []);
+                break;
+            case "banners":
+                regravar($pdo, "banners", [
+                    "id", "image", "tag", "title", "subtitle", "cta", "category",
+                ], is_array($dados) ? $dados : []);
                 break;
             case "config":
                 regravar($pdo, "config", [
