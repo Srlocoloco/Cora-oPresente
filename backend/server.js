@@ -98,8 +98,22 @@ async function iniciarBanco() {
     await pool.query(`CREATE TABLE IF NOT EXISTS clientes (
       email VARCHAR(255) PRIMARY KEY,
       name VARCHAR(255),
-      since VARCHAR(32)
+      since VARCHAR(32),
+      viaGoogle TINYINT(1) NOT NULL DEFAULT 0
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+    // Migração: bancos criados antes do campo viaGoogle existir não ganham a
+    // coluna nova só com CREATE TABLE IF NOT EXISTS — precisa checar e adicionar
+    const [colunasClientes] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'clientes' AND COLUMN_NAME = 'viaGoogle'`,
+      [DB_NAME]
+    );
+    if (colunasClientes.length === 0) {
+      await pool.query(
+        `ALTER TABLE clientes ADD COLUMN viaGoogle TINYINT(1) NOT NULL DEFAULT 0`
+      );
+    }
 
     await pool.query(`CREATE TABLE IF NOT EXISTS cargos (
       email VARCHAR(255) PRIMARY KEY,
@@ -115,6 +129,13 @@ async function iniciarBanco() {
       date VARCHAR(16)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
+    // Vínculo Master ⇄ MasterPlus: guarda, para cada Master promovido por um
+    // MasterPlus, o e-mail de quem o promoveu (usado no repasse de 1%)
+    await pool.query(`CREATE TABLE IF NOT EXISTS vinculos_masterplus (
+      master VARCHAR(255) PRIMARY KEY,
+      masterplus VARCHAR(255) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
     await pool.query(`CREATE TABLE IF NOT EXISTS cupons (
       codigo VARCHAR(32) PRIMARY KEY,
       percentual INT NOT NULL,
@@ -127,6 +148,16 @@ async function iniciarBanco() {
       id BIGINT PRIMARY KEY,
       name TEXT,
       date VARCHAR(16)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS banners (
+      id BIGINT PRIMARY KEY,
+      image LONGTEXT,
+      tag VARCHAR(64),
+      title VARCHAR(255),
+      subtitle VARCHAR(255),
+      cta VARCHAR(64),
+      category VARCHAR(64)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
     await pool.query(`CREATE TABLE IF NOT EXISTS config (
@@ -242,12 +273,16 @@ app.get("/api/dados", async (_req, res) => {
     const [clientes] = await pool.query("SELECT * FROM clientes");
     const [cargosLinhas] = await pool.query("SELECT * FROM cargos");
     const [recrutamentos] = await pool.query("SELECT * FROM recrutamentos");
+    const [vinculosMasterPlusLinhas] = await pool.query("SELECT * FROM vinculos_masterplus");
     const [cupons] = await pool.query("SELECT * FROM cupons");
     const [alertas] = await pool.query("SELECT * FROM alertas_estoque");
+    const [banners] = await pool.query("SELECT * FROM banners");
     const [configLinhas] = await pool.query("SELECT * FROM config WHERE id = 1");
 
     const cargos = {};
     for (const linha of cargosLinhas) cargos[linha.email] = linha.cargo;
+    const vinculosMasterPlus = {};
+    for (const linha of vinculosMasterPlusLinhas) vinculosMasterPlus[linha.master] = linha.masterplus;
     const config = configLinhas[0]
       ? { ...configLinhas[0], id: undefined }
       : null;
@@ -269,11 +304,13 @@ app.get("/api/dados", async (_req, res) => {
         codigoVenda: o.codigoVenda ?? undefined,
         endereco: o.endereco ?? undefined,
       })),
-      clientes,
+      clientes: clientes.map((c) => ({ ...c, viaGoogle: Boolean(c.viaGoogle) })),
       cargos,
       recrutamentos: recrutamentos.map((r) => ({ ...r, ativado: Boolean(r.ativado) })),
+      vinculosMasterPlus,
       cupons: cupons.map((c) => ({ ...c, ativo: Boolean(c.ativo) })),
       alertasEstoque: alertas,
+      banners,
       config,
     });
   } catch (e) {
@@ -302,7 +339,11 @@ app.put("/api/dados/:colecao", async (req, res) => {
         ], dados);
         break;
       case "clientes":
-        await regravarColecao("clientes", ["email", "name", "since"], dados);
+        await regravarColecao(
+          "clientes",
+          ["email", "name", "since", "viaGoogle"],
+          (dados ?? []).map((c) => ({ ...c, viaGoogle: Boolean(c.viaGoogle) }))
+        );
         break;
       case "cargos": {
         const linhas = Object.entries(dados ?? {}).map(([email, cargo]) => ({ email, cargo }));
@@ -314,11 +355,21 @@ app.put("/api/dados/:colecao", async (req, res) => {
           "codigo", "recrutador", "nome", "email", "ativado", "date",
         ], dados);
         break;
+      case "vinculosMasterPlus": {
+        const linhas = Object.entries(dados ?? {}).map(([master, masterplus]) => ({ master, masterplus }));
+        await regravarColecao("vinculos_masterplus", ["master", "masterplus"], linhas);
+        break;
+      }
       case "cupons":
         await regravarColecao("cupons", ["codigo", "percentual", "validade", "ativo", "usos"], dados);
         break;
       case "alertasEstoque":
         await regravarColecao("alertas_estoque", ["id", "name", "date"], dados);
+        break;
+      case "banners":
+        await regravarColecao("banners", [
+          "id", "image", "tag", "title", "subtitle", "cta", "category",
+        ], dados);
         break;
       case "config":
         await regravarColecao("config", [
