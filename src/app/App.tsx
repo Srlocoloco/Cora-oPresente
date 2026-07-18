@@ -20,9 +20,9 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, Plus, Check } from "lucide-react";
-import type { Produto, ItemCarrinho, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, Pedido, Cliente, Tela, DadosPagamento } from "./types";
+import type { Produto, ItemCarrinho, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, Pedido, Cliente, Tela, DadosPagamento, CartaoSalvo, DadosCartaoDigitado } from "./types";
 import { CONFIG_PADRAO, CATEGORIAS, EMAIL_ADMIN, NOMES_MESES, URL_BACKEND_PIX, COMISSAO_MASTER_PROMOVIDO_EQUIPE } from "./constantes";
-import { cupomEstaValido, gerarCodigoRecrutamento, codigoVendaDe, lerArmazenamento } from "./utils";
+import { cupomEstaValido, gerarCodigoRecrutamento, codigoVendaDe, lerArmazenamento, gerarCodigoProduto, bandeiraCartao } from "./utils";
 import { ImagemProduto } from "./components/ImagemProduto";
 import { AvisoBancoDesconectado } from "./components/AvisoBancoDesconectado";
 import { BarraInferiorMobile } from "./components/BarraInferiorMobile";
@@ -76,8 +76,8 @@ export default function App() {
   // Vendedores cadastrados pelo Master (código de ativação), carregados do banco
   const [recrutamentos, setRecrutamentos] = useState<Recrutamento[]>([]);
   // E-mail do Master (minúsculo) → e-mail do MasterPlus que o promoveu.
-  // Só existe vínculo para Masters promovidos por um MasterPlus (os
-  // cadastrados direto pelo Admin não aparecem aqui). Carregado do banco.
+  // Todo Master tem, obrigatoriamente, um vínculo aqui — não existe Master
+  // fora da equipe de um MasterPlus (ver definirCargo). Carregado do banco.
   const [vinculosMasterPlus, setVinculosMasterPlus] = useState<Record<string, string>>({});
   // Código de venda digitado pelo cliente na compra atual
   const [codigoVenda, setCodigoVenda] = useState("");
@@ -89,6 +89,9 @@ export default function App() {
   const [banners, setBanners] = useState<Banner[]>([]);
   // Cupom digitado pelo cliente no carrinho
   const [cupomDigitado, setCupomDigitado] = useState("");
+  // Cartões salvos dos clientes (dados seguros só: bandeira, nome, últimos 4
+  // dígitos e validade — NUNCA o número completo nem o CVV), carregados do banco
+  const [cartoesSalvos, setCartoesSalvos] = useState<CartaoSalvo[]>([]);
   // Pedidos de compras finalizadas (carregados do banco de dados)
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   // Clientes cadastrados (carregados do banco de dados)
@@ -137,22 +140,44 @@ export default function App() {
       config: lerArmazenamento<Partial<ConfigLoja> | null>("cp_config", null),
     };
 
+    // Preenche o código sequencial (ex.: "BEL-001") de produtos antigos que
+    // ainda não têm um — mantém a ordem original da lista, só processa por
+    // id crescente (proxy da ordem de cadastro) para numerar em sequência
+    const comCodigosPreenchidos = (lista: Produto[]): Produto[] => {
+      if (lista.every((p) => p.codigo)) return lista;
+      const numerados: Produto[] = [];
+      for (const p of [...lista].sort((a, b) => a.id - b.id)) {
+        numerados.push(p.codigo ? p : { ...p, codigo: gerarCodigoProduto(p.category, numerados) });
+      }
+      return lista.map((p) => numerados.find((n) => n.id === p.id)!);
+    };
+
     // Prefere o banco; usa a cópia antiga apenas se o banco estiver vazio
     const aplicar = (banco: any) => {
       const escolher = <T,>(doBanco: T[] | undefined, antigo: T[]) =>
         doBanco && doBanco.length > 0 ? doBanco : antigo;
-      setProdutos(escolher(banco?.produtos, locais.produtos));
+      setProdutos(comCodigosPreenchidos(escolher(banco?.produtos, locais.produtos)));
+      setCartoesSalvos(banco?.cartoesSalvos ?? []);
       setPedidos(escolher(banco?.pedidos, locais.pedidos));
       setClientes(escolher(banco?.clientes, locais.clientes));
       setRecrutamentos(escolher(banco?.recrutamentos, locais.recrutamentos));
       setCupons(escolher(banco?.cupons, locais.cupons));
       setBanners(escolher(banco?.banners, locais.banners));
       setAlertasEstoque(escolher(banco?.alertasEstoque, locais.alertasEstoque));
-      setCargos(
-        banco?.cargos && Object.keys(banco.cargos).length > 0 ? banco.cargos : locais.cargos
-      );
+      const cargosCarregados: Record<string, Cargo> =
+        banco?.cargos && Object.keys(banco.cargos).length > 0 ? banco.cargos : locais.cargos;
       // Vínculos Master ⇄ MasterPlus — recurso novo, sem cópia antiga no navegador
-      setVinculosMasterPlus(banco?.vinculosMasterPlus ?? {});
+      const vinculosCarregados: Record<string, string> = banco?.vinculosMasterPlus ?? {};
+      // Só deve existir Master dentro da equipe de um MasterPlus — remove
+      // qualquer Master "solto" (sem vínculo) que porventura exista em
+      // dados antigos, de uma migração ou de um estado inconsistente.
+      const cargosSemMastersOrfaos = Object.fromEntries(
+        Object.entries(cargosCarregados).filter(
+          ([email, cargo]) => cargo !== "master" || Boolean(vinculosCarregados[email])
+        )
+      ) as Record<string, Cargo>;
+      setCargos(cargosSemMastersOrfaos);
+      setVinculosMasterPlus(vinculosCarregados);
       const configFinal = banco?.config ?? locais.config;
       if (configFinal) setConfig((anterior) => ({ ...anterior, ...configFinal }));
     };
@@ -234,6 +259,51 @@ export default function App() {
     salvarNoBanco("banners", banners);
   }, [banners]);
 
+  useEffect(() => {
+    salvarNoBanco("cartoesSalvos", cartoesSalvos);
+  }, [cartoesSalvos]);
+
+  // Salva um cartão novo após uma compra confirmada com Cartão (ou atualiza
+  // os ids do cofre num cartão que já existia localmente). Não duplica se o
+  // cliente já tiver salvo o mesmo cartão antes (mesmos últimos 4 dígitos +
+  // validade). O número completo e o CVV são descartados aqui — só entram na
+  // memória do navegador durante a digitação, nunca são salvos.
+  const salvarCartao = (email: string, dados: DadosCartaoDigitado) => {
+    const ultimosDigitos = dados.numero.replace(/\D/g, "").slice(-4);
+    const emailChave = email.toLowerCase();
+    if (!ultimosDigitos) return;
+    const existente = cartoesSalvos.find(
+      (c) => c.email.toLowerCase() === emailChave && c.ultimosDigitos === ultimosDigitos && c.validade === dados.validade
+    );
+    if (existente) {
+      // Já estava salvo (ex.: reuso de cartão salvo) — só atualiza os ids do
+      // cofre se agora tivermos um (ex.: cartão antigo que nunca tinha sido
+      // vinculado ao Mercado Pago e acabou de ser tokenizado de novo).
+      if (dados.mpCardId && !existente.mpCardId) {
+        setCartoesSalvos((anterior) =>
+          anterior.map((c) => (c.id === existente.id ? { ...c, mpCardId: dados.mpCardId, mpCustomerId: dados.mpCustomerId } : c))
+        );
+      }
+      return;
+    }
+    setCartoesSalvos((anterior) => [
+      {
+        id: Date.now(),
+        email: emailChave,
+        bandeira: dados.bandeira || bandeiraCartao(dados.numero),
+        nomeCartao: dados.nome.trim(),
+        ultimosDigitos,
+        validade: dados.validade,
+        mpCardId: dados.mpCardId,
+        mpCustomerId: dados.mpCustomerId,
+      },
+      ...anterior,
+    ]);
+  };
+
+  // Remove um cartão salvo (só o dono do cartão consegue, via perfil)
+  const excluirCartao = (id: number) => setCartoesSalvos((anterior) => anterior.filter((c) => c.id !== id));
+
   // Cria um cupom novo ou atualiza um existente (mesmo código)
   const salvarCupom = (c: Cupom) =>
     setCupons((anterior) =>
@@ -258,18 +328,24 @@ export default function App() {
 
 
   // Master/MasterPlus/Admin dá (ou remove) um cargo de um usuário.
+  //
+  // Regra: só existe Master dentro da equipe de um MasterPlus — não há mais
+  // Master "solto" (o Admin não promove Master direto, só o MasterPlus
+  // promove um vendedor da própria equipe). Por isso, se esta conta deixa
+  // de ser MasterPlus (perde o cargo, é removida, etc.), os Masters que ela
+  // promoveu não ficam órfãos: são excluídos junto (perdem o cargo).
   const definirCargo = (email: string, cargo: Cargo | null) => {
     const chave = email.toLowerCase();
     setCargos((anterior) => {
       const novo = { ...anterior };
       if (cargo === null) delete novo[chave];
       else novo[chave] = cargo;
+      if (cargo !== "masterplus") {
+        const mastersDela = Object.keys(vinculosMasterPlus).filter((m) => vinculosMasterPlus[m] === chave);
+        mastersDela.forEach((m) => delete novo[m]);
+      }
       return novo;
     });
-    // Limpa vínculos de MasterPlus que não fazem mais sentido: se esta conta
-    // deixou de ser Master, perde o vínculo com quem a promoveu; se deixou
-    // de ser MasterPlus, os Masters que ela promoveu perdem o vínculo (mas
-    // continuam Masters — só voltam a usar a comissão de equipe padrão).
     if (cargo !== "master") {
       setVinculosMasterPlus((anterior) => {
         if (!(chave in anterior)) return anterior;
@@ -351,14 +427,27 @@ export default function App() {
     return null;
   };
 
-  // Cria um produto novo ou atualiza um existente
+  // Cria um produto novo (gera o código sequencial da categoria, ex.:
+  // "BEL-001") ou atualiza um existente (mantém o código já atribuído)
   const salvarProduto = (p: Produto) =>
-    setProdutos((anterior) =>
-      anterior.some((x) => x.id === p.id) ? anterior.map((x) => (x.id === p.id ? p : x)) : [p, ...anterior]
-    );
+    setProdutos((anterior) => {
+      const existente = anterior.find((x) => x.id === p.id);
+      if (existente) {
+        return anterior.map((x) => (x.id === p.id ? { ...p, codigo: existente.codigo ?? p.codigo } : x));
+      }
+      const comCodigo = { ...p, codigo: p.codigo ?? gerarCodigoProduto(p.category, anterior) };
+      return [comCodigo, ...anterior];
+    });
 
   // Remove um produto do catálogo
   const excluirProduto = (id: number) => setProdutos((anterior) => anterior.filter((p) => p.id !== id));
+
+  // Atualiza na hora o resumo (estrelas + quantidade) de um produto depois que
+  // uma avaliação é enviada ou excluída — o pedido de verdade (POST/DELETE em
+  // /api/avaliacoes) já fica salvo no banco; isso só reflete no estado local
+  // pra não precisar recarregar a página inteira pra ver o novo resumo.
+  const atualizarResumoAvaliacoes = (produtoId: number, rating: number, reviews: number) =>
+    setProdutos((anterior) => anterior.map((p) => (p.id === produtoId ? { ...p, rating, reviews } : p)));
 
   // Atualiza o status de um pedido (Processando, Entregue...)
   const atualizarStatusPedido = (id: string, status: string) =>
@@ -426,16 +515,29 @@ export default function App() {
   };
 
   // Chamado quando o pagamento é confirmado: cria os pedidos, dá baixa no
-  // estoque e gera alertas. PIX e Cartão entram como "Pago" (sem estorno).
-  const confirmarPagamento = () => {
+  // estoque e gera alertas. PIX é sempre "Pago" (o site só chama isso depois
+  // de confirmar o PIX de verdade). Cartão manda o status REAL devolvido pelo
+  // Mercado Pago (statusCartao) — "approved" vira Pago, "in_process"/"pending"
+  // vira Processando (ex.: análise antifraude); pagamento recusado nunca chega
+  // aqui (a tela de pagamento barra antes). Se foi pago com um cartão novo,
+  // salva o cartão (dados seguros) no perfil.
+  const confirmarPagamento = (dadosCartao?: DadosCartaoDigitado, statusCartao?: "approved" | "in_process" | "pending") => {
     if (!usuario || !pagamentoPendente) return;
+    if (pagamentoPendente.metodo === "cartao" && dadosCartao) {
+      salvarCartao(usuario.email, dadosCartao);
+    }
     const agora = new Date();
     const date = agora.toLocaleDateString("pt-BR");
     const month = NOMES_MESES[agora.getMonth()];
     const sufixo = String(Date.now()).slice(-5);
-    const rotuloPagamento = { pix: "PIX", cartao: "Cartão", boleto: "Boleto" }[pagamentoPendente.metodo];
-    // Boleto ainda depende de compensação; PIX e Cartão são aprovados na hora
-    const statusInicial = pagamentoPendente.metodo === "boleto" ? "Processando" : "Pago";
+    const rotuloPagamento = { pix: "PIX", cartao: "Cartão" }[pagamentoPendente.metodo];
+    // Cartão: Pago só quando o Mercado Pago aprovou na hora; se ficou em
+    // análise (antifraude), entra como Processando. PIX só chega aqui depois
+    // de confirmado de verdade, então é sempre Pago.
+    const statusInicial =
+      pagamentoPendente.metodo === "cartao" && statusCartao && statusCartao !== "approved"
+        ? "Processando"
+        : "Pago";
 
     const novosPedidos: Pedido[] = carrinho.map((item, i) => ({
       id: `#CP-${sufixo}${i}`,
@@ -571,6 +673,7 @@ export default function App() {
             name: u.name,
             email: u.email,
             since: new Date().toLocaleDateString("pt-BR", { month: "short", year: "numeric" }),
+            criadoEm: new Date().toISOString().slice(0, 10),
             viaGoogle: Boolean(viaGoogle),
           }]
     );
@@ -661,6 +764,9 @@ export default function App() {
           aoAbrirPainel={abrirPainel}
           cargoUsuario={cargoUsuario}
           aoAtivarCodigo={ativarCodigoVendedor}
+          cartoesSalvos={cartoesSalvos.filter((c) => c.email.toLowerCase() === usuario.email.toLowerCase())}
+          aoExcluirCartao={excluirCartao}
+          aoAdicionarCartao={(dados) => salvarCartao(usuario.email, dados)}
         />
         <BarraInferiorMobile
           ativa="perfil"
@@ -735,6 +841,7 @@ export default function App() {
         config={config}
         aoSalvarConfig={setConfig}
         bancoOffline={bancoConectado === false}
+        aoAtualizarResumoAvaliacoes={atualizarResumoAvaliacoes}
       />
     );
   }
@@ -856,8 +963,11 @@ export default function App() {
     return (
       <TelaPagamento
         dados={pagamentoPendente}
+        email={usuario?.email ?? ""}
         aoConfirmar={confirmarPagamento}
         aoVoltar={() => { setPagamentoPendente(null); setTela("carrinho"); }}
+        cartoesSalvos={usuario ? cartoesSalvos.filter((c) => c.email.toLowerCase() === usuario.email.toLowerCase()) : []}
+        aoExcluirCartao={excluirCartao}
       />
     );
   }
@@ -961,6 +1071,9 @@ export default function App() {
           codigoVenda={codigoVenda}
           aoMudarCodigoVenda={setCodigoVenda}
           nomeDonoCodigo={nomeDonoCodigoVenda}
+          usuario={usuario}
+          pedidos={pedidos}
+          aoAtualizarResumoAvaliacoes={atualizarResumoAvaliacoes}
         />
       ) : (
       <main>

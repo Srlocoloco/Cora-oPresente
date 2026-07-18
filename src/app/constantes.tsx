@@ -72,11 +72,6 @@ export const BONUS_NIVEL_OURO = 100;
 export const BONUS_NIVEL_DIAMANTE = 150;
 
 
-// Bônus de convite: pago ao Master por cada vendedor que ele convidou e que
-// ativou a própria conta com o código (não conta quem ainda está pendente).
-export const BONUS_CONVITE_VENDEDOR = 30;
-
-
 // ─── MasterPlus ─────────────────────────────────────────────────────────────
 // Cargo acima do Master. Ganha comissão em três partes:
 //  • 10% sobre as próprias vendas, com o próprio código pessoal (mesmo
@@ -117,6 +112,20 @@ export const CATEGORIAS = [
   "Acessórios",
   "Casa & Decoração",
 ];
+
+
+// Prefixo do código sequencial de cada categoria (nicho). Cada produto
+// cadastrado ganha um código tipo "BEL-001", crescente dentro da própria
+// categoria — ver gerarCodigoProduto em utils.ts.
+export const PREFIXOS_CATEGORIA: Record<string, string> = {
+  "Outros": "OUT",
+  "Beleza & Perfumaria": "BEL",
+  "Adega": "ADE",
+  "Brinquedos": "BRI",
+  "Academia": "ACA",
+  "Acessórios": "ACE",
+  "Casa & Decoração": "CAS",
+};
 
 
 // Conta do administrador da loja — somente ela enxerga e acessa o painel Admin
@@ -196,3 +205,27 @@ export const VALIDADE_PIX_MS = 30 * 60 * 1000;
 // que só funciona na sua própria máquina — por isso o aviso de "banco
 // desconectado" quando publicado sem essa variável definida.
 export const URL_BACKEND_PIX = (import.meta as any).env?.VITE_BACKEND_URL || "http://localhost:3333";
+
+
+// ─── Pagamento com Cartão (Mercado Pago) ──────────────────────────────────────
+
+// Chave pública do Mercado Pago — usada só no navegador para transformar os
+// dados do cartão num "token" (o SDK fala direto com o Mercado Pago, o número
+// do cartão e o CVV nunca passam pelo nosso backend). É segura de expor no
+// código do site: só a chave PRIVADA (o Access Token) precisa ficar em segredo,
+// e essa fica só no backend (config.php / .env).
+// Troque pela chave de produção (prefixo "APP_USR-") quando for pra valer —
+// se quiser configurar por ambiente, crie VITE_MP_PUBLIC_KEY no ".env".
+export const MP_PUBLIC_KEY =
+  (import.meta as any).env?.VITE_MP_PUBLIC_KEY || "TEST-85a56c57-c387-411d-a303-aad0182ddb65";
+
+
+// ─── Avaliações de produto (comentário + vídeo do cliente) ────────────────────
+
+// Vídeo enviado na avaliação vira base64 e fica salvo direto no banco (igual
+// às fotos de produto/banner) — por isso precisa ser curto. Limite pensado
+// pra caber tranquilo no corpo da requisição (25 MB) e nos limites de upload
+// da hospedagem (HostGator). Em base64 o arquivo fica ~33% maior, por isso o
+// limite do ARQUIVO em si é menor que o limite de envio.
+export const LIMITE_VIDEO_AVALIACAO_MB = 12;
+export const LIMITE_VIDEO_AVALIACAO_SEGUNDOS = 20;

@@ -62,6 +62,7 @@ async function iniciarBanco() {
     // Tabelas (criadas somente se não existirem)
     await pool.query(`CREATE TABLE IF NOT EXISTS produtos (
       id BIGINT PRIMARY KEY,
+      codigo VARCHAR(16) NULL,
       name TEXT NOT NULL,
       brand VARCHAR(255) NOT NULL,
       price DOUBLE NOT NULL,
@@ -78,6 +79,17 @@ async function iniciarBanco() {
       owner VARCHAR(255) NULL,
       pixDesconto INT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+    // Migração: bancos criados antes do código sequencial (ex.: "BEL-001")
+    // existir não ganham a coluna nova só com CREATE TABLE IF NOT EXISTS
+    const [colunasProdutos] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'produtos' AND COLUMN_NAME = 'codigo'`,
+      [DB_NAME]
+    );
+    if (colunasProdutos.length === 0) {
+      await pool.query(`ALTER TABLE produtos ADD COLUMN codigo VARCHAR(16) NULL`);
+    }
 
     await pool.query(`CREATE TABLE IF NOT EXISTS pedidos (
       id VARCHAR(32) PRIMARY KEY,
@@ -99,6 +111,7 @@ async function iniciarBanco() {
       email VARCHAR(255) PRIMARY KEY,
       name VARCHAR(255),
       since VARCHAR(32),
+      criadoEm VARCHAR(10),
       viaGoogle TINYINT(1) NOT NULL DEFAULT 0
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
@@ -113,6 +126,18 @@ async function iniciarBanco() {
       await pool.query(
         `ALTER TABLE clientes ADD COLUMN viaGoogle TINYINT(1) NOT NULL DEFAULT 0`
       );
+    }
+
+    // Migração: bancos criados antes do campo criadoEm existir (usado para
+    // calcular "Clientes Novos" da semana atual no Dashboard, com reset
+    // automático toda segunda-feira)
+    const [colunasClientesCriadoEm] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'clientes' AND COLUMN_NAME = 'criadoEm'`,
+      [DB_NAME]
+    );
+    if (colunasClientesCriadoEm.length === 0) {
+      await pool.query(`ALTER TABLE clientes ADD COLUMN criadoEm VARCHAR(10) NULL`);
     }
 
     await pool.query(`CREATE TABLE IF NOT EXISTS cargos (
@@ -160,6 +185,19 @@ async function iniciarBanco() {
       category VARCHAR(64)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
+    // Cartões salvos dos clientes. IMPORTANTE: por segurança (padrão PCI),
+    // NUNCA guarda o número completo do cartão nem o CVV — só o suficiente
+    // para o cliente reconhecer o cartão numa lista (bandeira, nome,
+    // últimos 4 dígitos e validade).
+    await pool.query(`CREATE TABLE IF NOT EXISTS cartoes_salvos (
+      id BIGINT PRIMARY KEY,
+      email VARCHAR(255) NOT NULL,
+      bandeira VARCHAR(32),
+      nomeCartao VARCHAR(255),
+      ultimosDigitos VARCHAR(4),
+      validade VARCHAR(7)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
     await pool.query(`CREATE TABLE IF NOT EXISTS config (
       id INT PRIMARY KEY,
       chavePix VARCHAR(255),
@@ -168,6 +206,23 @@ async function iniciarBanco() {
       freteInterior DOUBLE,
       fretePadrao DOUBLE,
       comissaoRecrutador DOUBLE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+    // Avaliações de produto (comentário + vídeo do cliente). Publicação é
+    // imediata; só quem comprou o produto pode enviar (ver rota POST abaixo).
+    // 1 avaliação por cliente por produto — enviar de novo atualiza a mesma.
+    await pool.query(`CREATE TABLE IF NOT EXISTS avaliacoes (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      produtoId BIGINT NOT NULL,
+      clienteEmail VARCHAR(255) NOT NULL,
+      clienteNome VARCHAR(255) NOT NULL,
+      nota TINYINT NOT NULL,
+      comentario TEXT NULL,
+      video LONGTEXT NULL,
+      date VARCHAR(16) NOT NULL,
+      criadaEm TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY unico_cliente_produto (produtoId, clienteEmail),
+      INDEX idx_produto (produtoId)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
     console.log(`✓ MySQL conectado — banco "${DB_NAME}" pronto (XAMPP)`);
@@ -277,6 +332,7 @@ app.get("/api/dados", async (_req, res) => {
     const [cupons] = await pool.query("SELECT * FROM cupons");
     const [alertas] = await pool.query("SELECT * FROM alertas_estoque");
     const [banners] = await pool.query("SELECT * FROM banners");
+    const [cartoesSalvos] = await pool.query("SELECT * FROM cartoes_salvos");
     const [configLinhas] = await pool.query("SELECT * FROM config WHERE id = 1");
 
     const cargos = {};
@@ -290,6 +346,7 @@ app.get("/api/dados", async (_req, res) => {
     res.json({
       produtos: produtos.map((p) => ({
         ...p,
+        codigo: p.codigo ?? undefined,
         originalPrice: p.originalPrice ?? undefined,
         badge: p.badge ?? undefined,
         description: p.description ?? undefined,
@@ -304,13 +361,14 @@ app.get("/api/dados", async (_req, res) => {
         codigoVenda: o.codigoVenda ?? undefined,
         endereco: o.endereco ?? undefined,
       })),
-      clientes: clientes.map((c) => ({ ...c, viaGoogle: Boolean(c.viaGoogle) })),
+      clientes: clientes.map((c) => ({ ...c, criadoEm: c.criadoEm ?? undefined, viaGoogle: Boolean(c.viaGoogle) })),
       cargos,
       recrutamentos: recrutamentos.map((r) => ({ ...r, ativado: Boolean(r.ativado) })),
       vinculosMasterPlus,
       cupons: cupons.map((c) => ({ ...c, ativo: Boolean(c.ativo) })),
       alertasEstoque: alertas,
       banners,
+      cartoesSalvos,
       config,
     });
   } catch (e) {
@@ -327,7 +385,7 @@ app.put("/api/dados/:colecao", async (req, res) => {
     switch (req.params.colecao) {
       case "produtos":
         await regravarColecao("produtos", [
-          "id", "name", "brand", "price", "originalPrice", "installments", "rating",
+          "id", "codigo", "name", "brand", "price", "originalPrice", "installments", "rating",
           "reviews", "image", "category", "badge", "freeShipping", "stock",
           "description", "owner", "pixDesconto",
         ], dados);
@@ -341,7 +399,7 @@ app.put("/api/dados/:colecao", async (req, res) => {
       case "clientes":
         await regravarColecao(
           "clientes",
-          ["email", "name", "since", "viaGoogle"],
+          ["email", "name", "since", "criadoEm", "viaGoogle"],
           (dados ?? []).map((c) => ({ ...c, viaGoogle: Boolean(c.viaGoogle) }))
         );
         break;
@@ -371,6 +429,11 @@ app.put("/api/dados/:colecao", async (req, res) => {
           "id", "image", "tag", "title", "subtitle", "cta", "category",
         ], dados);
         break;
+      case "cartoesSalvos":
+        await regravarColecao("cartoes_salvos", [
+          "id", "email", "bandeira", "nomeCartao", "ultimosDigitos", "validade",
+        ], dados);
+        break;
       case "config":
         await regravarColecao("config", [
           "id", "chavePix", "freteGratisAcima", "freteCapital", "freteInterior",
@@ -384,6 +447,116 @@ app.put("/api/dados/:colecao", async (req, res) => {
   } catch (e) {
     console.error(`Erro ao gravar ${req.params.colecao}:`, e.message);
     res.status(500).json({ erro: "Falha ao gravar no banco de dados." });
+  }
+});
+
+// ── Avaliações de produto (comentário + vídeo do cliente) ───────────────────
+
+// Recalcula rating (média) e reviews (quantidade) do produto a partir das
+// avaliações reais salvas no banco.
+async function recalcularResumoProduto(produtoId) {
+  const [[agg]] = await pool.query(
+    "SELECT COUNT(*) AS qtd, AVG(nota) AS media FROM avaliacoes WHERE produtoId = ?",
+    [produtoId]
+  );
+  const media = agg?.media !== null && agg?.media !== undefined ? Math.round(Number(agg.media) * 10) / 10 : 0;
+  const qtd = agg ? Number(agg.qtd) : 0;
+  await pool.query("UPDATE produtos SET rating = ?, reviews = ? WHERE id = ?", [media, qtd, produtoId]);
+}
+
+// /api/avaliacoes/{produtoId} → avaliações de um produto (página do produto)
+// /api/avaliacoes?todas=1     → todas as avaliações, com o nome do produto (Admin)
+app.get("/api/avaliacoes/:produtoId?", async (req, res) => {
+  if (!pool) return res.status(503).json({ erro: "MySQL indisponível." });
+  try {
+    const todas = req.query.todas === "1";
+    const produtoId = Number(req.params.produtoId);
+    if (todas) {
+      const [linhas] = await pool.query(
+        `SELECT a.*, p.name AS produtoNome FROM avaliacoes a
+         LEFT JOIN produtos p ON p.id = a.produtoId
+         ORDER BY a.id DESC`
+      );
+      return res.json(linhas);
+    }
+    if (!produtoId) return res.status(400).json({ erro: "Informe o produto." });
+    const [linhas] = await pool.query(
+      "SELECT * FROM avaliacoes WHERE produtoId = ? ORDER BY id DESC",
+      [produtoId]
+    );
+    res.json(linhas);
+  } catch (e) {
+    console.error("Erro ao ler avaliações:", e.message);
+    res.status(500).json({ erro: "Falha ao ler as avaliações." });
+  }
+});
+
+// Cria (ou atualiza, se o cliente já tinha avaliado) uma avaliação. Só quem
+// comprou o produto (pedido Pago ou Entregue) pode enviar — os pedidos não
+// guardam o id do produto, só o nome (ver App.tsx/confirmarPagamento), então
+// a conferência é por nome.
+app.post("/api/avaliacoes", async (req, res) => {
+  if (!pool) return res.status(503).json({ erro: "MySQL indisponível." });
+  try {
+    const produtoId = Number(req.body?.produtoId) || 0;
+    const clienteEmail = String(req.body?.clienteEmail ?? "").trim();
+    const clienteNome = String(req.body?.clienteNome ?? "").trim();
+    const nota = Number(req.body?.nota) || 0;
+    const comentario = String(req.body?.comentario ?? "").trim();
+    const video = typeof req.body?.video === "string" ? req.body.video : null;
+
+    if (!produtoId || !clienteEmail || !clienteNome) return res.status(400).json({ erro: "Dados incompletos." });
+    if (nota < 1 || nota > 5) return res.status(400).json({ erro: "Escolha de 1 a 5 estrelas." });
+    if (!comentario && !video) return res.status(400).json({ erro: "Escreva um comentário ou envie um vídeo." });
+    if (video && video.length > 17 * 1024 * 1024) {
+      return res.status(400).json({ erro: "Vídeo muito grande. Envie um vídeo mais curto (máx. ~12 MB)." });
+    }
+
+    const [[produto]] = await pool.query("SELECT name FROM produtos WHERE id = ?", [produtoId]);
+    if (!produto) return res.status(404).json({ erro: "Produto não encontrado." });
+
+    const [pedidosCompativeis] = await pool.query(
+      `SELECT id FROM pedidos WHERE email = ? AND status IN ('Pago','Entregue')
+       AND (items = ? OR items LIKE ?) LIMIT 1`,
+      [clienteEmail, produto.name, `${produto.name} (%`]
+    );
+    if (pedidosCompativeis.length === 0) {
+      return res.status(403).json({ erro: "Só clientes que compraram este produto podem avaliar." });
+    }
+
+    const date = new Date().toLocaleDateString("pt-BR");
+    await pool.query(
+      `INSERT INTO avaliacoes (produtoId, clienteEmail, clienteNome, nota, comentario, video, date)
+       VALUES (?,?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE
+         clienteNome = VALUES(clienteNome), nota = VALUES(nota),
+         comentario = VALUES(comentario), video = VALUES(video), date = VALUES(date)`,
+      [produtoId, clienteEmail, clienteNome, nota, comentario, video, date]
+    );
+
+    await recalcularResumoProduto(produtoId);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Erro ao gravar avaliação:", e.message);
+    res.status(500).json({ erro: "Falha ao gravar a avaliação." });
+  }
+});
+
+// Admin exclui uma avaliação imprópria
+app.delete("/api/avaliacoes/:id", async (req, res) => {
+  if (!pool) return res.status(503).json({ erro: "MySQL indisponível." });
+  try {
+    const id = Number(req.params.id) || 0;
+    if (!id) return res.status(400).json({ erro: "Id inválido." });
+    const [[linha]] = await pool.query("SELECT produtoId FROM avaliacoes WHERE id = ?", [id]);
+    if (linha) {
+      await pool.query("DELETE FROM avaliacoes WHERE id = ?", [id]);
+      await recalcularResumoProduto(linha.produtoId);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Erro ao excluir avaliação:", e.message);
+    res.status(500).json({ erro: "Falha ao excluir a avaliação." });
   }
 });
 

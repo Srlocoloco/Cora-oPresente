@@ -36,10 +36,6 @@ export function PaginaMasterPlusAdmin({
       setErro("Este e-mail ainda não tem cadastro na loja.");
       return;
     }
-    if (!cliente.viaGoogle) {
-      setErro("Este e-mail precisa ter entrado com o login do Google para ser verificado.");
-      return;
-    }
     setErro("");
     aoDefinirCargo(chave, "masterplus");
     setEmail("");
@@ -63,8 +59,8 @@ export function PaginaMasterPlusAdmin({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <h3 className="font-black text-gray-900 text-[15px] mb-1">Tornar MasterPlus</h3>
         <p className="text-[12px] text-gray-400 mb-3">
-          Dá o cargo de MasterPlus a uma conta já cadastrada na loja com login do Google (e-mail
-          verificado). O MasterPlus monta a própria equipe de vendedores (como um Master) e ainda
+          Dá o cargo de MasterPlus a uma conta já cadastrada na loja (login do Google ou cadastro
+          manual). O MasterPlus monta a própria equipe de vendedores (como um Master) e ainda
           pode promover um vendedor de destaque da própria equipe a Master. Ganha{" "}
           {(COMISSAO_MASTERPLUS_PROPRIA * 100).toFixed(0)}% fixo sobre as próprias vendas (igual ao
           Master), mais {(COMISSAO_MASTERPLUS_EQUIPE * 100).toFixed(0)}% sobre a equipe própria e

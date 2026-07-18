@@ -7,6 +7,10 @@ RewriteBase /api/
 RewriteRule ^dados$ dados.php [L,QSA]
 RewriteRule ^dados/([A-Za-z]+)$ dados.php?colecao=$1 [L,QSA]
 
+# Avaliações de produto (comentário + vídeo do cliente)
+RewriteRule ^avaliacoes$ avaliacoes.php [L,QSA]
+RewriteRule ^avaliacoes/([0-9]+)$ avaliacoes.php?produtoId=$1 [L,QSA]
+
 # Cobranças PIX
 RewriteRule ^pix/cobranca$ pix.php?acao=cobranca [L,QSA]
 RewriteRule ^pix/cobranca/([A-Za-z0-9]+)$ pix.php?acao=status&txid=$1 [L,QSA]
@@ -14,7 +18,27 @@ RewriteRule ^pix/cobranca/([A-Za-z0-9]+)$ pix.php?acao=status&txid=$1 [L,QSA]
 # Webhook do Sicredi
 RewriteRule ^webhook/pix$ pix.php?acao=webhook [L,QSA]
 
+# Pagamento com cartão (Mercado Pago)
+RewriteRule ^pagamento/cartao$ mercadopago.php?acao=pagamento [L,QSA]
+
+# Cofre de cartões (Mercado Pago)
+RewriteRule ^cartao/salvar$ mercadopago.php?acao=salvar_cartao [L,QSA]
+
+# Webhook do Mercado Pago
+RewriteRule ^webhook/mercadopago$ mercadopago.php?acao=webhook [L,QSA]
+
 # Bloqueia acesso direto aos arquivos de apoio
 <FilesMatch "^(config|lib)\.php$">
   Require all denied
 </FilesMatch>
+
+# Avaliações podem chegar com vídeo em base64 (até ~16 MB) — alguns planos da
+# HostGator vêm com limite padrão menor (8 MB), o que rejeitaria o envio antes
+# mesmo de rodar o PHP. Isso só funciona se o servidor usa mod_php (a maioria
+# das contas cPanel/HostGator); se não fizer efeito, ajuste em cPanel →
+# "Selecionar versão do PHP" → "Opções" → post_max_size / upload_max_filesize.
+<IfModule mod_php.c>
+  php_value post_max_size 20M
+  php_value upload_max_filesize 20M
+  php_value memory_limit 128M
+</IfModule>

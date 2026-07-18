@@ -65,6 +65,26 @@ domínio. O site e o PIX exigem HTTPS.
 Enquanto o Sicredi não estiver configurado, o site usa o QR estático com a
 chave PIX das Configurações — a loja funciona normalmente.
 
+### 7. Mercado Pago (pagamento com cartão)
+
+1. Em `api/config.php`, preencha `MP_ACCESS_TOKEN` e `MP_PUBLIC_KEY` com as
+   credenciais de developers.mercadopago.com → sua aplicação → Credenciais.
+   Use as de **teste** (prefixo `TEST-`) enquanto estiver testando, e troque
+   pelas de **produção** (prefixo `APP_USR-`) quando for pra valer.
+2. No painel do Mercado Pago, vá em **Webhooks** → **Configurar notificações**
+   → **URL de produção** e cadastre:
+   `https://www.seudominio.com.br/api/webhook/mercadopago`
+   Marque o evento **"Pagamentos"**.
+   - Testando local com XAMPP: use a URL pública do **ngrok** no lugar do seu
+     domínio (ex.: `https://abc123.ngrok-free.app/api/webhook/mercadopago`).
+     O ngrok precisa apontar para a porta do Apache/XAMPP (normalmente 80).
+3. Depois de cadastrar a URL, o painel mostra uma **"Assinatura secreta"**.
+   Copie e cole em `MP_WEBHOOK_SECRET` (`config.php`) — isso faz o webhook
+   validar o cabeçalho `X-Signature` e recusar notificações falsas.
+4. O front-end precisa gerar o **token do cartão** com o SDK do Mercado Pago
+   (usando `MP_PUBLIC_KEY`) e mandar esse token para `POST /api/pagamento/cartao`
+   — o número do cartão, validade e CVV nunca devem chegar neste servidor.
+
 ## Rotas (iguais às do backend Node)
 
 - `GET  /api/dados` — todas as coleções
@@ -72,6 +92,9 @@ chave PIX das Configurações — a loja funciona normalmente.
 - `POST /api/pix/cobranca` — cria cobrança de 30 min
 - `GET  /api/pix/cobranca/{txid}` — status da cobrança
 - `POST /api/webhook/pix` — webhook do Sicredi
+- `POST /api/pagamento/cartao` — processa pagamento com cartão (Mercado Pago)
+- `POST /api/webhook/mercadopago` — webhook do Mercado Pago
+- `POST /api/cartao/salvar` — cofre: anexa um cartão tokenizado ao cliente (via customer do Mercado Pago)
 
 ## Segurança
 
@@ -79,3 +102,9 @@ chave PIX das Configurações — a loja funciona normalmente.
 PHP), e o `.htaccess` ainda bloqueia acesso direto a `config.php` e `lib.php`.
 Os certificados ficam fora de `public_html`. Mesmo assim, não compartilhe
 esses arquivos com ninguém.
+
+Este `config.php` fica versionado no Git. Enquanto as chaves do Mercado Pago
+forem as de **teste** (prefixo `TEST-`) o risco é baixo — não movem dinheiro
+real. Antes de trocar para as chaves de **produção**, considere tirar
+`backend-php/api/config.php` do repositório (`.gitignore` + `git rm --cached`)
+para não deixar segredos reais no histórico do Git.

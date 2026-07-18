@@ -54,6 +54,7 @@ export function PaginaProdutosAdmin({
           <table className="w-full text-[13px]">
             <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
               <tr>
+                <th className="text-left px-5 py-3.5 font-semibold hidden sm:table-cell">Código</th>
                 <th className="text-left px-5 py-3.5 font-semibold">Produto</th>
                 <th className="text-left px-5 py-3.5 font-semibold hidden md:table-cell">Categoria</th>
                 <th className="text-left px-5 py-3.5 font-semibold">Preço</th>
@@ -65,13 +66,18 @@ export function PaginaProdutosAdmin({
             <tbody className="divide-y divide-gray-50">
               {visiveis.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-gray-400 text-[13px]">
+                  <td colSpan={7} className="px-5 py-12 text-center text-gray-400 text-[13px]">
                     Nenhum produto cadastrado — clique em <strong>Novo Produto</strong> para começar a vender.
                   </td>
                 </tr>
               )}
               {visiveis.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-50/70 transition-colors">
+                  <td className="px-5 py-4 hidden sm:table-cell">
+                    <span className="font-mono text-[11px] font-bold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded-lg">
+                      {p.codigo || "—"}
+                    </span>
+                  </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
                       <ImagemProduto src={p.image} alt={p.name} className="w-10 h-10 object-contain bg-gray-50 rounded-xl p-1 flex-shrink-0" />
@@ -220,6 +226,17 @@ export function FormularioProduto({
         </div>
 
         <form onSubmit={aoEnviarFormulario} className="p-6 space-y-4">
+          {inicial?.codigo && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Código do produto</span>
+              <span className="font-mono text-[13px] font-black text-gray-700">{inicial.codigo}</span>
+            </div>
+          )}
+          {!inicial && (
+            <p className="text-[11px] text-gray-400 -mt-1">
+              O código (ex.: BEL-001) é gerado automaticamente pela categoria ao salvar.
+            </p>
+          )}
           <div>
             <label className={estiloRotulo}>Nome do produto *</label>
             <input className={estiloInput} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Perfumes" />

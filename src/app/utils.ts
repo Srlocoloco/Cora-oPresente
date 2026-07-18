@@ -1,7 +1,7 @@
 // Funcoes auxiliares puras
 
-import type { Cupom, Recrutamento, Pedido } from "./types";
-import { NIVEIS_VENDEDOR, BONUS_NIVEL_OURO, BONUS_NIVEL_DIAMANTE, BONUS_CONVITE_VENDEDOR, CATEGORIAS } from "./constantes";
+import type { Cupom, Pedido, Produto } from "./types";
+import { NIVEIS_VENDEDOR, BONUS_NIVEL_OURO, BONUS_NIVEL_DIAMANTE, CATEGORIAS, PREFIXOS_CATEGORIA } from "./constantes";
 
 // Um cupom vale se está ativo e dentro da validade
 export function cupomEstaValido(c: Cupom) {
@@ -29,11 +29,6 @@ export function bonusDeNivel(vendasTotais: number) {
 }
 
 
-export function bonusDeConvite(recrutamentos: Recrutamento[]) {
-  return recrutamentos.filter((r) => r.ativado).length * BONUS_CONVITE_VENDEDOR;
-}
-
-
 export function totalVendidoPor(email: string, pedidos: Pedido[]) {
   return pedidos
     .filter((o) => o.vendedor?.toLowerCase() === email.toLowerCase() && o.status !== "Cancelado")
@@ -46,6 +41,56 @@ export function totalVendidoPor(email: string, pedidos: Pedido[]) {
 // de mostrar esse valor obsoleto, agrupa como "Outros".
 export function categoriaExibida(categoria: string) {
   return CATEGORIAS.includes(categoria) ? categoria : "Outros";
+}
+
+
+// Gera o próximo código sequencial de um produto dentro da categoria dele
+// (ex.: 1º produto de Beleza & Perfumaria = "BEL-001", o 2º = "BEL-002"...).
+// Cada categoria (nicho) tem a própria contagem, independente das outras.
+export function gerarCodigoProduto(categoria: string, produtosExistentes: Produto[]) {
+  const prefixo = PREFIXOS_CATEGORIA[categoria] || "OUT";
+  const numeros = produtosExistentes
+    .filter((p) => p.codigo?.startsWith(`${prefixo}-`))
+    .map((p) => parseInt(p.codigo!.slice(prefixo.length + 1), 10))
+    .filter((n) => !isNaN(n));
+  const proximo = numeros.length > 0 ? Math.max(...numeros) + 1 : 1;
+  return `${prefixo}-${String(proximo).padStart(3, "0")}`;
+}
+
+
+// Detecta a bandeira do cartão a partir dos primeiros dígitos digitados —
+// usado só para exibição (ex.: "Visa"), nunca para validar o cartão de verdade.
+export function bandeiraCartao(numero: string): string {
+  const n = numero.replace(/\D/g, "");
+  if (/^4/.test(n)) return "Visa";
+  if (/^(5[1-5]|2[2-7])/.test(n)) return "Mastercard";
+  if (/^3[47]/.test(n)) return "American Express";
+  if (/^6(011|5)/.test(n)) return "Elo";
+  if (/^636368|^438935|^504175|^451416/.test(n)) return "Elo";
+  return "Cartão";
+}
+
+
+// Formatação dos campos de cartão (número em blocos de 4, validade MM/AA) —
+// usada tanto no pagamento com cartão quanto no formulário de "Meus Cartões"
+// do perfil, para manter a digitação idêntica nos dois lugares.
+export function formatarNumeroCartao(v: string) {
+  return v.replace(/\D/g, "").slice(0, 16).replace(/(\d{4})(?=\d)/g, "$1 ").trim();
+}
+
+export function formatarValidadeCartao(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 4);
+  return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+}
+
+// CPF do titular do cartão — o Mercado Pago exige esse dado (identificationNumber)
+// para gerar o token do cartão no Brasil, mesmo em cartões de teste.
+export function formatarCpf(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 11);
+  return d
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 }
 
 
@@ -86,6 +131,31 @@ export function lerArmazenamento<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+
+// Confere se um cliente comprou um produto (pedido com status Pago ou
+// Entregue) — usado pra só deixar quem comprou avaliar o produto. Os pedidos
+// não guardam o id do produto (só o nome, ver App.tsx/confirmarPagamento),
+// então a comparação é pelo nome: "Nome do Produto" ou "Nome do Produto (2x)".
+export function produtoFoiCompradoPor(email: string, produto: Produto, pedidos: Pedido[]) {
+  const emailLimpo = email.trim().toLowerCase();
+  return pedidos.some(
+    (o) =>
+      o.email.trim().toLowerCase() === emailLimpo &&
+      (o.status === "Pago" || o.status === "Entregue") &&
+      (o.items === produto.name || o.items.startsWith(`${produto.name} (`))
+  );
+}
+
+
+// Média (arredondada em 1 casa) e quantidade de notas de uma lista de
+// avaliações — usado pra atualizar o resumo (estrelas) do produto na hora,
+// sem esperar recarregar a página.
+export function mediaAvaliacoes(notas: number[]): { media: number; qtd: number } {
+  if (notas.length === 0) return { media: 0, qtd: 0 };
+  const soma = notas.reduce((acum, n) => acum + n, 0);
+  return { media: Math.round((soma / notas.length) * 10) / 10, qtd: notas.length };
 }
 
 

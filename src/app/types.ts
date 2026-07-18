@@ -2,6 +2,9 @@
 
 export interface Produto {
   id: number;
+  // Código sequencial por categoria (ex.: "BEL-001"), gerado automaticamente
+  // ao cadastrar o produto — fica fixo mesmo se a categoria mudar depois
+  codigo?: string;
   name: string;
   brand: string;
   price: number;
@@ -124,6 +127,11 @@ export interface Cliente {
   name: string;
   email: string;
   since: string;
+  // Data de cadastro em formato ISO (AAAA-MM-DD) — usada para calcular
+  // métricas por período exato (ex.: "Clientes Novos" da semana atual no
+  // Dashboard). Clientes cadastrados antes dessa coluna existir não têm esse
+  // campo (undefined) e não entram nas contagens por semana.
+  criadoEm?: string;
   // true = e-mail verificado de verdade pelo login do Google (JWT do Google);
   // usado para exigir e-mail verificado antes de dar o cargo de Vendedor
   viaGoogle?: boolean;
@@ -135,9 +143,69 @@ export type Tela = "login" | "loja" | "carrinho" | "pagamento" | "admin" | "mast
 
 // Dados do pagamento escolhido no carrinho (aguardando confirmação)
 export interface DadosPagamento {
-  metodo: "cartao" | "boleto" | "pix";
+  metodo: "cartao" | "pix";
   total: number;
   parcelas: number;
   // Endereço de entrega montado no carrinho (via CEP + número informado)
   endereco: string;
+}
+
+
+// Cartão salvo do cliente, guardado no banco após uma compra com Cartão.
+// POR SEGURANÇA (padrão PCI): nunca guarda o número completo nem o CVV —
+// só o suficiente para o cliente reconhecer o cartão numa lista.
+export interface CartaoSalvo {
+  id: number;
+  email: string; // dono do cartão (cliente logado)
+  bandeira: string; // Visa, Mastercard, Elo, Amex... (detectada pelo número digitado)
+  nomeCartao: string; // nome impresso no cartão
+  ultimosDigitos: string; // só os 4 últimos dígitos
+  validade: string; // MM/AA
+  // Cofre do Mercado Pago: presentes só quando esse cartão foi de fato
+  // tokenizado e salvo lá (POST /api/cartao/salvar). Sem esses ids não dá pra
+  // cobrar de novo — é preciso digitar o cartão de novo.
+  mpCardId?: string;
+  mpCustomerId?: string;
+}
+
+
+// Dados digitados no formulário de cartão, na tela de pagamento — só existem
+// no navegador durante a compra. O número completo e o CVV NUNCA são salvos
+// em lugar nenhum (nem no banco, nem no estado do app depois de confirmado).
+export interface DadosCartaoDigitado {
+  numero: string;
+  nome: string;
+  validade: string;
+  cvv: string;
+  // Preenchidos quando o cartão foi salvo de verdade no cofre do Mercado
+  // Pago nesta compra (cartão novo) ou reaproveitado de um já salvo — é o
+  // que permite cobrar de novo só com CVV numa próxima compra.
+  mpCardId?: string;
+  mpCustomerId?: string;
+  bandeira?: string;
+}
+
+// Resultado real de uma cobrança no Mercado Pago, devolvido pelo backend
+// (POST /api/pagamento/cartao) depois de tokenizar o cartão no navegador.
+export interface ResultadoPagamentoCartao {
+  paymentId: string | number;
+  status: "approved" | "in_process" | "pending" | "rejected" | "cancelled" | string;
+  statusDetail?: string | null;
+}
+
+
+// Avaliação de um produto: só clientes que compraram podem enviar (1 por
+// cliente por produto — enviar de novo atualiza a mesma avaliação). Aparece
+// na hora na página do produto (sem fila de aprovação); o Admin pode excluir
+// uma avaliação imprópria a qualquer momento (ver PaginaAvaliacoesAdmin).
+export interface Avaliacao {
+  id: number;
+  produtoId: number;
+  clienteEmail: string;
+  clienteNome: string;
+  nota: number; // 1 a 5
+  comentario: string;
+  // Vídeo curto enviado pelo cliente, como data URL base64 (ex.: "data:video/mp4;base64,...")
+  video?: string;
+  date: string; // dd/mm/aaaa
 }
