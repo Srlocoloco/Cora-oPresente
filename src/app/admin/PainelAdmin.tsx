@@ -1,10 +1,10 @@
 // Pagina Admin: PainelAdmin
 
 import { useState } from "react";
-import { ShoppingCart, Package, LayoutDashboard, ShoppingBag, Users, TrendingUp, Bell, LogOut, Plus, Tag, Menu, Settings, Award, Crown, Share2, Image as ImageIcon } from "lucide-react";
+import { ShoppingCart, Package, LayoutDashboard, ShoppingBag, Users, TrendingUp, Bell, LogOut, Plus, Tag, Menu, Settings, Award, Crown, Share2, Image as ImageIcon, Star } from "lucide-react";
 import type { Produto, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, Pedido, Cliente } from "../types";
 import { COMISSAO_MASTER_PROPRIA, COMISSAO_MASTERPLUS_PROPRIA, COMISSAO_MASTERPLUS_EQUIPE, COMISSAO_MASTERPLUS_OVERRIDE, NOMES_MESES } from "../constantes";
-import { comissaoFracaoPorNivel, bonusDeNivel, bonusDeConvite, totalVendidoPor, lerArmazenamento, formatarMoeda } from "../utils";
+import { comissaoFracaoPorNivel, bonusDeNivel, totalVendidoPor, lerArmazenamento, formatarMoeda } from "../utils";
 import { Logo } from "../components/Logo";
 import { AvisoBancoDesconectado } from "../components/AvisoBancoDesconectado";
 import { CartaoNivelVendedor } from "../components/CartaoNivelVendedor";
@@ -23,6 +23,7 @@ import { PaginaSupervisaoAdmin } from "./PaginaSupervisaoAdmin";
 import { PaginaDashboard } from "./PaginaDashboard";
 import { PaginaProdutosAdmin } from "./PaginaProdutosAdmin";
 import { PaginaPedidosAdmin } from "./PaginaPedidosAdmin";
+import { PaginaAvaliacoesAdmin } from "./PaginaAvaliacoesAdmin";
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
@@ -58,6 +59,7 @@ export function PainelAdmin({
   config,
   aoSalvarConfig,
   bancoOffline = false,
+  aoAtualizarResumoAvaliacoes,
 }: {
   modo?: "admin" | "master" | "masterplus" | "vendedor";
   pagina: string;
@@ -97,6 +99,9 @@ export function PainelAdmin({
   aoSalvarConfig?: (c: ConfigLoja) => void;
   // true = banco de dados (XAMPP) fora do ar — mostra o aviso no painel
   bancoOffline?: boolean;
+  // Atualiza na hora o resumo (estrelas + quantidade) de um produto depois
+  // que o Admin exclui uma avaliação imprópria na página Avaliações
+  aoAtualizarResumoAvaliacoes?: (produtoId: number, rating: number, reviews: number) => void;
 }) {
   const [codigoCopiado, setCodigoCopiado] = useState(false);
   const [notifAberta, setNotifAberta] = useState(false);
@@ -137,6 +142,7 @@ export function PainelAdmin({
     admin: [
       { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} /> },
       { id: "produtos", label: "Produtos", icon: <Package size={17} /> },
+      { id: "avaliacoes", label: "Avaliações", icon: <Star size={17} /> },
       { id: "pedidos", label: "Pedidos", icon: <ShoppingBag size={17} /> },
       { id: "financeiro", label: "Financeiro", icon: <TrendingUp size={17} /> },
       { id: "estoque", label: "Estoque", icon: <Package size={17} /> },
@@ -181,6 +187,7 @@ export function PainelAdmin({
   const titulosPaginas: Record<string, string> = {
     dashboard: "Dashboard",
     produtos: "Gestão de Produtos",
+    avaliacoes: "Avaliações",
     pedidos: modo === "vendedor" ? "Minhas Vendas" : "Pedidos",
     equipe: "Equipe & Cargos",
     vendedores: "Meus Vendedores",
@@ -225,15 +232,8 @@ export function PainelAdmin({
   // Bônus de nível do Master: ele já está sempre no nível Diamante (não sobe
   // de nível como o vendedor), então só vale o bônus por bater a meta das
   // próprias vendas — sem a barra de progresso Bronze→Diamante.
-  const bonusNivelMaster =
+  const bonusMaster =
     modo === "master" && usuario ? bonusDeNivel(totalVendidoPor(usuario.email, pedidos)) : 0;
-  // Bônus de convite: R$30 por vendedor que ESTE Master convidou e que já
-  // ativou a própria conta com o código (cada Master tem a própria equipe).
-  const bonusConviteMaster =
-    modo === "master" && usuario
-      ? bonusDeConvite(recrutamentos.filter((r) => r.recrutador === usuario.email.toLowerCase()))
-      : 0;
-  const bonusMaster = bonusNivelMaster + bonusConviteMaster;
 
   return (
     <div className="flex h-screen bg-[#FBF4EA] overflow-hidden" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -364,18 +364,15 @@ export function PainelAdmin({
             </div>
           )}
 
-          {/* Bônus do Master: nível (sem barra de progresso — ele já está
-              sempre no nível Diamante) + convite (R$30 por vendedor ativado) */}
+          {/* Bônus de nível do Master: ele já está sempre no nível Diamante
+              (sem barra de progresso), então só vale o bônus por bater a
+              meta das próprias vendas (código pessoal). */}
           {modo === "master" && bonusMaster > 0 && (
             <div className="mb-5 bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center gap-3">
               <Award size={20} className="text-purple-600 flex-shrink-0" />
               <p className="text-[13px] text-purple-700 font-medium">
                 Você já ganhou <span className="font-black">{formatarMoeda(bonusMaster)}</span> em bônus
-                {bonusNivelMaster > 0 && bonusConviteMaster > 0
-                  ? ` — ${formatarMoeda(bonusNivelMaster)} por nível (vendas próprias) e ${formatarMoeda(bonusConviteMaster)} por convite de vendedores.`
-                  : bonusNivelMaster > 0
-                  ? " de nível, pelas suas vendas próprias (código pessoal)."
-                  : " de convite, por vendedores que ativaram a conta com o seu código."}
+                de nível, pelas suas vendas próprias (código pessoal).
               </p>
             </div>
           )}
@@ -385,10 +382,14 @@ export function PainelAdmin({
               clientes={clientes}
               titulo={tituloDashboard}
               aoVerTodosPedidos={() => setPagina("pedidos")}
+              modo={modo}
             />
           )}
           {pagina === "produtos" && modo === "admin" && (
             <PaginaProdutosAdmin produtos={produtos} aoSalvar={aoSalvarProduto} aoExcluir={aoExcluirProduto} />
+          )}
+          {pagina === "avaliacoes" && modo === "admin" && aoAtualizarResumoAvaliacoes && (
+            <PaginaAvaliacoesAdmin aoAtualizarResumoAvaliacoes={aoAtualizarResumoAvaliacoes} />
           )}
           {pagina === "pedidos" && (
             <PaginaPedidosAdmin
@@ -436,6 +437,7 @@ export function PainelAdmin({
                     }
                   : undefined
               }
+              modo={modo}
             />
           )}
           {pagina === "equipe" && (modo === "master" || modo === "masterplus") && cargos && aoDefinirCargo && (
@@ -489,6 +491,7 @@ export function PainelAdmin({
               clientes={clientes}
               cargos={cargos}
               aoDefinirCargo={aoDefinirCargo}
+              vinculosMasterPlus={vinculosMasterPlus}
               comissaoEquipePct={config?.comissaoRecrutador ?? 2}
             />
           )}

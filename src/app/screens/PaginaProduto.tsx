@@ -1,9 +1,10 @@
 // Tela PaginaProduto
 
-import { ShoppingCart, Star, Package, Heart, Truck, RotateCcw, ChevronRight, Check } from "lucide-react";
-import type { Produto } from "../types";
-import { CORES_SELO } from "../constantes";
-import { categoriaExibida, formatarMoeda, precoParcela, pctDesconto } from "../utils";
+import { useEffect, useMemo, useState } from "react";
+import { ShoppingCart, Star, Package, Heart, Truck, RotateCcw, ChevronRight, Check, Video } from "lucide-react";
+import type { Produto, Usuario, Pedido, Avaliacao } from "../types";
+import { CORES_SELO, URL_BACKEND_PIX, LIMITE_VIDEO_AVALIACAO_MB, LIMITE_VIDEO_AVALIACAO_SEGUNDOS } from "../constantes";
+import { categoriaExibida, formatarMoeda, precoParcela, pctDesconto, produtoFoiCompradoPor, mediaAvaliacoes } from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
 import { CartaoProduto } from "../components/CartaoProduto";
 import { CampoCodigoVenda } from "../components/CampoCodigoVenda";
@@ -19,6 +20,9 @@ export function PaginaProduto({
   codigoVenda,
   aoMudarCodigoVenda,
   nomeDonoCodigo,
+  usuario,
+  pedidos,
+  aoAtualizarResumoAvaliacoes,
 }: {
   produto: Produto;
   produtos: Produto[];
@@ -30,7 +34,123 @@ export function PaginaProduto({
   codigoVenda: string;
   aoMudarCodigoVenda: (v: string) => void;
   nomeDonoCodigo: string | null;
+  usuario: Usuario | null;
+  pedidos: Pedido[];
+  aoAtualizarResumoAvaliacoes: (produtoId: number, rating: number, reviews: number) => void;
 }) {
+  // ─── Avaliações (comentário + vídeo) ───────────────────────────────────────
+  const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
+  const [carregandoAvaliacoes, setCarregandoAvaliacoes] = useState(true);
+  const [notaForm, setNotaForm] = useState(0);
+  const [comentarioForm, setComentarioForm] = useState("");
+  const [videoForm, setVideoForm] = useState<string | null>(null);
+  const [nomeVideoForm, setNomeVideoForm] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [erroForm, setErroForm] = useState("");
+  const [formInicializado, setFormInicializado] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+    setCarregandoAvaliacoes(true);
+    setFormInicializado(false);
+    setNotaForm(0);
+    setComentarioForm("");
+    setVideoForm(null);
+    setNomeVideoForm("");
+    setErroForm("");
+    fetch(`${URL_BACKEND_PIX}/api/avaliacoes/${produto.id}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((lista) => { if (!cancelado) setAvaliacoes(Array.isArray(lista) ? lista : []); })
+      .catch(() => { if (!cancelado) setAvaliacoes([]); })
+      .finally(() => { if (!cancelado) setCarregandoAvaliacoes(false); });
+    return () => { cancelado = true; };
+  }, [produto.id]);
+
+  const jaComprou = usuario ? produtoFoiCompradoPor(usuario.email, produto, pedidos) : false;
+  const minhaAvaliacao = useMemo(
+    () => (usuario ? avaliacoes.find((a) => a.clienteEmail.toLowerCase() === usuario.email.toLowerCase()) : undefined),
+    [avaliacoes, usuario]
+  );
+
+  // Pré-preenche o formulário com a avaliação já enviada por este cliente
+  // (permite editar), só uma vez depois que a lista termina de carregar.
+  useEffect(() => {
+    if (carregandoAvaliacoes || formInicializado) return;
+    if (minhaAvaliacao) {
+      setNotaForm(minhaAvaliacao.nota);
+      setComentarioForm(minhaAvaliacao.comentario);
+      setVideoForm(minhaAvaliacao.video ?? null);
+    }
+    setFormInicializado(true);
+  }, [carregandoAvaliacoes, formInicializado, minhaAvaliacao]);
+
+  const aoEscolherVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+    setErroForm("");
+    const limiteBytes = LIMITE_VIDEO_AVALIACAO_MB * 1024 * 1024;
+    if (arquivo.size > limiteBytes) {
+      setErroForm(`Vídeo muito grande — envie um vídeo de até ${LIMITE_VIDEO_AVALIACAO_MB} MB.`);
+      e.target.value = "";
+      return;
+    }
+    const urlTemporaria = URL.createObjectURL(arquivo);
+    const videoEl = document.createElement("video");
+    videoEl.preload = "metadata";
+    videoEl.onloadedmetadata = () => {
+      URL.revokeObjectURL(urlTemporaria);
+      if (videoEl.duration > LIMITE_VIDEO_AVALIACAO_SEGUNDOS) {
+        setErroForm(`Vídeo muito longo — envie um vídeo de até ${LIMITE_VIDEO_AVALIACAO_SEGUNDOS} segundos.`);
+        e.target.value = "";
+        return;
+      }
+      const leitor = new FileReader();
+      leitor.onload = () => {
+        setVideoForm(String(leitor.result));
+        setNomeVideoForm(arquivo.name);
+      };
+      leitor.readAsDataURL(arquivo);
+    };
+    videoEl.src = urlTemporaria;
+  };
+
+  const aoEnviarAvaliacao = async () => {
+    if (!usuario) return;
+    setErroForm("");
+    if (notaForm < 1) { setErroForm("Escolha de 1 a 5 estrelas."); return; }
+    if (!comentarioForm.trim() && !videoForm) { setErroForm("Escreva um comentário ou envie um vídeo."); return; }
+    setEnviando(true);
+    try {
+      const resposta = await fetch(`${URL_BACKEND_PIX}/api/avaliacoes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          produtoId: produto.id,
+          clienteEmail: usuario.email,
+          clienteNome: usuario.name,
+          nota: notaForm,
+          comentario: comentarioForm.trim(),
+          video: videoForm,
+        }),
+      });
+      const corpo = await resposta.json().catch(() => ({}));
+      if (!resposta.ok) {
+        setErroForm(corpo?.erro || "Não foi possível enviar a avaliação.");
+        return;
+      }
+      const listaAtualizada: Avaliacao[] = await fetch(`${URL_BACKEND_PIX}/api/avaliacoes/${produto.id}`)
+        .then((r) => (r.ok ? r.json() : []))
+        .catch(() => []);
+      setAvaliacoes(Array.isArray(listaAtualizada) ? listaAtualizada : []);
+      const { media, qtd } = mediaAvaliacoes(listaAtualizada.map((a) => a.nota));
+      aoAtualizarResumoAvaliacoes(produto.id, media, qtd);
+    } catch {
+      setErroForm("Falha de conexão — tente novamente.");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
   const temDesconto = produto.originalPrice && produto.originalPrice > produto.price;
   // Desconto no PIX definido no próprio produto (0 = sem desconto)
   const pctPix = produto.pixDesconto ?? 0;
@@ -94,7 +214,12 @@ export function PaginaProduto({
 
           {/* Info */}
           <div>
-            <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{produto.brand}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{produto.brand}</span>
+              {produto.codigo && (
+                <span className="font-mono text-[10px] font-bold text-gray-400">· cód. {produto.codigo}</span>
+              )}
+            </div>
             <h1 className="text-xl md:text-2xl font-black text-gray-900 leading-snug mt-1 mb-3">
               {produto.name}
             </h1>
@@ -231,6 +356,100 @@ export function PaginaProduto({
               </li>
             ))}
           </ul>
+        </div>
+
+        {/* Avaliações dos clientes */}
+        <div className="mt-8 border-t border-gray-100 pt-6">
+          <h2 className="text-lg font-black text-gray-900 mb-4">Avaliações dos clientes</h2>
+
+          {carregandoAvaliacoes ? (
+            <p className="text-[13px] text-gray-400 mb-5">Carregando avaliações...</p>
+          ) : avaliacoes.length === 0 ? (
+            <p className="text-[13px] text-gray-400 mb-5">Ainda não há avaliações para este produto.</p>
+          ) : (
+            <div className="space-y-3 mb-6">
+              {avaliacoes.map((a) => (
+                <div key={a.id} className="border border-gray-100 rounded-xl p-4">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-[13px] text-gray-800">{a.clienteNome}</span>
+                      <div className="flex">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} size={12} className={i < a.nota ? "fill-[#E8B84B] text-[#E8B84B]" : "fill-gray-200 text-gray-200"} />
+                        ))}
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-gray-400">{a.date}</span>
+                  </div>
+                  {a.comentario && <p className="text-[13px] text-gray-700 mt-2 whitespace-pre-line">{a.comentario}</p>}
+                  {a.video && (
+                    <video controls className="mt-3 rounded-lg max-h-[280px] bg-black w-full sm:w-auto" src={a.video} />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Formulário: só clientes que compraram este produto podem avaliar */}
+          {usuario && jaComprou && (
+            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5">
+              <h3 className="font-black text-gray-900 text-[14px] mb-3">
+                {minhaAvaliacao ? "Editar minha avaliação" : "Deixe sua avaliação"}
+              </h3>
+              <div className="flex items-center gap-1 mb-3">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button key={n} type="button" onClick={() => setNotaForm(n)} aria-label={`${n} estrela${n > 1 ? "s" : ""}`}>
+                    <Star size={22} className={n <= notaForm ? "fill-[#E8B84B] text-[#E8B84B]" : "fill-gray-200 text-gray-200"} />
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={comentarioForm}
+                onChange={(e) => setComentarioForm(e.target.value)}
+                placeholder="Conte o que achou do produto..."
+                rows={3}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] mb-3 bg-white focus:outline-none focus:ring-2 focus:ring-[#C8102E]/30"
+              />
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <label className="flex items-center gap-2 text-[12px] font-bold text-gray-600 bg-white border border-gray-200 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                  <Video size={15} />
+                  {videoForm ? "Trocar vídeo" : "Anexar vídeo (opcional)"}
+                  <input type="file" accept="video/*" className="hidden" onChange={aoEscolherVideo} />
+                </label>
+                {videoForm && (
+                  <span className="text-[12px] text-gray-500 flex items-center gap-2">
+                    {nomeVideoForm || "vídeo anexado"}
+                    <button
+                      type="button"
+                      onClick={() => { setVideoForm(null); setNomeVideoForm(""); }}
+                      className="text-red-500 font-bold hover:underline"
+                    >
+                      Remover
+                    </button>
+                  </span>
+                )}
+              </div>
+              {videoForm && <video controls className="rounded-lg max-h-[220px] bg-black mb-3 w-full sm:w-auto" src={videoForm} />}
+              <p className="text-[11px] text-gray-400 mb-3">
+                Vídeo de até {LIMITE_VIDEO_AVALIACAO_SEGUNDOS}s e {LIMITE_VIDEO_AVALIACAO_MB} MB.
+              </p>
+              {erroForm && <p className="text-[12px] text-red-500 font-semibold mb-3">{erroForm}</p>}
+              <button
+                onClick={aoEnviarAvaliacao}
+                disabled={enviando}
+                className="bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-60 text-white font-black py-2.5 px-5 rounded-xl text-[13px] transition-colors"
+              >
+                {enviando ? "Enviando..." : minhaAvaliacao ? "Atualizar avaliação" : "Enviar avaliação"}
+              </button>
+            </div>
+          )}
+
+          {usuario && !jaComprou && (
+            <p className="text-[12px] text-gray-400">Só clientes que compraram este produto podem avaliar.</p>
+          )}
+          {!usuario && (
+            <p className="text-[12px] text-gray-400">Entre na sua conta para avaliar este produto.</p>
+          )}
         </div>
       </div>
 

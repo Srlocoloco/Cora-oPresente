@@ -1,10 +1,11 @@
 // Tela TelaPerfil
 
 import { useState } from "react";
-import { X, Package, LogOut, Plus, Truck, Settings, ChevronLeft, Check, MapPin } from "lucide-react";
-import type { Usuario, Cupom, Cargo, Pedido, Cliente, Tela } from "../types";
-import { formatarMoeda } from "../utils";
+import { X, Package, LogOut, Plus, Truck, Settings, ChevronLeft, Check, MapPin, CreditCard, Trash2 } from "lucide-react";
+import type { Usuario, Cupom, Cargo, Pedido, Cliente, Tela, CartaoSalvo, DadosCartaoDigitado } from "../types";
+import { formatarMoeda, formatarNumeroCartao, formatarValidadeCartao, bandeiraCartao, formatarCpf } from "../utils";
 import { SeloStatus } from "../components/SeloStatus";
+import { URL_BACKEND_PIX, MP_PUBLIC_KEY } from "../constantes";
 
 // ─── Tela Perfil do Cliente ───────────────────────────────────────────────────
 
@@ -23,6 +24,9 @@ export function TelaPerfil({
   aoAbrirPainel,
   cargoUsuario,
   aoAtivarCodigo,
+  cartoesSalvos = [],
+  aoExcluirCartao,
+  aoAdicionarCartao,
 }: {
   usuario: Usuario;
   pedidos: Pedido[];
@@ -35,6 +39,9 @@ export function TelaPerfil({
   aoAbrirPainel: () => void;
   cargoUsuario?: Cargo;
   aoAtivarCodigo: (codigo: string) => string | null;
+  cartoesSalvos?: CartaoSalvo[];
+  aoExcluirCartao?: (id: number) => void;
+  aoAdicionarCartao?: (dados: DadosCartaoDigitado) => void;
 }) {
   // null = mostra todos os pedidos; senão filtra pelo status escolhido
   const [filtroStatus, setFiltroStatus] = useState<string | null>(null);
@@ -42,6 +49,80 @@ export function TelaPerfil({
   const [codigoAtivar, setCodigoAtivar] = useState("");
   const [erroAtivar, setErroAtivar] = useState("");
   const [ativando, setAtivando] = useState(false);
+
+  // ── Formulário para adicionar um cartão sem precisar comprar antes ────────
+  const [mostrarFormCartao, setMostrarFormCartao] = useState(false);
+  const [numeroCartao, setNumeroCartao] = useState("");
+  const [nomeCartao, setNomeCartao] = useState("");
+  const [validadeCartao, setValidadeCartao] = useState("");
+  const [cvvCartao, setCvvCartao] = useState("");
+  const [cpfCartao, setCpfCartao] = useState("");
+  const [erroCartao, setErroCartao] = useState("");
+  const [salvandoCartao, setSalvandoCartao] = useState(false);
+  const bandeiraDigitada = numeroCartao ? bandeiraCartao(numeroCartao) : "";
+
+  // Salva de verdade no cofre do Mercado Pago (precisa de CVV e CPF pra
+  // tokenizar o cartão — sem eles não tem como gerar um token de verdade).
+  const adicionarCartao = async () => {
+    const numeroLimpo = numeroCartao.replace(/\D/g, "");
+    const cpfLimpo = cpfCartao.replace(/\D/g, "");
+    if (numeroLimpo.length < 13) { setErroCartao("Número de cartão inválido."); return; }
+    if (!nomeCartao.trim()) { setErroCartao("Informe o nome impresso no cartão."); return; }
+    if (!/^\d{2}\/\d{2}$/.test(validadeCartao)) { setErroCartao("Informe a validade no formato MM/AA."); return; }
+    if (cvvCartao.replace(/\D/g, "").length < 3) { setErroCartao("Informe o CVV (3 ou 4 dígitos)."); return; }
+    if (cpfLimpo.length !== 11) { setErroCartao("Informe um CPF válido (o Mercado Pago exige esse dado)."); return; }
+
+    if (!window.MercadoPago) { setErroCartao("Não foi possível carregar o Mercado Pago. Verifique sua internet e tente de novo."); return; }
+
+    setErroCartao("");
+    setSalvandoCartao(true);
+    try {
+      const mp = new window.MercadoPago(MP_PUBLIC_KEY, { locale: "pt-BR" });
+      const [mes, anoCurto] = validadeCartao.split("/");
+      const token = await mp.createCardToken({
+        cardNumber: numeroLimpo,
+        cardholderName: nomeCartao.trim(),
+        cardExpirationMonth: mes,
+        cardExpirationYear: `20${anoCurto}`,
+        securityCode: cvvCartao,
+        identificationType: "CPF",
+        identificationNumber: cpfLimpo,
+      });
+      if (!token?.id) throw new Error("Não foi possível validar os dados do cartão.");
+
+      const resposta = await fetch(`${URL_BACKEND_PIX}/api/cartao/salvar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: usuario.email, token: token.id }),
+      });
+      const resultado = await resposta.json().catch(() => null);
+      if (!resposta.ok || !resultado?.mpCardId) {
+        setErroCartao(resultado?.erro || "Não foi possível salvar o cartão no Mercado Pago agora.");
+        setSalvandoCartao(false);
+        return;
+      }
+
+      aoAdicionarCartao?.({
+        numero: numeroLimpo,
+        nome: nomeCartao.trim(),
+        validade: validadeCartao,
+        cvv: "",
+        mpCardId: resultado.mpCardId,
+        mpCustomerId: resultado.mpCustomerId,
+        bandeira: resultado.bandeira,
+      });
+      setNumeroCartao("");
+      setNomeCartao("");
+      setValidadeCartao("");
+      setCvvCartao("");
+      setCpfCartao("");
+      setMostrarFormCartao(false);
+    } catch (e: any) {
+      setErroCartao(e?.message || "Não foi possível salvar o cartão com o Mercado Pago.");
+    } finally {
+      setSalvandoCartao(false);
+    }
+  };
 
   const ativarCodigo = () => {
     setAtivando(true);
@@ -200,6 +281,138 @@ export function TelaPerfil({
                       <MapPin size={11} className="flex-shrink-0 mt-0.5" />
                       <span className="line-clamp-1">{o.endereco}</span>
                     </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Cartões salvos: guardados só com dados seguros (sem número completo nem CVV) */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-black text-gray-900 text-[14px]">Meus Cartões</h3>
+            {aoAdicionarCartao && (
+              <button
+                onClick={() => { setMostrarFormCartao((v) => !v); setErroCartao(""); }}
+                className="text-[12px] font-bold text-[#C8102E] hover:underline flex items-center gap-1"
+              >
+                <Plus size={13} />
+                {mostrarFormCartao ? "Cancelar" : "Adicionar cartão"}
+              </button>
+            )}
+          </div>
+
+          {mostrarFormCartao && (
+            <div className="px-4 py-4 border-b border-gray-100 bg-gray-50/60 space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">Número do cartão</label>
+                <input
+                  value={numeroCartao}
+                  onChange={(e) => setNumeroCartao(formatarNumeroCartao(e.target.value))}
+                  placeholder="0000 0000 0000 0000"
+                  inputMode="numeric"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all font-mono bg-white"
+                />
+                {bandeiraDigitada && bandeiraDigitada !== "Cartão" && (
+                  <p className="text-[11px] text-gray-400 mt-1">{bandeiraDigitada}</p>
+                )}
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">Nome impresso no cartão</label>
+                <input
+                  value={nomeCartao}
+                  onChange={(e) => setNomeCartao(e.target.value)}
+                  placeholder="Como está no cartão"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all bg-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 block mb-1">Validade (MM/AA)</label>
+                  <input
+                    value={validadeCartao}
+                    onChange={(e) => setValidadeCartao(formatarValidadeCartao(e.target.value))}
+                    placeholder="MM/AA"
+                    inputMode="numeric"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 block mb-1">CVV</label>
+                  <input
+                    value={cvvCartao}
+                    onChange={(e) => setCvvCartao(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="•••"
+                    inputMode="numeric"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all bg-white"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">CPF do titular</label>
+                <input
+                  value={cpfCartao}
+                  onChange={(e) => setCpfCartao(formatarCpf(e.target.value))}
+                  placeholder="000.000.000-00"
+                  inputMode="numeric"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all bg-white"
+                />
+              </div>
+              <p className="text-[10.5px] text-gray-400 leading-relaxed">
+                O CVV e o CPF são exigidos pelo Mercado Pago só pra confirmar que o cartão é seu — vão
+                direto pro Mercado Pago e nunca são salvos aqui. Depois de salvo, guardamos só a
+                bandeira, o nome, os 4 últimos dígitos e a validade.
+              </p>
+              {erroCartao && (
+                <div className="bg-red-50 border border-red-200 text-red-600 text-[12px] font-medium px-3 py-2.5 rounded-lg">
+                  {erroCartao}
+                </div>
+              )}
+              <button
+                onClick={adicionarCartao}
+                disabled={salvandoCartao}
+                className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-60 disabled:cursor-not-allowed text-white font-black py-2.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
+              >
+                {salvandoCartao ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Check size={16} />
+                    Salvar cartão
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {cartoesSalvos.length === 0 ? (
+            <div className="px-4 py-8 text-center text-gray-400 text-[13px]">
+              Nenhum cartão salvo ainda. Adicione um acima, ou ele é salvo automaticamente na sua
+              próxima compra com Cartão.
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {cartoesSalvos.map((c) => (
+                <div key={c.id} className="px-4 py-3.5 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <CreditCard size={18} className="text-gray-400 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-bold text-gray-800">{c.bandeira} •••• {c.ultimosDigitos}</div>
+                      <div className="text-[11px] text-gray-400 truncate">{c.nomeCartao} · válido até {c.validade}</div>
+                    </div>
+                  </div>
+                  {aoExcluirCartao && (
+                    <button
+                      onClick={() => aoExcluirCartao(c.id)}
+                      className="p-1.5 text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
+                      title="Remover cartão"
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   )}
                 </div>
               ))}

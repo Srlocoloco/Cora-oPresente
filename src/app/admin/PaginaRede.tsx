@@ -69,8 +69,11 @@ export function PaginaRede({
   } else {
     // Equipe própria do MasterPlus (2% sobre cada vendedor) — os 3 que mais
     // venderam ganham a estrelinha de destaque
+    // Exclui quem já foi promovido a Master — essas pessoas aparecem no
+    // ramo "mastersPromovidos" abaixo, com o próprio card e a própria
+    // equipe; incluí-las aqui de novo criaria um card duplicado.
     const propriosOrdenados = recrutamentos
-      .filter((r) => r.recrutador === meuEmail && r.ativado)
+      .filter((r) => r.recrutador === meuEmail && r.ativado && cargos[r.email.toLowerCase()] !== "master")
       .map((r) => r.email.toLowerCase())
       .sort((a, b) => totalVendidoPor(b, pedidos) - totalVendidoPor(a, pedidos));
     const equipePropria = propriosOrdenados.map((email, i) =>

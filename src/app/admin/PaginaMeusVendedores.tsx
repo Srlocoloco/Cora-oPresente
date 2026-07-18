@@ -1,10 +1,10 @@
 // Pagina Admin: PaginaMeusVendedores
 
 import { useState } from "react";
-import { Users, Plus, Award } from "lucide-react";
+import { Users, Plus } from "lucide-react";
 import type { Recrutamento, Pedido } from "../types";
-import { BONUS_NIVEL_OURO, BONUS_NIVEL_DIAMANTE, BONUS_CONVITE_VENDEDOR } from "../constantes";
-import { bonusDeNivel, bonusDeConvite, totalVendidoPor, formatarMoeda } from "../utils";
+import { BONUS_NIVEL_OURO, BONUS_NIVEL_DIAMANTE } from "../constantes";
+import { bonusDeNivel, totalVendidoPor, formatarMoeda } from "../utils";
 
 // ─── Página Meus Vendedores (Master) ──────────────────────────────────────────
 
@@ -45,23 +45,15 @@ export function PaginaMeusVendedores({
   };
 
   const vendedoresAtivos = recrutamentos.filter((r) => r.ativado).length;
-  const bonusConvite = bonusDeConvite(recrutamentos);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
           <Users size={22} className="text-[#C8102E] flex-shrink-0" />
           <div>
             <div className="text-xl font-black text-gray-900">{vendedoresAtivos}</div>
             <div className="text-[11px] text-gray-400 font-semibold">Vendedores ativos</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-          <Award size={22} className="text-purple-600 flex-shrink-0" />
-          <div>
-            <div className="text-xl font-black text-gray-900">{formatarMoeda(bonusConvite)}</div>
-            <div className="text-[11px] text-gray-400 font-semibold">Bônus de convite ganho</div>
           </div>
         </div>
       </div>
@@ -70,9 +62,8 @@ export function PaginaMeusVendedores({
         <h3 className="font-black text-gray-900 text-[15px] mb-1">Cadastrar novo vendedor</h3>
         <p className="text-[12px] text-gray-400 mb-4">
           Informe os dados do vendedor. Um código será gerado — entregue-o à pessoa para que ela
-          ative a própria conta no perfil dela. Assim que ela ativar, você ganha um bônus de convite
-          de {formatarMoeda(BONUS_CONVITE_VENDEDOR)}. Ao atingir o nível Ouro ou Diamante em vendas
-          totais, o vendedor também ganha um bônus de {formatarMoeda(BONUS_NIVEL_OURO)} ou{" "}
+          ative a própria conta no perfil dela. Ao atingir o nível Ouro ou Diamante em vendas
+          totais, o vendedor ganha um bônus de {formatarMoeda(BONUS_NIVEL_OURO)} ou{" "}
           {formatarMoeda(BONUS_NIVEL_DIAMANTE)}, respectivamente.
         </p>
         <div className="flex gap-2 flex-col md:flex-row">

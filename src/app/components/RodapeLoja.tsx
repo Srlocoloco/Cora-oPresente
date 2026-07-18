@@ -20,7 +20,7 @@ export function RodapeLoja() {
           {[
             { title: "Institucional", links: ["Sobre Nós", "Trabalhe Conosco", "Imprensa", "Investidores"] },
             { title: "Atendimento", links: ["Central de Ajuda", "Trocas e Devoluções", "Rastrear Pedido", "Fale Conosco"] },
-            { title: "Pagamento", links: ["Cartão de Crédito", "Boleto Bancário", "PIX", "Parcelamento"] },
+            { title: "Pagamento", links: ["Cartão de Crédito", "PIX", "Parcelamento"] },
           ].map((col) => (
             <div key={col.title}>
               <h4 className="font-black text-[#E8B84B] mb-4 text-sm">{col.title}</h4>

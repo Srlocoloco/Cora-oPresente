@@ -97,6 +97,17 @@ if ($metodo === "GET") {
             "category" => $b["category"],
         ], $pdo->query("SELECT * FROM banners")->fetchAll());
 
+        $cartoesSalvos = array_map(fn($c) => [
+            "id" => (int) $c["id"],
+            "email" => $c["email"],
+            "bandeira" => $c["bandeira"],
+            "nomeCartao" => $c["nomeCartao"],
+            "ultimosDigitos" => $c["ultimosDigitos"],
+            "validade" => $c["validade"],
+            "mpCardId" => $c["mpCardId"],
+            "mpCustomerId" => $c["mpCustomerId"],
+        ], $pdo->query("SELECT * FROM cartoes_salvos")->fetchAll());
+
         $configLinha = $pdo->query("SELECT * FROM config WHERE id = 1")->fetch();
         $config = $configLinha ? [
             "chavePix" => $configLinha["chavePix"],
@@ -117,6 +128,7 @@ if ($metodo === "GET") {
             "cupons" => $cupons,
             "alertasEstoque" => $alertas,
             "banners" => $banners,
+            "cartoesSalvos" => $cartoesSalvos,
             "config" => $config,
         ]);
     } catch (Throwable $e) {
@@ -176,6 +188,11 @@ if ($metodo === "PUT" || $metodo === "POST") {
             case "banners":
                 regravar($pdo, "banners", [
                     "id", "image", "tag", "title", "subtitle", "cta", "category",
+                ], is_array($dados) ? $dados : []);
+                break;
+            case "cartoesSalvos":
+                regravar($pdo, "cartoes_salvos", [
+                    "id", "email", "bandeira", "nomeCartao", "ultimosDigitos", "validade", "mpCardId", "mpCustomerId",
                 ], is_array($dados) ? $dados : []);
                 break;
             case "config":

@@ -13,6 +13,7 @@ export function PaginaPedidosAdmin({
   pedidos,
   aoAtualizarStatus,
   comissaoPorPedido,
+  modo = "admin",
 }: {
   pedidos: Pedido[];
   aoAtualizarStatus: (id: string, status: string) => void;
@@ -21,9 +22,15 @@ export function PaginaPedidosAdmin({
   // varia linha a linha — 10% fixo nas próprias vendas, % da equipe nas dos
   // vendedores, e nada nas vendas sem código)
   comissaoPorPedido?: (o: Pedido) => number;
+  // Status do pedido e o botão de "ver detalhes" (endereço, forma de
+  // pagamento etc.) são operacionais — só o Admin cuida da entrega e por
+  // isso só ele vê essas colunas. Master/MasterPlus/Vendedor só acompanham
+  // o valor da própria comissão em cada venda.
+  modo?: "admin" | "master" | "masterplus" | "vendedor";
 }) {
   const [filtroStatus, setFiltroStatus] = useState("Todos");
   const [pedidoSelecionado, setPedidoSelecionado] = useState<Pedido | null>(null);
+  const ehAdmin = modo === "admin";
   const listaStatus = ["Todos", "Processando", "Em trânsito", "Entregue", "Cancelado"];
   const visiveis = filtroStatus === "Todos" ? pedidos : pedidos.filter((o) => o.status === filtroStatus);
   const contagens = listaStatus.reduce((acum, s) => {
@@ -31,6 +38,7 @@ export function PaginaPedidosAdmin({
     return acum;
   }, {} as Record<string, number>);
   const mostrarComissao = comissaoPorPedido !== undefined;
+  const totalColunas = 5 + (ehAdmin ? 1 : 0) + (mostrarComissao ? 1 : 0) + (ehAdmin ? 1 : 0);
 
   return (
     <div className="space-y-4">
@@ -61,15 +69,15 @@ export function PaginaPedidosAdmin({
                 <th className="text-left px-5 py-3.5 font-semibold hidden md:table-cell">Produto</th>
                 <th className="text-left px-5 py-3.5 font-semibold">Total</th>
                 <th className="text-left px-5 py-3.5 font-semibold hidden lg:table-cell">Data</th>
-                <th className="text-left px-5 py-3.5 font-semibold">Status</th>
+                {ehAdmin && <th className="text-left px-5 py-3.5 font-semibold">Status</th>}
                 {mostrarComissao && <th className="text-left px-5 py-3.5 font-semibold">Sua comissão</th>}
-                <th className="px-5 py-3.5" />
+                {ehAdmin && <th className="px-5 py-3.5" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {visiveis.length === 0 && (
                 <tr>
-                  <td colSpan={mostrarComissao ? 8 : 7} className="px-5 py-12 text-center text-gray-400 text-[13px]">
+                  <td colSpan={totalColunas} className="px-5 py-12 text-center text-gray-400 text-[13px]">
                     Nenhum pedido encontrado — as compras dos clientes aparecerão aqui.
                   </td>
                 </tr>
@@ -88,7 +96,9 @@ export function PaginaPedidosAdmin({
                   <td className="px-5 py-4 text-[12px] text-gray-500 hidden md:table-cell">{o.items}</td>
                   <td className="px-5 py-4 font-black text-gray-900">{formatarMoeda(o.total)}</td>
                   <td className="px-5 py-4 text-[12px] text-gray-400 hidden lg:table-cell">{o.date}</td>
-                  <td className="px-5 py-4"><SeloStatus status={o.status} /></td>
+                  {ehAdmin && (
+                    <td className="px-5 py-4"><SeloStatus status={o.status} /></td>
+                  )}
                   {mostrarComissao && (
                     <td className="px-5 py-4 font-black text-emerald-600">
                       {o.status === "Cancelado" || !comissaoPorPedido
@@ -96,15 +106,17 @@ export function PaginaPedidosAdmin({
                         : `+${formatarMoeda(comissaoPorPedido(o))}`}
                     </td>
                   )}
-                  <td className="px-5 py-4">
-                    <button
-                      onClick={() => setPedidoSelecionado(o)}
-                      className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-700 transition-colors"
-                      title="Ver detalhes da compra"
-                    >
-                      <Eye size={14} />
-                    </button>
-                  </td>
+                  {ehAdmin && (
+                    <td className="px-5 py-4">
+                      <button
+                        onClick={() => setPedidoSelecionado(o)}
+                        className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-700 transition-colors"
+                        title="Ver detalhes da compra"
+                      >
+                        <Eye size={14} />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

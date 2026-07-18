@@ -147,11 +147,62 @@ function criar_tabelas(PDO $pdo): void {
         comissaoRecrutador DOUBLE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+    // Cartões salvos dos clientes. POR SEGURANÇA (padrão PCI): nunca guarda o
+    // número completo do cartão nem o CVV — só o suficiente para o cliente
+    // reconhecer o cartão numa lista (bandeira, nome, últimos 4 dígitos e
+    // validade). mpCardId/mpCustomerId ligam esse registro ao cartão de
+    // verdade guardado no cofre do Mercado Pago (só existem quando o cliente
+    // já tokenizou esse cartão pelo menos uma vez).
+    $pdo->exec("CREATE TABLE IF NOT EXISTS cartoes_salvos (
+        id BIGINT PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        bandeira VARCHAR(32),
+        nomeCartao VARCHAR(255),
+        ultimosDigitos VARCHAR(4),
+        validade VARCHAR(7),
+        mpCardId VARCHAR(64) NULL,
+        mpCustomerId VARCHAR(64) NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Migração: se este banco já tinha "cartoes_salvos" de antes (ex.: criado
+    // pelo backend Node, que roda no mesmo MySQL local), a tabela existe mas
+    // sem as colunas do cofre — adiciona só o que faltar.
+    foreach (["mpCardId" => "VARCHAR(64) NULL", "mpCustomerId" => "VARCHAR(64) NULL"] as $coluna => $tipo) {
+        $stmt = $pdo->prepare(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cartoes_salvos' AND COLUMN_NAME = ?"
+        );
+        $stmt->execute([$coluna]);
+        if (!$stmt->fetch()) {
+            $pdo->exec("ALTER TABLE cartoes_salvos ADD COLUMN `$coluna` $tipo");
+        }
+    }
+
     // PIX pagos avisados pelo webhook do Sicredi
     $pdo->exec("CREATE TABLE IF NOT EXISTS pix_pagos (
         txid VARCHAR(40) PRIMARY KEY,
         valor VARCHAR(20) NULL,
         recebido_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Pagamentos com cartão via Mercado Pago (criados na hora e/ou avisados
+    // pelo webhook). pedido_id guarda o "external_reference" enviado na
+    // criação do pagamento, ligando de volta com a tabela pedidos.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS mp_pagamentos (
+        payment_id VARCHAR(32) PRIMARY KEY,
+        pedido_id VARCHAR(32) NULL,
+        status VARCHAR(32) NULL,
+        valor DOUBLE NULL,
+        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Cofre de cartões: liga o e-mail do cliente ao "customer" criado no
+    // Mercado Pago (1 customer por cliente). É nele que os cartões salvos
+    // ficam de verdade guardados (nós só guardamos o card_id, nunca o cartão
+    // em si — quem guarda o cartão é o Mercado Pago).
+    $pdo->exec("CREATE TABLE IF NOT EXISTS mp_clientes (
+        email VARCHAR(255) PRIMARY KEY,
+        mp_customer_id VARCHAR(64) NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
 

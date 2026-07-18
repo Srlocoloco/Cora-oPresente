@@ -8,10 +8,9 @@ import {
   COMISSAO_MASTERPLUS_EQUIPE,
   COMISSAO_MASTERPLUS_OVERRIDE,
   COMISSAO_MASTER_PROMOVIDO_EQUIPE,
-  BONUS_CONVITE_VENDEDOR,
   NOMES_MESES,
 } from "../constantes";
-import { comissaoFracaoPorNivel, bonusDeNivel, bonusDeConvite, totalVendidoPor, formatarMoeda } from "../utils";
+import { comissaoFracaoPorNivel, bonusDeNivel, totalVendidoPor, formatarMoeda } from "../utils";
 
 // ─── Página Financeiro (Admin) ────────────────────────────────────────────────
 
@@ -58,8 +57,8 @@ export function PaginaFinanceiroAdmin({
   // (código pessoal) + % sobre as vendas da própria equipe de vendedores
   // (padrão configurável, ou 1% se este Master foi promovido por um
   // MasterPlus — nesse caso 1% vai de repasse ao MasterPlus), mais bônus de
-  // nível (vendas próprias) e bônus de convite. Pode haver vários Masters,
-  // cada um com a própria equipe isolada.
+  // nível (vendas próprias). Pode haver vários Masters, cada um com a
+  // própria equipe isolada.
   const emailsMasters = Object.keys(cargos).filter((e) => cargos[e] === "master");
   const dadosMasters = emailsMasters.map((email) => {
     const nome = clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email;
@@ -76,7 +75,6 @@ export function PaginaFinanceiroAdmin({
     const comissaoPropria = totalProprio * COMISSAO_MASTER_PROPRIA;
     const comissaoEquipe = totalEquipe * suaComissaoEquipePct;
     const bonusNivel = bonusDeNivel(totalProprio);
-    const bonusConvite = bonusDeConvite(recrutamentosDoMaster);
     return {
       email,
       nome,
@@ -88,8 +86,7 @@ export function PaginaFinanceiroAdmin({
       suaComissaoEquipePct,
       promovidoPorMasterPlus,
       bonusNivel,
-      bonusConvite,
-      total: comissaoPropria + comissaoEquipe + bonusNivel + bonusConvite,
+      total: comissaoPropria + comissaoEquipe + bonusNivel,
     };
   });
   const totalMasters = dadosMasters.reduce((acum, m) => acum + m.total, 0);
@@ -231,8 +228,7 @@ export function PaginaFinanceiroAdmin({
             Cada Master ganha 10% fixo (nível Diamante) sobre as vendas com o próprio código,{" "}
             {(comissaoEquipePct * 100).toFixed(0)}% sobre as vendas da própria equipe de vendedores
             (ou {(COMISSAO_MASTER_PROMOVIDO_EQUIPE * 100).toFixed(0)}% se foi promovido por um
-            MasterPlus), bônus de nível sobre as próprias vendas, e {formatarMoeda(BONUS_CONVITE_VENDEDOR)}{" "}
-            por vendedor convidado que já ativou a conta.
+            MasterPlus), e bônus de nível sobre as próprias vendas.
           </p>
         </div>
         {dadosMasters.length === 0 ? (
@@ -267,10 +263,6 @@ export function PaginaFinanceiroAdmin({
                   <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
                     <span className="text-[12px] text-gray-600">Bônus de nível (vendas próprias)</span>
                     <span className="font-black text-purple-600 text-[13px]">{formatarMoeda(m.bonusNivel)}</span>
-                  </div>
-                  <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                    <span className="text-[12px] text-gray-600">Bônus de convite ({formatarMoeda(BONUS_CONVITE_VENDEDOR)} × {m.vendedoresAtivos})</span>
-                    <span className="font-black text-purple-600 text-[13px]">{formatarMoeda(m.bonusConvite)}</span>
                   </div>
                 </div>
               </div>

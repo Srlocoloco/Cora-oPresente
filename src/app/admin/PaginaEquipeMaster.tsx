@@ -25,8 +25,8 @@ export function PaginaEquipeMaster({
   const [emailCargo, setEmailCargo] = useState("");
   const [erroCargo, setErroCargo] = useState("");
 
-  // Só dá cargo a quem já é cliente cadastrado no site E entrou com o login
-  // real do Google (e-mail verificado pela própria Google, não digitado à mão)
+  // Só dá cargo a quem já é cliente cadastrado no site (login do Google ou
+  // cadastro manual)
   const darCargoPorEmail = () => {
     const chave = emailCargo.trim().toLowerCase();
     if (!chave) return;
@@ -37,10 +37,6 @@ export function PaginaEquipeMaster({
     const cliente = clientes.find((c) => c.email.toLowerCase() === chave);
     if (!cliente) {
       setErroCargo("Este e-mail ainda não tem cadastro na loja.");
-      return;
-    }
-    if (!cliente.viaGoogle) {
-      setErroCargo("Este e-mail precisa ter entrado com o login do Google para ser verificado.");
       return;
     }
     setErroCargo("");
@@ -85,7 +81,7 @@ export function PaginaEquipeMaster({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <h3 className="font-black text-gray-900 text-[15px] mb-1">Dar cargo por e-mail</h3>
         <p className="text-[12px] text-gray-400 mb-3">
-          Dá o cargo de Vendedor a uma conta já cadastrada na loja com login do Google (e-mail verificado).
+          Dá o cargo de Vendedor a uma conta já cadastrada na loja (login do Google ou cadastro manual).
         </p>
         <div className="flex gap-2 flex-col md:flex-row">
           <input

@@ -3,19 +3,46 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ShoppingBag, Users, TrendingUp, Tag } from "lucide-react";
 import type { Produto, Pedido, Cliente } from "../types";
-import { NOMES_MESES, CORES_CATEGORIA } from "../constantes";
+import { NOMES_MESES, CORES_CATEGORIA, EMAIL_ADMIN } from "../constantes";
 import { categoriaExibida, formatarMoeda } from "../utils";
 import { SeloStatus } from "../components/SeloStatus";
 
 // ─── Dashboard Page ───────────────────────────────────────────────────────────
 
-export function PaginaDashboard({ pedidos, clientes, titulo = "Desempenho da Empresa", aoVerTodosPedidos }: { pedidos: Pedido[]; clientes: Cliente[]; titulo?: string; aoVerTodosPedidos: () => void }) {
+export function PaginaDashboard({
+  pedidos,
+  clientes,
+  titulo = "Desempenho da Empresa",
+  aoVerTodosPedidos,
+  modo = "admin",
+}: {
+  pedidos: Pedido[];
+  clientes: Cliente[];
+  titulo?: string;
+  aoVerTodosPedidos: () => void;
+  // O ranking "Quem mais vende" mistura Masters, MasterPlus e Vendedores de
+  // toda a loja — faz sentido para quem vende (ver como está se saindo vs.
+  // os colegas), mas não para o Admin, que não participa desse ranking e só
+  // veria uma lista de terceiros sem contexto de "vs. você".
+  modo?: "admin" | "master" | "masterplus" | "vendedor";
+}) {
   const agora = new Date();
   const mesAtual = NOMES_MESES[agora.getMonth()];
   const pedidosValidos = pedidos.filter((o) => o.status !== "Cancelado");
   const pedidosDoMes = pedidosValidos.filter((o) => o.month === mesAtual);
   const vendasDoMes = pedidosDoMes.reduce((acum, o) => acum + o.total, 0);
   const ticketMedio = pedidosDoMes.length > 0 ? vendasDoMes / pedidosDoMes.length : 0;
+
+  // "Clientes Novos" reseta toda semana: conta só quem se cadastrou entre a
+  // segunda-feira desta semana e hoje (não é um contador que precisa ser
+  // zerado manualmente — ele já recalcula sozinho a cada carregamento).
+  const inicioSemana = new Date(agora);
+  const diaDaSemana = inicioSemana.getDay(); // 0 = domingo, 1 = segunda...
+  inicioSemana.setDate(inicioSemana.getDate() - (diaDaSemana === 0 ? 6 : diaDaSemana - 1));
+  inicioSemana.setHours(0, 0, 0, 0);
+  const clientesNovosSemana = clientes.filter(
+    (c) => c.criadoEm && new Date(c.criadoEm + "T12:00:00") >= inicioSemana
+  ).length;
 
   // Gráfico acompanha as vendas reais, mês a mês
   const dadosVendas = NOMES_MESES.slice(0, agora.getMonth() + 1).map((m) => ({
@@ -39,10 +66,53 @@ export function PaginaDashboard({ pedidos, clientes, titulo = "Desempenho da Emp
     }))
     .sort((a, b) => b.value - a.value);
 
+  // Formata o eixo Y do gráfico: valores abaixo de R$1.000 aparecem em reais
+  // (R$50, R$100...) em vez de sempre "R$0k" — só passa para o formato "k"
+  // quando o faturamento realmente passa de mil reais.
+  const formatarEixoY = (v: number) => {
+    if (v >= 1000) {
+      const k = v / 1000;
+      return `R$${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}k`;
+    }
+    return `R$${v.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+  };
+
+  // Destaques rápidos sobre o próprio gráfico: melhor mês, total do período e
+  // média mensal (só considera os meses já decorridos, mesma base do gráfico)
+  const totalPeriodo = dadosVendas.reduce((acum, d) => acum + d.vendas, 0);
+  const melhorMes = dadosVendas.reduce(
+    (melhor, d) => (d.vendas > melhor.vendas ? d : melhor),
+    dadosVendas[0] ?? { month: "-", vendas: 0 }
+  );
+  const mediaMensal = dadosVendas.length > 0 ? totalPeriodo / dadosVendas.length : 0;
+  const mesAnteriorDados = dadosVendas[dadosVendas.length - 2];
+  const crescimentoMensal =
+    mesAnteriorDados && mesAnteriorDados.vendas > 0
+      ? ((vendasDoMes - mesAnteriorDados.vendas) / mesAnteriorDados.vendas) * 100
+      : null;
+
+  // Ranking de quem mais vende (Masters, MasterPlus e Vendedores, pelo total
+  // vendido com o próprio código) — ignora o e-mail do Admin, que é só o
+  // "dono" padrão das vendas sem código de venda informado.
+  const vendasPorPessoa: Record<string, number> = {};
+  pedidosValidos.forEach((o) => {
+    const chave = o.vendedor?.toLowerCase();
+    if (!chave || chave === EMAIL_ADMIN) return;
+    vendasPorPessoa[chave] = (vendasPorPessoa[chave] || 0) + o.total;
+  });
+  const topVendedores = Object.entries(vendasPorPessoa)
+    .map(([email, total]) => ({
+      email,
+      nome: clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email,
+      total,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5);
+
   const metricas = [
     { label: `Faturamento (${mesAtual})`, value: formatarMoeda(vendasDoMes), icon: <TrendingUp size={18} />, bg: "bg-red-50", color: "text-[#C8102E]" },
     { label: `Pedidos (${mesAtual})`, value: String(pedidosDoMes.length), icon: <ShoppingBag size={18} />, bg: "bg-emerald-50", color: "text-emerald-600" },
-    { label: "Clientes Novos", value: String(clientes.length), icon: <Users size={18} />, bg: "bg-purple-50", color: "text-purple-600" },
+    { label: "Clientes Novos (semana)", value: String(clientesNovosSemana), icon: <Users size={18} />, bg: "bg-purple-50", color: "text-purple-600" },
     { label: "Ticket Médio", value: formatarMoeda(ticketMedio), icon: <Tag size={18} />, bg: "bg-orange-50", color: "text-orange-500" },
   ];
 
@@ -70,24 +140,86 @@ export function PaginaDashboard({ pedidos, clientes, titulo = "Desempenho da Emp
               <span className="flex items-center gap-1.5"><span className="w-3 h-1 bg-[#C8102E] rounded inline-block" />Vendas</span>
             </div>
           </div>
+
+          {/* Destaques rápidos: melhor mês, total do período, média mensal e
+              variação em relação ao mês anterior */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-4">
+            <div className="bg-gray-50 rounded-xl px-3 py-2.5">
+              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Melhor mês</div>
+              <div className="text-[13px] font-black text-gray-900 mt-0.5">{melhorMes.month} · {formatarMoeda(melhorMes.vendas)}</div>
+            </div>
+            <div className="bg-gray-50 rounded-xl px-3 py-2.5">
+              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Total no período</div>
+              <div className="text-[13px] font-black text-gray-900 mt-0.5">{formatarMoeda(totalPeriodo)}</div>
+            </div>
+            <div className="bg-gray-50 rounded-xl px-3 py-2.5">
+              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Média mensal</div>
+              <div className="text-[13px] font-black text-gray-900 mt-0.5">{formatarMoeda(mediaMensal)}</div>
+            </div>
+            <div className="bg-gray-50 rounded-xl px-3 py-2.5">
+              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Vs. mês anterior</div>
+              <div className={`text-[13px] font-black mt-0.5 ${crescimentoMensal === null ? "text-gray-400" : crescimentoMensal >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                {crescimentoMensal === null ? "—" : `${crescimentoMensal >= 0 ? "+" : ""}${crescimentoMensal.toFixed(0)}%`}
+              </div>
+            </div>
+          </div>
+
           <ResponsiveContainer width="100%" height={210}>
-            <AreaChart data={dadosVendas} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+            <AreaChart data={dadosVendas} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="gradVendas" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#C8102E" stopOpacity={0.15} />
+                  <stop offset="5%" stopColor="#C8102E" stopOpacity={0.2} />
                   <stop offset="95%" stopColor="#C8102E" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" />
               <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+              <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} tickFormatter={formatarEixoY} />
               <Tooltip
                 formatter={(v: any) => [`R$ ${Number(v).toLocaleString("pt-BR")}`, ""]}
                 contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)", fontSize: 12 }}
               />
-              <Area type="monotone" dataKey="vendas" stroke="#C8102E" strokeWidth={2.5} fill="url(#gradVendas)" name="Vendas" />
+              <Area
+                type="natural"
+                dataKey="vendas"
+                stroke="#C8102E"
+                strokeWidth={2.5}
+                fill="url(#gradVendas)"
+                name="Vendas"
+                dot={{ r: 4, fill: "#fff", stroke: "#C8102E", strokeWidth: 2 }}
+                activeDot={{ r: 6, fill: "#C8102E", stroke: "#fff", strokeWidth: 2 }}
+              />
             </AreaChart>
           </ResponsiveContainer>
+
+          {/* Quem mais vende: ranking pelo total vendido com o próprio código
+              (não aparece para o Admin — ele não participa do ranking) */}
+          {modo !== "admin" && topVendedores.length > 0 && (
+            <div className="mt-5 pt-4 border-t border-gray-100">
+              <h4 className="text-[12px] font-black text-gray-700 mb-3">🏆 Quem mais vende</h4>
+              <div className="space-y-2">
+                {topVendedores.map((v, i) => (
+                  <div key={v.email} className="flex items-center gap-3">
+                    <span
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black flex-shrink-0 ${
+                        i === 0
+                          ? "bg-amber-100 text-amber-700"
+                          : i === 1
+                          ? "bg-gray-200 text-gray-600"
+                          : i === 2
+                          ? "bg-orange-100 text-orange-700"
+                          : "bg-gray-50 text-gray-400"
+                      }`}
+                    >
+                      {i + 1}
+                    </span>
+                    <span className="text-[13px] font-bold text-gray-800 truncate flex-1">{v.nome}</span>
+                    <span className="text-[13px] font-black text-emerald-600 flex-shrink-0">{formatarMoeda(v.total)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">

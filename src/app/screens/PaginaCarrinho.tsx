@@ -1,7 +1,7 @@
 // Tela PaginaCarrinho
 
 import { useState } from "react";
-import { ShoppingCart, X, Plus, Truck, Shield, CreditCard, ChevronLeft, ChevronRight, Zap, MapPin, Lock, FileText } from "lucide-react";
+import { ShoppingCart, X, Plus, Truck, Shield, CreditCard, ChevronLeft, ChevronRight, Zap, MapPin, Lock } from "lucide-react";
 import type { ItemCarrinho, Usuario, ConfigLoja, Cupom, Pedido, DadosPagamento } from "../types";
 import { formatarMoeda, precoParcela } from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
@@ -39,9 +39,14 @@ export function PaginaCarrinho({
   aoMudarCupom: (v: string) => void;
   cupomAplicado: Cupom | null;
 }) {
-  const [formaPagamento, setFormaPagamento] = useState<"cartao" | "boleto" | "pix">("cartao");
+  const [formaPagamento, setFormaPagamento] = useState<"cartao" | "pix">("cartao");
   const [installments, setInstallments] = useState(12);
   const subtotal = items.reduce((acum, i) => acum + i.price * i.qty, 0);
+  // Se TODOS os itens do carrinho têm o selo "Frete Grátis", o frete some de
+  // verdade — não só na etiqueta do produto. Com itens misturados (alguns
+  // com frete grátis, outros não), continua valendo a regra normal (CEP ou
+  // valor mínimo do carrinho).
+  const todosFreteGratis = items.length > 0 && items.every((i) => i.freeShipping);
 
   // ── Cálculo de frete: consulta o CEP na base dos Correios (via ViaCEP) ──
   // A loja entrega somente dentro do Paraná (UF = PR).
@@ -88,7 +93,7 @@ export function PaginaCarrinho({
         setFreteInfo({
           cidade: `${dados.localidade} - PR`,
           prazo: capital ? "1 a 2 dias úteis" : "2 a 4 dias úteis",
-          valor: subtotal >= config.freteGratisAcima ? 0 : capital ? config.freteCapital : config.freteInterior,
+          valor: todosFreteGratis || subtotal >= config.freteGratisAcima ? 0 : capital ? config.freteCapital : config.freteInterior,
           // Rua e bairro vêm da própria consulta do CEP (ViaCEP)
           logradouro: dados.logradouro || "",
           bairro: dados.bairro || "",
@@ -103,7 +108,7 @@ export function PaginaCarrinho({
   };
 
   // Frete: usa o valor calculado pelo CEP; sem CEP informado, regra padrão da loja
-  const shipping = freteInfo ? freteInfo.valor : subtotal >= config.freteGratisAcima ? 0 : config.fretePadrao;
+  const shipping = todosFreteGratis ? 0 : freteInfo ? freteInfo.valor : subtotal >= config.freteGratisAcima ? 0 : config.fretePadrao;
   // Desconto PIX definido produto a produto (soma item a item do carrinho)
   const pixDiscount =
     formaPagamento === "pix"
@@ -292,10 +297,10 @@ export function PaginaCarrinho({
                 {/* Payment method */}
                 <div className="p-5 border-b border-gray-100">
                   <p className="text-[12px] font-bold text-gray-500 mb-3 uppercase tracking-wide">Forma de Pagamento</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(["cartao", "boleto", "pix"] as const).map((m) => {
-                      const labels = { cartao: "Cartão", boleto: "Boleto", pix: "PIX" };
-                      const icons = { cartao: <CreditCard size={16} />, boleto: <FileText size={16} />, pix: <Zap size={16} /> };
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["cartao", "pix"] as const).map((m) => {
+                      const labels = { cartao: "Cartão", pix: "PIX" };
+                      const icons = { cartao: <CreditCard size={16} />, pix: <Zap size={16} /> };
                       return (
                         <button
                           key={m}
@@ -340,11 +345,6 @@ export function PaginaCarrinho({
                     </div>
                   )}
 
-                  {formaPagamento === "boleto" && (
-                    <div className="mt-3 bg-gray-50 border border-gray-200 rounded-xl p-3">
-                      <span className="text-gray-600 text-[12px] font-medium">Vencimento em 3 dias úteis após a emissão</span>
-                    </div>
-                  )}
                 </div>
 
                 {/* Cupom de desconto */}
