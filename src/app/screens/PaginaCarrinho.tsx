@@ -1,6 +1,6 @@
 // Tela PaginaCarrinho
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ShoppingCart, X, Plus, Truck, Shield, CreditCard, ChevronLeft, ChevronRight, Zap, MapPin, Lock } from "lucide-react";
 import type { ItemCarrinho, Usuario, ConfigLoja, Cupom, Pedido, DadosPagamento } from "../types";
 import { formatarMoeda, precoParcela } from "../utils";
@@ -24,10 +24,11 @@ export function PaginaCarrinho({
   cupom,
   aoMudarCupom,
   cupomAplicado,
+  cupomJaUsado,
 }: {
   items: ItemCarrinho[];
-  onRemove: (id: number) => void;
-  aoMudarQtd: (id: number, variacao: number) => void;
+  onRemove: (id: number, corEscolhida?: string) => void;
+  aoMudarQtd: (id: number, variacao: number, corEscolhida?: string) => void;
   aoVoltar: () => void;
   aoFinalizarCompra: (dados: DadosPagamento) => void;
   usuario: Usuario | null;
@@ -38,9 +39,22 @@ export function PaginaCarrinho({
   cupom: string;
   aoMudarCupom: (v: string) => void;
   cupomAplicado: Cupom | null;
+  // true quando o código digitado é de um cupom válido, mas este cliente já usou
+  cupomJaUsado?: boolean;
 }) {
   const [formaPagamento, setFormaPagamento] = useState<"cartao" | "pix">("cartao");
   const [installments, setInstallments] = useState(12);
+  // Só oferece as opções de parcelamento cadastradas nos produtos do
+  // carrinho — com produtos diferentes, usa a mais restritiva (o menor
+  // número de parcelas definido entre eles)
+  const maxParcelasCarrinho = items.length > 0 ? Math.min(...items.map((i) => i.installments)) : 12;
+  const opcoesParcelamento = [1, 2, 3, 6, 10, 12].filter((n) => n <= maxParcelasCarrinho);
+  useEffect(() => {
+    if (installments > maxParcelasCarrinho) {
+      setInstallments(opcoesParcelamento[opcoesParcelamento.length - 1] ?? 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxParcelasCarrinho]);
   const subtotal = items.reduce((acum, i) => acum + i.price * i.qty, 0);
   // Se TODOS os itens do carrinho têm o selo "Frete Grátis", o frete some de
   // verdade — não só na etiqueta do produto. Com itens misturados (alguns
@@ -164,7 +178,7 @@ export function PaginaCarrinho({
               </h2>
 
               {items.map((item) => (
-                <div key={item.id} className="bg-white rounded-2xl p-4 flex gap-4 border border-gray-100 shadow-sm">
+                <div key={`${item.id}-${item.corEscolhida ?? ""}`} className="bg-white rounded-2xl p-4 flex gap-4 border border-gray-100 shadow-sm">
                   <div className="w-24 h-24 bg-gray-50 rounded-xl flex items-center justify-center p-2 flex-shrink-0">
                     <ImagemProduto src={item.image} alt={item.name} className="w-full h-full object-contain" />
                   </div>
@@ -173,8 +187,11 @@ export function PaginaCarrinho({
                       <div>
                         <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">{item.brand}</p>
                         <p className="text-sm text-gray-800 font-semibold leading-snug mt-0.5 line-clamp-2">{item.name}</p>
+                        {item.corEscolhida && (
+                          <p className="text-[11px] text-gray-500 font-semibold mt-0.5">Cor: {item.corEscolhida}</p>
+                        )}
                       </div>
-                      <button onClick={() => onRemove(item.id)} className="text-gray-300 hover:text-red-500 p-1 transition-colors flex-shrink-0">
+                      <button onClick={() => onRemove(item.id, item.corEscolhida)} className="text-gray-300 hover:text-red-500 p-1 transition-colors flex-shrink-0">
                         <X size={16} />
                       </button>
                     </div>
@@ -184,10 +201,21 @@ export function PaginaCarrinho({
                       </div>
                     )}
                     <div className="flex items-center justify-between mt-3 flex-wrap gap-3">
-                      <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1">
-                        <button onClick={() => aoMudarQtd(item.id, -1)} className="w-7 h-7 bg-white rounded-lg flex items-center justify-center text-sm font-black shadow-sm hover:shadow transition-shadow">-</button>
-                        <span className="w-7 text-center text-sm font-black">{item.qty}</span>
-                        <button onClick={() => aoMudarQtd(item.id, 1)} className="w-7 h-7 bg-white rounded-lg flex items-center justify-center text-sm font-black shadow-sm hover:shadow transition-shadow">+</button>
+                      <div>
+                        <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1">
+                          <button onClick={() => aoMudarQtd(item.id, -1, item.corEscolhida)} className="w-7 h-7 bg-white rounded-lg flex items-center justify-center text-sm font-black shadow-sm hover:shadow transition-shadow">-</button>
+                          <span className="w-7 text-center text-sm font-black">{item.qty}</span>
+                          <button
+                            onClick={() => aoMudarQtd(item.id, 1, item.corEscolhida)}
+                            disabled={item.qty >= item.stock}
+                            className="w-7 h-7 bg-white rounded-lg flex items-center justify-center text-sm font-black shadow-sm hover:shadow transition-shadow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-sm"
+                          >
+                            +
+                          </button>
+                        </div>
+                        {item.qty >= item.stock && (
+                          <p className="text-[10px] text-amber-600 font-semibold mt-1">Estoque máximo atingido</p>
+                        )}
                       </div>
                       <div className="text-right">
                         <div className="text-[11px] text-gray-400">
@@ -326,9 +354,9 @@ export function PaginaCarrinho({
                         onChange={(e) => setInstallments(Number(e.target.value))}
                         className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#C8102E] transition-colors"
                       >
-                        {[1, 2, 3, 6, 10, 12].map((n) => (
+                        {opcoesParcelamento.map((n) => (
                           <option key={n} value={n}>
-                            {n}x de {precoParcela(subtotal, n)} {n <= 12 ? "sem juros" : ""}
+                            {n}x de {precoParcela(subtotal, n)} sem juros
                           </option>
                         ))}
                       </select>
@@ -361,7 +389,12 @@ export function PaginaCarrinho({
                       Cupom {cupomAplicado.codigo} aplicado: {cupomAplicado.percentual}% de desconto
                     </div>
                   )}
-                  {cupom.trim().length > 0 && !cupomAplicado && (
+                  {cupom.trim().length > 0 && !cupomAplicado && cupomJaUsado && (
+                    <div className="mt-2 bg-amber-50 border border-amber-200 text-amber-700 text-[12px] font-medium px-3 py-2 rounded-lg">
+                      Você já usou este cupom antes — cada cupom vale só uma vez por cliente.
+                    </div>
+                  )}
+                  {cupom.trim().length > 0 && !cupomAplicado && !cupomJaUsado && (
                     <div className="mt-2 bg-amber-50 border border-amber-200 text-amber-700 text-[12px] font-medium px-3 py-2 rounded-lg">
                       Cupom inválido ou expirado.
                     </div>
@@ -419,6 +452,16 @@ export function PaginaCarrinho({
                       }
                       if (!numeroEndereco.trim()) {
                         setErroCompra("Informe o número do endereço de entrega.");
+                        return;
+                      }
+                      // Código de venda é obrigatório: toda compra precisa ser
+                      // creditada a um vendedor ou ao Master
+                      if (!codigoVenda.trim()) {
+                        setErroCompra("Informe o código de venda de quem indicou a compra para continuar.");
+                        return;
+                      }
+                      if (!nomeDonoCodigo) {
+                        setErroCompra("Código de venda inválido — confira o código e tente de novo.");
                         return;
                       }
                       setErroCompra("");

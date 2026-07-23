@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Search, X, Plus, Edit2, Trash2, Upload } from "lucide-react";
-import type { Produto } from "../types";
+import type { Produto, CorProduto } from "../types";
 import { OPCOES_SELO, CATEGORIAS, CORES_SELO } from "../constantes";
 import { formatarMoeda, pctDesconto } from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
@@ -170,9 +170,12 @@ export function FormularioProduto({
   const [stock, setStock] = useState(inicial ? String(inicial.stock) : "");
   const [installments, setInstallments] = useState(inicial?.installments || 12);
   const [image, setImage] = useState(inicial?.image || "");
+  // Imagens extras (além da capa) para a galeria da página do produto
+  const [images, setImages] = useState<string[]>(inicial?.images || []);
+  // Cores/modelos do produto, para o cliente escolher qual quer comprar
+  const [colors, setColors] = useState<CorProduto[]>(inicial?.colors || []);
   const [badge, setBadge] = useState(inicial?.badge || "");
   const [freeShipping, setFreeShipping] = useState(inicial?.freeShipping ?? true);
-  const [description, setDescription] = useState(inicial?.description || "");
   // % de desconto no PIX deste produto (vazio = sem desconto)
   const [pixDesconto, setPixDesconto] = useState(inicial?.pixDesconto ? String(inicial.pixDesconto) : "");
   const [erro, setErro] = useState("");
@@ -202,11 +205,12 @@ export function FormularioProduto({
       rating: inicial?.rating ?? 0,
       reviews: inicial?.reviews ?? 0,
       image: image.trim(),
+      images: images.length ? images : undefined,
+      colors: colors.length ? colors.filter((c) => c.nome.trim()) : undefined,
       category: cat,
       badge: badge || undefined,
       freeShipping,
       stock: st,
-      description: description.trim() || undefined,
       pixDesconto: pix > 0 ? pix : undefined,
       owner: inicial?.owner,
     });
@@ -407,13 +411,163 @@ export function FormularioProduto({
           </div>
 
           <div>
-            <label className={estiloRotulo}>Características (uma por linha)</label>
-            <textarea
-              className={`${estiloInput} min-h-[80px] resize-y`}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={"512GB de armazenamento interno\n24GB de memória RAM\nCâmera 50MP"}
-            />
+            <label className={estiloRotulo}>Mais fotos do produto (galeria)</label>
+            <p className="text-[11px] text-gray-400 mb-2">
+              Fotos extras mostradas na página do produto, além da imagem principal. Útil para mostrar o relógio em ângulos diferentes.
+            </p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {images.map((img, i) => (
+                <div key={i} className="relative">
+                  <ImagemProduto src={img} alt={`Foto ${i + 1}`} className="w-16 h-16 object-contain bg-gray-50 rounded-xl p-1 border border-gray-100" />
+                  <button
+                    type="button"
+                    onClick={() => setImages(images.filter((_, idx) => idx !== i))}
+                    className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <label className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[12px] px-4 py-2.5 rounded-xl cursor-pointer transition-colors w-fit">
+              <Upload size={14} />
+              Adicionar fotos
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  files.forEach((file) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const img = new Image();
+                      img.onload = () => {
+                        const scale = Math.min(1, 600 / Math.max(img.width, img.height));
+                        const canvas = document.createElement("canvas");
+                        canvas.width = Math.round(img.width * scale);
+                        canvas.height = Math.round(img.height * scale);
+                        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        setImages((prev) => [...prev, canvas.toDataURL("image/jpeg", 0.85)]);
+                      };
+                      img.src = reader.result as string;
+                    };
+                    reader.readAsDataURL(file);
+                  });
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className={estiloRotulo}>Cores / modelos (opcional)</label>
+            <p className="text-[11px] text-gray-400 mb-2">
+              Cadastre as variações para o cliente escolher, ex.: "Prata", "Dourado", "Preto" — cada uma pode ter sua própria foto.
+            </p>
+            <div className="space-y-2">
+              {colors.map((c, i) => (
+                <div key={i} className="border border-gray-200 rounded-xl p-3 space-y-2">
+                  <div className="flex gap-2 items-start">
+                    <ImagemProduto
+                      src={c.image || image}
+                      alt={c.nome || "Cor"}
+                      className="w-12 h-12 object-contain bg-gray-50 rounded-lg p-1 border border-gray-100 flex-shrink-0"
+                    />
+                    <div className="flex-1 space-y-1.5">
+                      <input
+                        className={estiloInput}
+                        value={c.nome}
+                        onChange={(e) => {
+                          const novo = [...colors];
+                          novo[i] = { ...novo[i], nome: e.target.value };
+                          setColors(novo);
+                        }}
+                        placeholder="Nome da cor, ex.: Prata"
+                      />
+                      <div className="flex gap-1.5 items-center">
+                        <input
+                          type="color"
+                          value={c.hex || "#cccccc"}
+                          onChange={(e) => {
+                            const novo = [...colors];
+                            novo[i] = { ...novo[i], hex: e.target.value };
+                            setColors(novo);
+                          }}
+                          className="w-8 h-8 rounded cursor-pointer border border-gray-200"
+                          title="Cor aproximada (mostrada como bolinha)"
+                        />
+                        <label className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[11px] px-3 py-1.5 rounded-lg cursor-pointer transition-colors">
+                          <Upload size={12} />
+                          Foto desta cor
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                const img = new Image();
+                                img.onload = () => {
+                                  const scale = Math.min(1, 600 / Math.max(img.width, img.height));
+                                  const canvas = document.createElement("canvas");
+                                  canvas.width = Math.round(img.width * scale);
+                                  canvas.height = Math.round(img.height * scale);
+                                  canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                  const novo = [...colors];
+                                  novo[i] = { ...novo[i], image: canvas.toDataURL("image/jpeg", 0.85) };
+                                  setColors(novo);
+                                };
+                                img.src = reader.result as string;
+                              };
+                              reader.readAsDataURL(file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-500 block mb-1">Estoque desta cor</label>
+                        <input
+                          className={estiloInput}
+                          value={c.estoque ?? ""}
+                          onChange={(e) => {
+                            const novo = [...colors];
+                            const valor = e.target.value.replace(/\D/g, "");
+                            novo[i] = { ...novo[i], estoque: valor ? parseInt(valor, 10) : undefined };
+                            setColors(novo);
+                          }}
+                          placeholder="Ex.: 5 (deixe vazio para usar o estoque geral)"
+                          inputMode="numeric"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setColors(colors.filter((_, idx) => idx !== i))}
+                      className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors flex-shrink-0"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {colors.length > 0 && (
+              <p className="text-[11px] text-gray-400 mt-2">
+                Se o estoque de uma cor ficar vazio, o cliente vê essa cor como disponível seguindo o estoque geral do produto.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => setColors([...colors, { nome: "" }])}
+              className="mt-2 flex items-center gap-1.5 text-[12px] font-bold text-[#C8102E] hover:underline"
+            >
+              <Plus size={14} /> Adicionar cor
+            </button>
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">

@@ -22,7 +22,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, Plus, Check } from "lucide-react";
 import type { Produto, ItemCarrinho, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, Pedido, Cliente, Tela, DadosPagamento, CartaoSalvo, DadosCartaoDigitado } from "./types";
 import { CONFIG_PADRAO, CATEGORIAS, EMAIL_ADMIN, NOMES_MESES, URL_BACKEND_PIX, COMISSAO_MASTER_PROMOVIDO_EQUIPE } from "./constantes";
-import { cupomEstaValido, gerarCodigoRecrutamento, codigoVendaDe, lerArmazenamento, gerarCodigoProduto, bandeiraCartao } from "./utils";
+import { cupomEstaValido, clienteJaUsouCupom, gerarCodigoRecrutamento, codigoVendaDe, lerArmazenamento, gerarCodigoProduto, bandeiraCartao } from "./utils";
 import { ImagemProduto } from "./components/ImagemProduto";
 import { AvisoBancoDesconectado } from "./components/AvisoBancoDesconectado";
 import { BarraInferiorMobile } from "./components/BarraInferiorMobile";
@@ -457,14 +457,19 @@ export default function App() {
     salvarNoBanco("clientes", clientes);
   }, [clientes]);
 
-  // Insere o produto no carrinho respeitando o estoque disponível
+  // Insere o produto no carrinho respeitando o estoque disponível. Cores
+  // diferentes do mesmo produto viram linhas separadas no carrinho (cada uma
+  // com a própria foto e o próprio estoque), por isso a identidade da linha
+  // é id + cor escolhida, não só o id.
   const colocarNoCarrinho = (produto: Produto) => {
     setCarrinho((anterior) => {
-      const existente = anterior.find((i) => i.id === produto.id);
+      const existente = anterior.find((i) => i.id === produto.id && i.corEscolhida === produto.corEscolhida);
       if (existente) {
         // Não deixa colocar no carrinho mais do que o estoque disponível
         if (existente.qty >= produto.stock) return anterior;
-        return anterior.map((i) => i.id === produto.id ? { ...i, qty: i.qty + 1 } : i);
+        return anterior.map((i) =>
+          i.id === produto.id && i.corEscolhida === produto.corEscolhida ? { ...i, qty: i.qty + 1 } : i
+        );
       }
       return [...anterior, { ...produto, qty: 1 }];
     });
@@ -539,37 +544,54 @@ export default function App() {
         ? "Processando"
         : "Pago";
 
-    const novosPedidos: Pedido[] = carrinho.map((item, i) => ({
-      id: `#CP-${sufixo}${i}`,
-      customer: usuario.name,
-      email: usuario.email,
-      items: item.qty > 1 ? `${item.name} (${item.qty}x)` : item.name,
-      total: item.price * item.qty,
-      status: statusInicial,
-      date,
-      month,
-      category: item.category,
-      pagamento: rotuloPagamento,
-      // Atribuição da venda: com código de venda válido, a venda conta somente
-      // para a conta dona do código. Sem código, a venda cai para o
-      // administrador (a loja) — só o código credita o vendedor ou o Master.
-      vendedor: donoCodigoVenda ?? EMAIL_ADMIN,
-      codigoVenda: donoCodigoVenda ? codigoVendaLimpo : undefined,
-      // Endereço de entrega preenchido no carrinho (CEP + número)
-      endereco: pagamentoPendente.endereco,
-    }));
+    const novosPedidos: Pedido[] = carrinho.map((item, i) => {
+      // Nome-base + cor escolhida (se houver) + quantidade — nessa ordem —
+      // para o produto continuar batendo com produtoFoiCompradoPor
+      const nomeComCor = item.corEscolhida ? `${item.name} - ${item.corEscolhida}` : item.name;
+      return {
+        id: `#CP-${sufixo}${i}`,
+        customer: usuario.name,
+        email: usuario.email,
+        items: item.qty > 1 ? `${nomeComCor} (${item.qty}x)` : nomeComCor,
+        total: item.price * item.qty,
+        status: statusInicial,
+        date,
+        month,
+        category: item.category,
+        pagamento: rotuloPagamento,
+        // Atribuição da venda: com código de venda válido, a venda conta somente
+        // para a conta dona do código. Sem código, a venda cai para o
+        // administrador (a loja) — só o código credita o vendedor ou o Master.
+        vendedor: donoCodigoVenda ?? EMAIL_ADMIN,
+        codigoVenda: donoCodigoVenda ? codigoVendaLimpo : undefined,
+        // Endereço de entrega preenchido no carrinho (CEP + número)
+        endereco: pagamentoPendente.endereco,
+        // Cupom usado nesta compra — trava o mesmo cupom para o cliente de novo
+        cupomUsado: cupomAplicado ? cupomAplicado.codigo : undefined,
+      };
+    });
 
-    // Baixa de estoque dos produtos vendidos
+    // Baixa de estoque dos produtos vendidos: soma as quantidades de todas as
+    // linhas do carrinho com este id (mesmo produto pode ter cores diferentes
+    // no carrinho, cada uma em uma linha) para tirar do estoque geral
     const produtosAtualizados = produtos.map((p) => {
-      const item = carrinho.find((i) => i.id === p.id);
-      if (!item) return p;
-      return { ...p, stock: Math.max(0, p.stock - item.qty) };
+      const itensDoProduto = carrinho.filter((i) => i.id === p.id);
+      if (itensDoProduto.length === 0) return p;
+      const qtyTotal = itensDoProduto.reduce((acum, i) => acum + i.qty, 0);
+      // Também desconta do estoque da cor específica escolhida (quando ela
+      // tem um estoque próprio cadastrado), senão a cor nunca esgota sozinha
+      const coresAtualizadas = p.colors?.map((c) => {
+        const itemDaCor = itensDoProduto.find((i) => i.corEscolhida === c.nome);
+        if (!itemDaCor || typeof c.estoque !== "number") return c;
+        return { ...c, estoque: Math.max(0, c.estoque - itemDaCor.qty) };
+      });
+      return { ...p, stock: Math.max(0, p.stock - qtyTotal), colors: coresAtualizadas ?? p.colors };
     });
     // Alerta de produto esgotado (para as notificações do admin)
     const esgotados = produtos
       .filter((p) => {
-        const item = carrinho.find((i) => i.id === p.id);
-        return item && p.stock > 0 && p.stock - item.qty <= 0;
+        const qtyTotal = carrinho.filter((i) => i.id === p.id).reduce((acum, i) => acum + i.qty, 0);
+        return qtyTotal > 0 && p.stock > 0 && p.stock - qtyTotal <= 0;
       })
       .map((p) => ({ id: p.id, name: p.name, date }));
 
@@ -593,11 +615,18 @@ export default function App() {
     setTela("sucesso");
   };
 
-  const removerDoCarrinho = (id: number) => setCarrinho((anterior) => anterior.filter((i) => i.id !== id));
-  const mudarQtd = (id: number, variacao: number) =>
+  // Cada linha do carrinho é identificada por id + cor escolhida (cores
+  // diferentes do mesmo produto viram linhas separadas)
+  const removerDoCarrinho = (id: number, corEscolhida?: string) =>
+    setCarrinho((anterior) => anterior.filter((i) => !(i.id === id && i.corEscolhida === corEscolhida)));
+  // Não deixa a quantidade no carrinho passar do estoque disponível do produto
+  const mudarQtd = (id: number, variacao: number, corEscolhida?: string) =>
     setCarrinho((anterior) =>
-      anterior.map((i) => i.id === id ? { ...i, qty: Math.max(0, i.qty + variacao) } : i)
-          .filter((i) => i.qty > 0)
+      anterior.map((i) =>
+        i.id === id && i.corEscolhida === corEscolhida
+          ? { ...i, qty: Math.max(0, Math.min(i.qty + variacao, i.stock)) }
+          : i
+      ).filter((i) => i.qty > 0)
     );
   const alternarFavorito = (id: number) =>
     setFavoritos((anterior) => anterior.includes(id) ? anterior.filter((x) => x !== id) : [...anterior, id]);
@@ -628,10 +657,26 @@ export default function App() {
     ? clientes.find((c) => c.email.toLowerCase() === donoCodigoVenda)?.name ?? donoCodigoVenda
     : null;
 
-  // Cupom digitado no carrinho, se existir e estiver válido (ativo e na validade)
+  // Cupom digitado no carrinho, se existir, estiver válido (ativo e na
+  // validade) e ainda não tiver sido usado por este cliente antes (cada
+  // cupom vale só uma vez por pessoa)
   const cupomAplicado = cupomDigitado.trim()
-    ? cupons.find((c) => c.codigo === cupomDigitado.trim().toUpperCase() && cupomEstaValido(c)) ?? null
+    ? cupons.find(
+        (c) =>
+          c.codigo === cupomDigitado.trim().toUpperCase() &&
+          cupomEstaValido(c) &&
+          (!usuario || !clienteJaUsouCupom(usuario.email, c.codigo, pedidos))
+      ) ?? null
     : null;
+  // true quando o código digitado existe mas já foi usado por este cliente —
+  // usado só para mostrar uma mensagem melhor que "cupom inválido"
+  const cupomJaUsado =
+    !cupomAplicado &&
+    !!usuario &&
+    cupomDigitado.trim().length > 0 &&
+    cupons.some(
+      (c) => c.codigo === cupomDigitado.trim().toUpperCase() && cupomEstaValido(c) && clienteJaUsouCupom(usuario.email, c.codigo, pedidos)
+    );
 
   const produtosFiltrados = useMemo(
     () => produtos.filter((p) => {
@@ -997,6 +1042,7 @@ export default function App() {
         cupom={cupomDigitado}
         aoMudarCupom={setCupomDigitado}
         cupomAplicado={cupomAplicado}
+        cupomJaUsado={cupomJaUsado}
       />
     );
   }
@@ -1068,9 +1114,6 @@ export default function App() {
           aoVoltar={() => setProdutoSelecionado(null)}
           aoFavoritar={alternarFavorito}
           favoritos={favoritos}
-          codigoVenda={codigoVenda}
-          aoMudarCodigoVenda={setCodigoVenda}
-          nomeDonoCodigo={nomeDonoCodigoVenda}
           usuario={usuario}
           pedidos={pedidos}
           aoAtualizarResumoAvaliacoes={atualizarResumoAvaliacoes}
@@ -1092,7 +1135,7 @@ export default function App() {
               <span className="w-1 h-6 rounded-full bg-[#C8102E]" />
               <div>
                 <h2 className="text-xl font-black text-gray-900">
-                  {categoriaSelecionada === "Outros" ? "Ofertas do Dia" : categoriaSelecionada}
+                  {categoriaSelecionada}
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {produtosFiltrados.length} produto{produtosFiltrados.length !== 1 ? "s" : ""} encontrado{produtosFiltrados.length !== 1 ? "s" : ""}

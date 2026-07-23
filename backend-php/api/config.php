@@ -1,16 +1,17 @@
 <?php
-// ─── Configuração do backend PHP (HostGator) ─────────────────────────────────
-// Preencha com os dados criados no cPanel. Este arquivo NÃO é visível para
-// visitantes (o servidor executa o PHP, não mostra o código), mas mesmo assim
-// nunca compartilhe seu conteúdo.
+// ─── Configuração do backend PHP (KingHost) ──────────────────────────────────
+// Preencha com os dados criados no Painel de Controle da KingHost. Este
+// arquivo NÃO é visível para visitantes (o servidor executa o PHP, não mostra
+// o código), mas mesmo assim nunca compartilhe seu conteúdo.
 
-// ── MySQL (cPanel → "Bancos de Dados MySQL") ──
-// Na HostGator, o nome do banco e do usuário ganham o prefixo da sua conta.
-// Ex.: se sua conta é "coracao1", o banco fica "coracao1_coracaopresente".
-define("DB_HOST", "localhost");
-define("DB_NAME", "SEUUSUARIO_coracaopresente");
-define("DB_USER", "SEUUSUARIO_admin");
-define("DB_PASS", "senha_que_voce_criou_no_cpanel");
+// ── MySQL (Painel de Controle → Bancos MySQL → Novo banco de dados) ──
+// A KingHost não deixa escolher o nome do banco: ele é criado automaticamente
+// com base no usuário do domínio (ex.: algo como "coracao1_bd1"). Veja o
+// nome completo do banco e do usuário na tela "Gerenciar Bancos MySQL".
+define("DB_HOST", "mysql.coracaopresente.com.br");
+define("DB_NAME", "coracaopresent");
+define("DB_USER", "coracaopresent");
+define("DB_PASS", "kayth254321");
 
 // ── Sicredi (API Pix) ──
 // "homologacao" para testar | "producao" quando for pra valer

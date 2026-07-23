@@ -75,9 +75,10 @@ async function iniciarBanco() {
       badge VARCHAR(32) NULL,
       freeShipping TINYINT(1) NOT NULL DEFAULT 1,
       stock INT NOT NULL DEFAULT 0,
-      description TEXT NULL,
       owner VARCHAR(255) NULL,
-      pixDesconto INT NULL
+      pixDesconto INT NULL,
+      images LONGTEXT NULL,
+      colors LONGTEXT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
     // Migração: bancos criados antes do código sequencial (ex.: "BEL-001")
@@ -89,6 +90,33 @@ async function iniciarBanco() {
     );
     if (colunasProdutos.length === 0) {
       await pool.query(`ALTER TABLE produtos ADD COLUMN codigo VARCHAR(16) NULL`);
+    }
+
+    // Migração: bancos criados antes de "images" (galeria) e "colors"
+    // (cores/modelos) existirem não ganham as colunas novas só com
+    // CREATE TABLE IF NOT EXISTS — precisa checar e adicionar
+    const [colunasProdutosGaleria] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'produtos' AND COLUMN_NAME IN ('images', 'colors')`,
+      [DB_NAME]
+    );
+    const colunasGaleriaExistentes = colunasProdutosGaleria.map((c) => c.COLUMN_NAME);
+    if (!colunasGaleriaExistentes.includes("images")) {
+      await pool.query(`ALTER TABLE produtos ADD COLUMN images LONGTEXT NULL`);
+    }
+    if (!colunasGaleriaExistentes.includes("colors")) {
+      await pool.query(`ALTER TABLE produtos ADD COLUMN colors LONGTEXT NULL`);
+    }
+
+    // Migração: remove a coluna "description" — as características do
+    // produto deixaram de existir no site (o Admin não cadastra mais isso)
+    const [colunaDescricao] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'produtos' AND COLUMN_NAME = 'description'`,
+      [DB_NAME]
+    );
+    if (colunaDescricao.length > 0) {
+      await pool.query(`ALTER TABLE produtos DROP COLUMN description`);
     }
 
     await pool.query(`CREATE TABLE IF NOT EXISTS pedidos (
@@ -104,8 +132,21 @@ async function iniciarBanco() {
       pagamento VARCHAR(16) NULL,
       vendedor VARCHAR(255) NULL,
       codigoVenda VARCHAR(16) NULL,
-      endereco TEXT NULL
+      endereco TEXT NULL,
+      cupomUsado VARCHAR(32) NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+    // Migração: bancos criados antes do campo cupomUsado existir (cupom de
+    // uso único por cliente) não ganham a coluna nova só com CREATE TABLE
+    // IF NOT EXISTS — precisa checar e adicionar
+    const [colunasPedidosCupom] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'pedidos' AND COLUMN_NAME = 'cupomUsado'`,
+      [DB_NAME]
+    );
+    if (colunasPedidosCupom.length === 0) {
+      await pool.query(`ALTER TABLE pedidos ADD COLUMN cupomUsado VARCHAR(32) NULL`);
+    }
 
     await pool.query(`CREATE TABLE IF NOT EXISTS clientes (
       email VARCHAR(255) PRIMARY KEY,
@@ -178,12 +219,24 @@ async function iniciarBanco() {
     await pool.query(`CREATE TABLE IF NOT EXISTS banners (
       id BIGINT PRIMARY KEY,
       image LONGTEXT,
+      mobileImage LONGTEXT NULL,
       tag VARCHAR(64),
       title VARCHAR(255),
       subtitle VARCHAR(255),
       cta VARCHAR(64),
       category VARCHAR(64)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+    // Migração: bancos criados antes do campo mobileImage existir (imagem
+    // própria de banner pro celular) — adiciona só se estiver faltando
+    const [colunasBannersMobile] = await pool.query(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'banners' AND COLUMN_NAME = 'mobileImage'`,
+      [DB_NAME]
+    );
+    if (colunasBannersMobile.length === 0) {
+      await pool.query(`ALTER TABLE banners ADD COLUMN mobileImage LONGTEXT NULL`);
+    }
 
     // Cartões salvos dos clientes. IMPORTANTE: por segurança (padrão PCI),
     // NUNCA guarda o número completo do cartão nem o CVV — só o suficiente
@@ -349,10 +402,11 @@ app.get("/api/dados", async (_req, res) => {
         codigo: p.codigo ?? undefined,
         originalPrice: p.originalPrice ?? undefined,
         badge: p.badge ?? undefined,
-        description: p.description ?? undefined,
         owner: p.owner ?? undefined,
         pixDesconto: p.pixDesconto ?? undefined,
         freeShipping: Boolean(p.freeShipping),
+        images: p.images ? JSON.parse(p.images) : undefined,
+        colors: p.colors ? JSON.parse(p.colors) : undefined,
       })),
       pedidos: pedidos.map((o) => ({
         ...o,
@@ -360,6 +414,7 @@ app.get("/api/dados", async (_req, res) => {
         vendedor: o.vendedor ?? undefined,
         codigoVenda: o.codigoVenda ?? undefined,
         endereco: o.endereco ?? undefined,
+        cupomUsado: o.cupomUsado ?? undefined,
       })),
       clientes: clientes.map((c) => ({ ...c, criadoEm: c.criadoEm ?? undefined, viaGoogle: Boolean(c.viaGoogle) })),
       cargos,
@@ -387,13 +442,17 @@ app.put("/api/dados/:colecao", async (req, res) => {
         await regravarColecao("produtos", [
           "id", "codigo", "name", "brand", "price", "originalPrice", "installments", "rating",
           "reviews", "image", "category", "badge", "freeShipping", "stock",
-          "description", "owner", "pixDesconto",
-        ], dados);
+          "owner", "pixDesconto", "images", "colors",
+        ], dados.map((p) => ({
+          ...p,
+          images: p.images && p.images.length ? JSON.stringify(p.images) : null,
+          colors: p.colors && p.colors.length ? JSON.stringify(p.colors) : null,
+        })));
         break;
       case "pedidos":
         await regravarColecao("pedidos", [
           "id", "customer", "email", "items", "total", "status", "date", "month",
-          "category", "pagamento", "vendedor", "codigoVenda", "endereco",
+          "category", "pagamento", "vendedor", "codigoVenda", "endereco", "cupomUsado",
         ], dados);
         break;
       case "clientes":
@@ -426,7 +485,7 @@ app.put("/api/dados/:colecao", async (req, res) => {
         break;
       case "banners":
         await regravarColecao("banners", [
-          "id", "image", "tag", "title", "subtitle", "cta", "category",
+          "id", "image", "mobileImage", "tag", "title", "subtitle", "cta", "category",
         ], dados);
         break;
       case "cartoesSalvos":

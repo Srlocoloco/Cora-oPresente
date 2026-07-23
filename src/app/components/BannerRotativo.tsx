@@ -6,9 +6,22 @@ import type { Banner } from "../types";
 
 // ─── Hero Banner (auto-rotating) ──────────────────────────────────────────────
 
+// Todos os banners usam o mesmo tamanho de caixa, sempre — assim a vitrine
+// fica com um padrão único em vez de cada imagem esticar o quadro pro
+// próprio formato. A imagem sempre preenche a caixa (object-cover) e fica
+// centralizada (object-center), tanto no desktop quanto no celular.
+
 export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[]; aoClicarBanner: (category: string) => void }) {
   const [bannerAtivo, setBannerAtivo] = useState(0);
   const [pausado, setPausado] = useState(false);
+  // Detecta celular para escolher a imagem própria de celular (mobileImage),
+  // quando o Admin cadastrou uma
+  const [ehMobile, setEhMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  useEffect(() => {
+    const aoRedimensionar = () => setEhMobile(window.innerWidth < 768);
+    window.addEventListener("resize", aoRedimensionar);
+    return () => window.removeEventListener("resize", aoRedimensionar);
+  }, []);
 
   useEffect(() => {
     // Volta ao primeiro banner se a lista mudar (ex.: Admin excluiu um banner
@@ -20,7 +33,7 @@ export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[];
     if (pausado || banners.length <= 1) return;
     const timer = setInterval(() => {
       setBannerAtivo((anterior) => (anterior + 1) % banners.length);
-    }, 2000);
+    }, 3000);
     return () => clearInterval(timer);
   }, [pausado, banners.length]);
 
@@ -32,10 +45,14 @@ export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[];
   // (ex.: Admin excluiu justamente o banner que estava em exibição)
   const ativo = Math.min(bannerAtivo, banners.length - 1);
 
+  // Em cada banner, usa a imagem própria de celular (quando o Admin cadastrou
+  // uma) no mobile; sem ela, cai para a mesma imagem larga do desktop
+  const imagemParaTela = (b: Banner) => (ehMobile && b.mobileImage ? b.mobileImage : b.image);
+
   return (
     <div className="max-w-[1440px] mx-auto px-4 pt-5">
       <div
-        className="relative overflow-hidden h-[210px] md:h-[315px] bg-[#C8102E] rounded-2xl md:rounded-3xl shadow-lg"
+        className="relative overflow-hidden bg-[#C8102E] rounded-none sm:rounded-2xl md:rounded-3xl shadow-lg h-[120px] sm:h-[170px] md:h-[315px]"
         onMouseEnter={() => setPausado(true)}
         onMouseLeave={() => setPausado(false)}
       >
@@ -45,28 +62,27 @@ export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[];
             className={`absolute inset-0 transition-opacity duration-700 ${i === ativo ? "opacity-100" : "opacity-0"}`}
           >
             <img
-              src={b.image}
+              src={imagemParaTela(b)}
               alt=""
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-cover object-center"
               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#4A1218]/85 via-[#4A1218]/45 to-transparent" />
           </div>
         ))}
 
-        <div className="relative z-10 h-full flex flex-col justify-center pl-11 pr-5 md:px-14 text-white">
-          <span className="bg-[#E8B84B] text-[#4A1218] text-[9px] md:text-[10px] font-black px-2.5 py-1 rounded-full w-fit mb-1.5 md:mb-3 tracking-wider">
+        <div className="relative z-10 h-full flex flex-col justify-center pl-5 sm:pl-11 pr-5 md:px-14 text-white">
+          <span className="bg-[#E8B84B] text-[#4A1218] text-[7px] md:text-[10px] font-black px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-full w-fit mb-0.5 md:mb-3 tracking-wider">
             {banners[ativo].tag}
           </span>
-          <h1 className="text-base md:text-4xl font-black leading-tight mb-1 md:mb-2 max-w-[220px] md:max-w-md line-clamp-2 drop-shadow-sm">
+          <h1 className="text-[9px] sm:text-base md:text-4xl font-black leading-tight mb-0.5 md:mb-2 max-w-[120px] sm:max-w-[220px] md:max-w-md line-clamp-2 [text-shadow:0_1px_3px_rgba(0,0,0,0.6),0_2px_10px_rgba(0,0,0,0.4)]">
             {banners[ativo].title}
           </h1>
-          <p className="text-[11px] md:text-base text-white/70 mb-2 md:mb-5 max-w-[220px] md:max-w-xs line-clamp-1 md:line-clamp-none">
+          <p className="hidden sm:block text-[11px] md:text-base text-white mb-2 md:mb-5 max-w-[220px] md:max-w-xs line-clamp-1 md:line-clamp-none [text-shadow:0_1px_3px_rgba(0,0,0,0.6),0_2px_8px_rgba(0,0,0,0.4)]">
             {banners[ativo].subtitle}
           </p>
           <button
             onClick={() => aoClicarBanner(banners[ativo].category)}
-            className="bg-[#E8B84B] text-[#4A1218] font-black text-[12px] md:text-sm px-4 py-2 md:px-7 md:py-2.5 rounded-xl w-fit hover:bg-[#F0C767] hover:scale-105 active:scale-95 transition-all shadow-lg"
+            className="mt-1 sm:mt-0 bg-[#E8B84B] text-[#4A1218] font-black text-[8px] md:text-sm px-2 py-1 md:px-7 md:py-2.5 rounded-md md:rounded-xl w-fit hover:bg-[#F0C767] hover:scale-105 active:scale-95 transition-all shadow-lg"
           >
             {banners[ativo].cta}
           </button>
@@ -76,7 +92,7 @@ export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[];
         {banners.length > 1 && (
         <button
           onClick={anterior}
-          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 bg-black/30 hover:bg-black/50 text-white rounded-full p-2 transition-colors backdrop-blur-sm"
+          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 bg-white/5 hover:bg-white/20 text-white rounded-full p-2 transition-colors drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]"
         >
           <ChevronLeft size={18} />
         </button>
@@ -84,7 +100,7 @@ export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[];
         {banners.length > 1 && (
         <button
           onClick={proximoBanner}
-          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 bg-black/30 hover:bg-black/50 text-white rounded-full p-2 transition-colors backdrop-blur-sm"
+          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 bg-white/5 hover:bg-white/20 text-white rounded-full p-2 transition-colors drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]"
         >
           <ChevronRight size={18} />
         </button>
@@ -111,7 +127,7 @@ export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[];
             <div
               key={ativo}
               className="h-full bg-[#E8B84B]"
-              style={{ animation: "progressBar 2s linear forwards" }}
+              style={{ animation: "progressBar 3s linear forwards" }}
             />
           </div>
         )}
