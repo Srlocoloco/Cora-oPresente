@@ -1,13 +1,12 @@
 // Tela PaginaProduto
 
 import { useEffect, useMemo, useState } from "react";
-import { ShoppingCart, Star, Package, Heart, Truck, RotateCcw, ChevronRight, Check, Video } from "lucide-react";
-import type { Produto, Usuario, Pedido, Avaliacao } from "../types";
+import { ShoppingCart, Star, Package, Heart, Truck, RotateCcw, ChevronRight, ChevronLeft, Video } from "lucide-react";
+import type { Produto, Usuario, Pedido, Avaliacao, CorProduto } from "../types";
 import { CORES_SELO, URL_BACKEND_PIX, LIMITE_VIDEO_AVALIACAO_MB, LIMITE_VIDEO_AVALIACAO_SEGUNDOS } from "../constantes";
 import { categoriaExibida, formatarMoeda, precoParcela, pctDesconto, produtoFoiCompradoPor, mediaAvaliacoes } from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
 import { CartaoProduto } from "../components/CartaoProduto";
-import { CampoCodigoVenda } from "../components/CampoCodigoVenda";
 
 export function PaginaProduto({
   produto,
@@ -17,9 +16,6 @@ export function PaginaProduto({
   aoVoltar,
   aoFavoritar,
   favoritos,
-  codigoVenda,
-  aoMudarCodigoVenda,
-  nomeDonoCodigo,
   usuario,
   pedidos,
   aoAtualizarResumoAvaliacoes,
@@ -31,13 +27,40 @@ export function PaginaProduto({
   aoVoltar: () => void;
   aoFavoritar: (id: number) => void;
   favoritos: number[];
-  codigoVenda: string;
-  aoMudarCodigoVenda: (v: string) => void;
-  nomeDonoCodigo: string | null;
   usuario: Usuario | null;
   pedidos: Pedido[];
   aoAtualizarResumoAvaliacoes: (produtoId: number, rating: number, reviews: number) => void;
 }) {
+  // ─── Galeria de fotos e cores/modelos ──────────────────────────────────────
+  // Todas as fotos disponíveis: capa + galeria + uma foto por cor cadastrada
+  const fotosGaleria = useMemo(() => {
+    const lista = [produto.image, ...(produto.images || [])];
+    (produto.colors || []).forEach((c) => { if (c.image && !lista.includes(c.image)) lista.push(c.image); });
+    return lista.filter(Boolean);
+  }, [produto]);
+  const [corSelecionada, setCorSelecionada] = useState<CorProduto | null>(null);
+  const [fotoSelecionada, setFotoSelecionada] = useState(produto.image);
+
+  // Ao trocar de produto (navegação), reseta a foto e a cor escolhidas
+  useEffect(() => {
+    setFotoSelecionada(produto.image);
+    setCorSelecionada(null);
+  }, [produto.id]);
+
+  const aoEscolherCor = (c: CorProduto) => {
+    setCorSelecionada(c);
+    if (c.image) setFotoSelecionada(c.image);
+  };
+
+  // Navega para a foto anterior/próxima da galeria (setas na imagem principal)
+  const irParaFoto = (direcao: 1 | -1) => {
+    const indiceAtual = fotosGaleria.indexOf(fotoSelecionada);
+    const total = fotosGaleria.length;
+    if (total === 0) return;
+    const proximoIndice = ((indiceAtual === -1 ? 0 : indiceAtual) + direcao + total) % total;
+    setFotoSelecionada(fotosGaleria[proximoIndice]);
+  };
+
   // ─── Avaliações (comentário + vídeo) ───────────────────────────────────────
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
   const [carregandoAvaliacoes, setCarregandoAvaliacoes] = useState(true);
@@ -151,6 +174,22 @@ export function PaginaProduto({
     }
   };
 
+  // Estoque que vale de verdade: o da cor escolhida (quando ela tem um
+  // estoque próprio cadastrado) ou, sem cor selecionada, o estoque geral
+  const estoqueEfetivo = corSelecionada?.estoque ?? produto.stock;
+
+  // Monta o produto que vai pro carrinho: com a cor escolhida, a compra é
+  // creditada àquela variação específica — foto, estoque e nome da cor
+  // seguem junto, em vez de cair no padrão do produto
+  const produtoParaComprar: Produto = corSelecionada
+    ? {
+        ...produto,
+        image: corSelecionada.image || produto.image,
+        stock: estoqueEfetivo,
+        corEscolhida: corSelecionada.nome,
+      }
+    : produto;
+
   const temDesconto = produto.originalPrice && produto.originalPrice > produto.price;
   // Desconto no PIX definido no próprio produto (0 = sem desconto)
   const pctPix = produto.pixDesconto ?? 0;
@@ -188,37 +227,107 @@ export function PaginaProduto({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Gallery */}
-          <div className="relative bg-gray-50/70 rounded-2xl p-6 flex items-center justify-center">
-            {produto.badge && (
-              <span className={`absolute top-3 left-3 ${CORES_SELO[produto.badge] || "bg-[#C8102E]"} text-white text-[10px] font-black px-3 py-1 rounded-full tracking-wider z-10`}>
-                {produto.badge}
-              </span>
+          <div>
+            <div className="relative bg-gray-50/70 rounded-2xl p-6 flex items-center justify-center">
+              {produto.badge && (
+                <span className={`absolute top-3 left-3 ${CORES_SELO[produto.badge] || "bg-[#C8102E]"} text-white text-[10px] font-black px-3 py-1 rounded-full tracking-wider z-10`}>
+                  {produto.badge}
+                </span>
+              )}
+              {temDesconto && (
+                <span className="absolute top-3 right-3 bg-red-500 text-white text-[11px] font-black px-2 py-1 rounded-md z-10">
+                  -{pctDesconto(produto.originalPrice!, produto.price)}%
+                </span>
+              )}
+              <ImagemProduto
+                src={fotoSelecionada}
+                alt={produto.name}
+                className="w-full h-[240px] md:h-[380px] object-contain"
+              />
+              {fotosGaleria.length > 1 && (
+                <>
+                  <button
+                    onClick={() => irParaFoto(-1)}
+                    aria-label="Foto anterior"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <button
+                    onClick={() => irParaFoto(1)}
+                    aria-label="Próxima foto"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => aoFavoritar(produto.id)}
+                className="absolute bottom-3 right-3 p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow"
+              >
+                <Heart size={17} className={favoritos.includes(produto.id) ? "fill-red-500 text-red-500" : "text-gray-300"} />
+              </button>
+            </div>
+
+            {/* Miniaturas: capa + fotos extras + fotos das cores */}
+            {fotosGaleria.length > 1 && (
+              <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+                {fotosGaleria.map((foto, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setFotoSelecionada(foto)}
+                    className={`flex-shrink-0 w-16 h-16 rounded-xl border-2 p-1 bg-gray-50 transition-colors ${
+                      fotoSelecionada === foto ? "border-[#C8102E]" : "border-gray-100 hover:border-gray-300"
+                    }`}
+                  >
+                    <ImagemProduto src={foto} alt={`${produto.name} - foto ${i + 1}`} className="w-full h-full object-contain" />
+                  </button>
+                ))}
+              </div>
             )}
-            {temDesconto && (
-              <span className="absolute top-3 right-3 bg-red-500 text-white text-[11px] font-black px-2 py-1 rounded-md z-10">
-                -{pctDesconto(produto.originalPrice!, produto.price)}%
-              </span>
+
+            {/* Seletor de cor/modelo */}
+            {produto.colors && produto.colors.length > 0 && (
+              <div className="mt-4">
+                <p className="text-[12px] font-bold text-gray-600 mb-2">
+                  Cor{corSelecionada ? `: ${corSelecionada.nome}` : ""}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {produto.colors.map((c, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => aoEscolherCor(c)}
+                      title={c.nome}
+                      className={`flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border-2 text-[12px] font-bold transition-colors ${
+                        corSelecionada?.nome === c.nome ? "border-[#C8102E] text-[#C8102E]" : "border-gray-200 text-gray-600 hover:border-gray-400"
+                      }`}
+                    >
+                      <ImagemProduto
+                        src={c.image || produto.image}
+                        alt={c.nome}
+                        className="w-7 h-7 rounded-full object-cover border border-gray-200 flex-shrink-0 bg-gray-50"
+                      />
+                      <span
+                        className="w-3 h-3 rounded-full border border-gray-200 flex-shrink-0"
+                        style={{ backgroundColor: c.hex || "#cccccc" }}
+                      />
+                      {c.nome}
+                      {typeof c.estoque === "number" && c.estoque <= 0 && (
+                        <span className="text-[10px] text-red-500 font-black">ESGOTADO</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
-            <ImagemProduto
-              src={produto.image}
-              alt={produto.name}
-              className="w-full h-[240px] md:h-[380px] object-contain"
-            />
-            <button
-              onClick={() => aoFavoritar(produto.id)}
-              className="absolute bottom-3 right-3 p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow"
-            >
-              <Heart size={17} className={favoritos.includes(produto.id) ? "fill-red-500 text-red-500" : "text-gray-300"} />
-            </button>
           </div>
 
           {/* Info */}
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{produto.brand}</span>
-              {produto.codigo && (
-                <span className="font-mono text-[10px] font-bold text-gray-400">· cód. {produto.codigo}</span>
-              )}
             </div>
             <h1 className="text-xl md:text-2xl font-black text-gray-900 leading-snug mt-1 mb-3">
               {produto.name}
@@ -263,37 +372,34 @@ export function PaginaProduto({
                     <Truck size={13} /> FRETE GRÁTIS
                   </span>
                 )}
-                <span className={`text-[12px] font-bold ${produto.stock < 15 ? "text-red-500" : "text-gray-500"}`}>
-                  {produto.stock <= 0
-                    ? "Produto esgotado"
-                    : produto.stock < 15
-                    ? `Últimas ${produto.stock} unidades!`
-                    : `${produto.stock} em estoque`}
+                <span className={`text-[12px] font-bold ${estoqueEfetivo < 15 ? "text-red-500" : "text-gray-500"}`}>
+                  {estoqueEfetivo <= 0
+                    ? corSelecionada
+                      ? `Esgotado na cor ${corSelecionada.nome}`
+                      : "Produto esgotado"
+                    : estoqueEfetivo < 15
+                    ? `Últimas ${estoqueEfetivo} unidades!${corSelecionada ? ` na cor ${corSelecionada.nome}` : ""}`
+                    : `${estoqueEfetivo} em estoque`}
                 </span>
               </div>
             </div>
 
-            {produto.stock <= 0 ? (
+            {estoqueEfetivo <= 0 ? (
               <button
                 disabled
                 className="w-full bg-gray-200 text-gray-400 font-black py-4 rounded-xl text-base flex items-center justify-center gap-2 mb-3 cursor-not-allowed"
               >
-                Produto Esgotado
+                {corSelecionada ? `Esgotado na cor ${corSelecionada.nome}` : "Produto Esgotado"}
               </button>
             ) : (
               <button
-                onClick={() => aoAdicionarAoCarrinho(produto)}
+                onClick={() => aoAdicionarAoCarrinho(produtoParaComprar)}
                 className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-4 rounded-xl transition-colors text-base flex items-center justify-center gap-2 mb-3"
               >
                 <ShoppingCart size={17} />
-                Comprar
+                Comprar{corSelecionada ? ` — ${corSelecionada.nome}` : ""}
               </button>
             )}
-
-            {/* Código de venda: credita a compra a um vendedor ou ao Master */}
-            <div className="mb-3">
-              <CampoCodigoVenda codigo={codigoVenda} aoMudar={aoMudarCodigoVenda} nomeDono={nomeDonoCodigo} />
-            </div>
 
             {/* Delivery options */}
             <div className="border border-gray-100 rounded-2xl divide-y divide-gray-100">
@@ -335,27 +441,6 @@ export function PaginaProduto({
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Características */}
-        <div className="mt-8 border-t border-gray-100 pt-6">
-          <h2 className="text-lg font-black text-gray-900 mb-4">Principais características</h2>
-          <ul className="space-y-2">
-            {(produto.description
-              ? produto.description.split("\n").filter(Boolean)
-              : [
-                  `Marca: ${produto.brand}`,
-                  `Categoria: ${categoriaExibida(produto.category)}`,
-                  "Garantia de 12 meses",
-                  produto.freeShipping ? "Frete grátis para todo o Brasil" : "Consulte o frete para sua região",
-                ]
-            ).map((line) => (
-              <li key={line} className="flex items-start gap-2 text-[13px] text-gray-700">
-                <Check size={14} className="text-[#C8102E] mt-0.5 flex-shrink-0" strokeWidth={3} />
-                {line}
-              </li>
-            ))}
-          </ul>
         </div>
 
         {/* Avaliações dos clientes */}

@@ -22,10 +22,10 @@ export function CampoCodigoVenda({
       <div className="flex items-center gap-2 mb-1">
         <Tag size={14} className="text-[#C8102E]" />
         <span className="text-[13px] font-bold text-gray-800">Código de venda</span>
-        <span className="text-[11px] text-gray-400 font-medium">(opcional)</span>
+        <span className="text-[11px] text-[#C8102E] font-bold">(obrigatório)</span>
       </div>
       <p className="text-[11px] text-gray-400 mb-2">
-        Foi atendido por alguém da nossa equipe? Informe o código para creditar a venda a essa pessoa.
+        Informe o código de quem te atendeu para creditar a venda a essa pessoa. É necessário para continuar a compra.
       </p>
       <input
         value={codigo}
@@ -40,7 +40,7 @@ export function CampoCodigoVenda({
       )}
       {digitado && !nomeDono && (
         <div className="mt-2 bg-amber-50 border border-amber-200 text-amber-700 text-[12px] font-medium px-3 py-2 rounded-lg">
-          Código não reconhecido — confira com quem te atendeu. Sem um código válido, a compra segue normalmente.
+          Código não reconhecido — confira com quem te atendeu.
         </div>
       )}
     </div>

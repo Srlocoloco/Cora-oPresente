@@ -27,6 +27,7 @@ export function FormularioBanner({
     inicial?.category && categoriasValidas.includes(inicial.category) ? inicial.category : categoriasValidas[0]
   );
   const [image, setImage] = useState(inicial?.image || "");
+  const [mobileImage, setMobileImage] = useState(inicial?.mobileImage || "");
   const [erro, setErro] = useState("");
 
   const estiloInput =
@@ -40,6 +41,7 @@ export function FormularioBanner({
     aoSalvar({
       id: inicial?.id ?? Date.now(),
       image: image.trim(),
+      mobileImage: mobileImage.trim() || undefined,
       tag: tag.trim() || "OFERTA",
       title: title.trim(),
       subtitle: subtitle.trim(),
@@ -113,6 +115,69 @@ export function FormularioBanner({
                 <button
                   type="button"
                   onClick={() => setImage("")}
+                  className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[10px] font-bold px-2 py-1 rounded-lg hover:bg-black/70 transition-colors"
+                >
+                  Remover
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className={estiloRotulo}>Imagem para celular (opcional)</label>
+            <p className="text-[11px] text-gray-400 mb-2">
+              A imagem larga acima fica baixinha no celular. Envie uma versão mais alta/quadrada
+              (ex.: 800×900) pensada pro formato do celular — sem cortar nada e ocupando o espaço
+              todo. Sem essa imagem, o celular usa a mesma imagem larga de cima.
+            </p>
+            <div className="flex gap-2">
+              <input
+                className={estiloInput}
+                value={mobileImage.startsWith("data:") ? "" : mobileImage}
+                onChange={(e) => setMobileImage(e.target.value)}
+                placeholder={mobileImage.startsWith("data:") ? "Imagem enviada por upload" : "Cole a URL da imagem (https://...)"}
+              />
+              <label className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[12px] px-4 rounded-xl cursor-pointer transition-colors whitespace-nowrap">
+                <Upload size={14} />
+                Upload
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const img = new Image();
+                      img.onload = () => {
+                        // Redimensiona pro formato vertical do celular (máx. 900px de largura)
+                        const scale = Math.min(1, 900 / img.width);
+                        const canvas = document.createElement("canvas");
+                        canvas.width = Math.round(img.width * scale);
+                        canvas.height = Math.round(img.height * scale);
+                        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        setMobileImage(canvas.toDataURL("image/jpeg", 0.85));
+                      };
+                      img.src = reader.result as string;
+                    };
+                    reader.readAsDataURL(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            {mobileImage.trim() && (
+              <div className="mt-2 relative rounded-xl overflow-hidden border border-gray-100 bg-gray-900 w-32">
+                <img
+                  src={mobileImage}
+                  alt="Pré-visualização mobile"
+                  className="w-full h-40 object-cover opacity-90"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = "0"; }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setMobileImage("")}
                   className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[10px] font-bold px-2 py-1 rounded-lg hover:bg-black/70 transition-colors"
                 >
                   Remover

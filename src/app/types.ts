@@ -13,15 +13,33 @@ export interface Produto {
   rating: number;
   reviews: number;
   image: string;
+  // Imagens extras do produto (além de "image", que continua sendo a capa).
+  // Usadas na galeria da página do produto.
+  images?: string[];
   category: string;
   badge?: string;
   freeShipping: boolean;
   stock: number;
-  description?: string;
   // E-mail do vendedor dono do produto (vazio = produto da própria loja)
   owner?: string;
   // % de desconto pagando no PIX, definido produto a produto (vazio = sem desconto)
   pixDesconto?: number;
+  // Variações de cor/modelo do produto (ex.: pulseiras/mostradores diferentes
+  // do mesmo relógio), para o cliente escolher antes de comprar
+  colors?: CorProduto[];
+  // Nome da cor escolhida na página do produto antes de "Comprar" — só
+  // existe numa cópia do produto colocada no carrinho (ItemCarrinho), nunca
+  // no cadastro em si. Cada cor escolhida vira uma linha separada no
+  // carrinho, com a foto e o estoque daquela cor específica.
+  corEscolhida?: string;
+}
+
+// Uma opção de cor/modelo dentro de um produto
+export interface CorProduto {
+  nome: string; // ex.: "Prata", "Dourado", "Preto"
+  hex?: string; // cor aproximada p/ mostrar como bolinha, ex.: "#C0C0C0"
+  image?: string; // foto do produto nessa cor (opcional, cai na capa se vazio)
+  estoque?: number; // estoque específico dessa cor (opcional)
 }
 
 
@@ -63,6 +81,9 @@ export interface Cupom {
 export interface Banner {
   id: number;
   image: string;
+  // Versão opcional pensada pro formato do celular (mais alta/quadrada) —
+  // sem ela, o mobile usa a mesma imagem do desktop
+  mobileImage?: string;
   tag: string;
   title: string;
   subtitle: string;
@@ -119,6 +140,9 @@ export interface Pedido {
   codigoVenda?: string;
   // Endereço de entrega do pedido
   endereco?: string;
+  // Código do cupom de desconto usado nesta compra (se houve) — cada cupom só
+  // pode ser usado uma vez por cliente, então isso é checado no próximo carrinho
+  cupomUsado?: string;
 }
 
 

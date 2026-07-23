@@ -48,8 +48,8 @@ function db(): PDO {
 }
 
 // Mesmas tabelas do backend Node — criadas somente se não existirem.
-// O banco em si é criado pelo painel do cPanel (a HostGator não permite
-// CREATE DATABASE pelo código).
+// O banco em si é criado pelo Painel de Controle da KingHost (a hospedagem
+// não permite CREATE DATABASE pelo código).
 function criar_tabelas(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS produtos (
         id BIGINT PRIMARY KEY,
@@ -65,10 +65,36 @@ function criar_tabelas(PDO $pdo): void {
         badge VARCHAR(32) NULL,
         freeShipping TINYINT(1) NOT NULL DEFAULT 1,
         stock INT NOT NULL DEFAULT 0,
-        description TEXT NULL,
         owner VARCHAR(255) NULL,
-        pixDesconto INT NULL
+        pixDesconto INT NULL,
+        images LONGTEXT NULL,
+        colors LONGTEXT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Migração: bancos criados antes de "images" (galeria) e "colors"
+    // (cores/modelos) existirem não ganham as colunas novas só com
+    // CREATE TABLE IF NOT EXISTS — adiciona só o que faltar.
+    foreach (["images" => "LONGTEXT NULL", "colors" => "LONGTEXT NULL"] as $coluna => $tipo) {
+        $stmt = $pdo->prepare(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'produtos' AND COLUMN_NAME = ?"
+        );
+        $stmt->execute([$coluna]);
+        if (!$stmt->fetch()) {
+            $pdo->exec("ALTER TABLE produtos ADD COLUMN `$coluna` $tipo");
+        }
+    }
+
+    // Migração: remove a coluna "description" — as características do
+    // produto deixaram de existir no site (o Admin não cadastra mais isso)
+    $stmtDescricao = $pdo->prepare(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'produtos' AND COLUMN_NAME = 'description'"
+    );
+    $stmtDescricao->execute();
+    if ($stmtDescricao->fetch()) {
+        $pdo->exec("ALTER TABLE produtos DROP COLUMN description");
+    }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS pedidos (
         id VARCHAR(32) PRIMARY KEY,
@@ -83,8 +109,20 @@ function criar_tabelas(PDO $pdo): void {
         pagamento VARCHAR(16) NULL,
         vendedor VARCHAR(255) NULL,
         codigoVenda VARCHAR(16) NULL,
-        endereco TEXT NULL
+        endereco TEXT NULL,
+        cupomUsado VARCHAR(32) NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Migração: bancos criados antes do campo cupomUsado existir (cupom de
+    // uso único por cliente) — adiciona só se estiver faltando.
+    $stmtCupomUsado = $pdo->prepare(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'pedidos' AND COLUMN_NAME = 'cupomUsado'"
+    );
+    $stmtCupomUsado->execute();
+    if (!$stmtCupomUsado->fetch()) {
+        $pdo->exec("ALTER TABLE pedidos ADD COLUMN cupomUsado VARCHAR(32) NULL");
+    }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS clientes (
         email VARCHAR(255) PRIMARY KEY,
@@ -130,12 +168,24 @@ function criar_tabelas(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS banners (
         id BIGINT PRIMARY KEY,
         image LONGTEXT,
+        mobileImage LONGTEXT NULL,
         tag VARCHAR(64),
         title VARCHAR(255),
         subtitle VARCHAR(255),
         cta VARCHAR(64),
         category VARCHAR(64)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Migração: bancos criados antes do campo mobileImage existir (imagem
+    // própria de banner pro celular) — adiciona só se estiver faltando.
+    $stmtBannerMobile = $pdo->prepare(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'banners' AND COLUMN_NAME = 'mobileImage'"
+    );
+    $stmtBannerMobile->execute();
+    if (!$stmtBannerMobile->fetch()) {
+        $pdo->exec("ALTER TABLE banners ADD COLUMN mobileImage LONGTEXT NULL");
+    }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS config (
         id INT PRIMARY KEY,

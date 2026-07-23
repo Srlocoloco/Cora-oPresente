@@ -36,7 +36,7 @@ export function CartaoProduto({ produto, aoAdicionarAoCarrinho, aoFavoritar, est
         <ImagemProduto
           src={produto.image}
           alt={produto.name}
-          className="w-full h-[115px] md:h-[155px] object-cover group-hover:scale-[1.04] transition-transform duration-300"
+          className="w-full h-[115px] md:h-[155px] object-contain group-hover:scale-[1.04] transition-transform duration-300"
         />
         <button
           onClick={(e) => { e.stopPropagation(); aoFavoritar(produto.id); }}
@@ -44,6 +44,18 @@ export function CartaoProduto({ produto, aoAdicionarAoCarrinho, aoFavoritar, est
         >
           <Heart size={13} className={estaFavoritado ? "fill-red-500 text-red-500" : "text-gray-300"} />
         </button>
+        {produto.colors && produto.colors.length > 0 && (
+          <div className="absolute bottom-2 left-2 flex gap-0.5 bg-white/90 rounded-full px-1.5 py-1">
+            {produto.colors.slice(0, 4).map((c, i) => (
+              <span
+                key={i}
+                className="w-2.5 h-2.5 rounded-full border border-white shadow-sm"
+                style={{ backgroundColor: c.hex || "#cccccc" }}
+                title={c.nome}
+              />
+            ))}
+          </div>
+        )}
       </div>
       <div className="p-2 md:p-3 flex flex-col flex-1">
         <span className="text-[9px] md:text-[10px] text-gray-400 font-semibold uppercase tracking-wide">{produto.brand}</span>
@@ -83,14 +95,14 @@ export function CartaoProduto({ produto, aoAdicionarAoCarrinho, aoFavoritar, est
         {produto.stock <= 0 ? (
           <button
             disabled
-            className="mt-2 md:mt-3 bg-gray-200 text-gray-400 font-bold text-[11px] md:text-[13px] py-2 md:py-2.5 rounded-xl w-full cursor-not-allowed"
+            className="hidden md:block md:mt-3 bg-gray-200 text-gray-400 font-bold text-[13px] py-2.5 rounded-xl w-full cursor-not-allowed"
           >
             Esgotado
           </button>
         ) : (
           <button
             onClick={() => aoAdicionarAoCarrinho(produto)}
-            className="mt-2 md:mt-3 bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold text-[11px] md:text-[13px] py-2 md:py-2.5 rounded-xl transition-colors w-full"
+            className="hidden md:block md:mt-3 bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold text-[13px] py-2.5 rounded-xl transition-colors w-full"
           >
             Comprar
           </button>

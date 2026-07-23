@@ -31,9 +31,10 @@ if ($metodo === "GET") {
             "badge" => $p["badge"],
             "freeShipping" => (bool) $p["freeShipping"],
             "stock" => (int) $p["stock"],
-            "description" => $p["description"],
             "owner" => $p["owner"],
             "pixDesconto" => $p["pixDesconto"] !== null ? (int) $p["pixDesconto"] : null,
+            "images" => isset($p["images"]) && $p["images"] !== null ? json_decode($p["images"], true) : null,
+            "colors" => isset($p["colors"]) && $p["colors"] !== null ? json_decode($p["colors"], true) : null,
         ], $pdo->query("SELECT * FROM produtos")->fetchAll());
 
         $pedidos = array_map(fn($o) => [
@@ -50,6 +51,7 @@ if ($metodo === "GET") {
             "vendedor" => $o["vendedor"],
             "codigoVenda" => $o["codigoVenda"],
             "endereco" => $o["endereco"],
+            "cupomUsado" => $o["cupomUsado"] ?? null,
         ], $pdo->query("SELECT * FROM pedidos")->fetchAll());
 
         $clientes = $pdo->query("SELECT email, name, since FROM clientes")->fetchAll();
@@ -90,6 +92,7 @@ if ($metodo === "GET") {
         $banners = array_map(fn($b) => [
             "id" => (int) $b["id"],
             "image" => $b["image"],
+            "mobileImage" => $b["mobileImage"] ?? null,
             "tag" => $b["tag"],
             "title" => $b["title"],
             "subtitle" => $b["subtitle"],
@@ -145,16 +148,21 @@ if ($metodo === "PUT" || $metodo === "POST") {
     try {
         switch ($colecao) {
             case "produtos":
+                $produtosParaGravar = array_map(function ($p) {
+                    $p["images"] = !empty($p["images"]) ? json_encode($p["images"]) : null;
+                    $p["colors"] = !empty($p["colors"]) ? json_encode($p["colors"]) : null;
+                    return $p;
+                }, is_array($dados) ? $dados : []);
                 regravar($pdo, "produtos", [
                     "id", "name", "brand", "price", "originalPrice", "installments",
                     "rating", "reviews", "image", "category", "badge", "freeShipping",
-                    "stock", "description", "owner", "pixDesconto",
-                ], is_array($dados) ? $dados : []);
+                    "stock", "owner", "pixDesconto", "images", "colors",
+                ], $produtosParaGravar);
                 break;
             case "pedidos":
                 regravar($pdo, "pedidos", [
                     "id", "customer", "email", "items", "total", "status", "date",
-                    "month", "category", "pagamento", "vendedor", "codigoVenda", "endereco",
+                    "month", "category", "pagamento", "vendedor", "codigoVenda", "endereco", "cupomUsado",
                 ], is_array($dados) ? $dados : []);
                 break;
             case "clientes":
@@ -187,7 +195,7 @@ if ($metodo === "PUT" || $metodo === "POST") {
                 break;
             case "banners":
                 regravar($pdo, "banners", [
-                    "id", "image", "tag", "title", "subtitle", "cta", "category",
+                    "id", "image", "mobileImage", "tag", "title", "subtitle", "cta", "category",
                 ], is_array($dados) ? $dados : []);
                 break;
             case "cartoesSalvos":

@@ -197,7 +197,7 @@ export const NOTIFICACAO_POR_STATUS: Record<string, { icon: React.ReactNode; tex
 export const VALIDADE_PIX_MS = 30 * 60 * 1000;
 
 // Endereço do backend (banco de dados + cobranças PIX oficiais do Sicredi).
-// Hospedagem definitiva: HostGator, com o backend-php publicado no mesmo
+// Hospedagem definitiva: KingHost, com o backend-php publicado no mesmo
 // domínio do site (veja backend-php/README.md). Antes de rodar "npm run
 // build" para publicar, crie um arquivo ".env" (copie de .env.example) com
 // VITE_BACKEND_URL=https://www.seusite.com.br — o mesmo domínio de sempre.

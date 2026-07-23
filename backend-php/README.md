@@ -1,61 +1,69 @@
-# Backend PHP — versão para a HostGator (hospedagem compartilhada)
+# Backend PHP — versão para a KingHost (hospedagem compartilhada)
 
 Mesmo papel do backend Node da pasta `backend`, mas em PHP puro: roda
-nativamente no cPanel da HostGator, sem instalar nada. Guarda todos os dados
-no MySQL da hospedagem e cria as cobranças PIX oficiais do Sicredi.
+nativamente na hospedagem da KingHost, sem instalar nada. Guarda todos os
+dados no MySQL da hospedagem e cria as cobranças PIX oficiais do Sicredi.
 
 > No seu computador continue usando o backend Node + XAMPP.
 > Esta pasta é só para a hospedagem.
 
-## Passo a passo na HostGator
+## Passo a passo na KingHost
 
-### 1. Criar o banco no cPanel
+### 1. Criar o banco no Painel de Controle
 
-cPanel → **Bancos de Dados MySQL**:
+Painel de Controle KingHost → **Bancos MySQL** → **Gerenciar Bancos MySQL** →
+**Novo banco de dados**:
 
-1. Crie o banco `coracaopresente` (vai ficar `SEUUSUARIO_coracaopresente`).
-2. Crie um usuário com senha forte (vai ficar `SEUUSUARIO_algo`).
-3. Adicione o usuário ao banco com **todos os privilégios**.
-4. Anote: nome completo do banco, usuário e senha.
+1. A KingHost não deixa escolher o nome — ele é criado automaticamente com
+   base no usuário do domínio (ex.: `coracao1_bd1`).
+2. Defina a senha do banco (é o usuário e a senha que você vai usar no
+   `config.php` — não é a mesma senha do seu login no painel).
+3. Em nível de acesso por IP, deixe **"Não liberar acesso externo"** (mais
+   seguro — o PHP roda no mesmo servidor, não precisa de acesso de fora).
+4. Anote o nome completo do banco e do usuário, mostrados na tela.
 
 As tabelas são criadas sozinhas no primeiro acesso — não precisa importar nada.
 
 ### 2. Configurar
 
 Edite `api/config.php` e preencha `DB_NAME`, `DB_USER` e `DB_PASS` com o que
-você anotou. (`DB_HOST` fica `localhost` mesmo.)
+você anotou. O `DB_HOST` na KingHost normalmente NÃO é `localhost` — veja o
+"Host para conexão" na tela do banco no painel (algo como
+`mysql.seudominio.com.br`) e use esse valor.
 
 ### 3. Publicar o site
 
 No seu computador, na pasta do projeto:
 
-1. Abra `src/app/App.tsx` e troque a linha
-   `const URL_BACKEND_PIX = "http://localhost:3333";`
-   por `const URL_BACKEND_PIX = "https://www.seudominio.com.br";`
-   (seu domínio, sem barra no final).
+1. Copie `.env.example` para `.env` e troque
+   `VITE_BACKEND_URL=https://www.seusite.com.br`
+   pelo seu domínio de verdade (sem barra no final) — é o mesmo domínio onde
+   a pasta `backend-php/api` vai ficar, em `/api`.
 2. Rode `npm run build` — sai a pasta `dist`.
-3. No cPanel → **Gerenciador de Arquivos** → `public_html`: envie o CONTEÚDO
-   de `dist` (o `index.html` e a pasta `assets`) para dentro de `public_html`.
+3. Envie o CONTEÚDO de `dist` (o `index.html` e a pasta `assets`) para dentro
+   de `public_html` — pelo **Gerenciar FTP** do Painel de Controle (ou um
+   cliente de FTP como o FileZilla, com os dados de acesso que aparecem lá).
 
 ### 4. Publicar a API
 
 Envie a pasta `api` (desta pasta `backend-php`) para dentro de `public_html`,
 ficando `public_html/api/` com: `.htaccess`, `config.php`, `lib.php`,
-`dados.php`, `pix.php`.
+`dados.php`, `avaliacoes.php`, `pix.php`, `mercadopago.php`.
 
 Teste: abra `https://www.seudominio.com.br/api/dados` — deve responder um JSON
 com as coleções. Se aparecer erro de MySQL, revise o passo 2.
 
 ### 5. Ativar o HTTPS
 
-cPanel → **SSL/TLS Status**: ative o certificado grátis (AutoSSL) para o seu
-domínio. O site e o PIX exigem HTTPS.
+No Painel de Controle, procure **Certificado SSL** e ative o certificado
+grátis (Let's Encrypt) para o seu domínio — funciona só depois do DNS do
+domínio já estar apontado para a KingHost. O site e o PIX exigem HTTPS.
 
 ### 6. PIX Sicredi (quando tiver as credenciais)
 
-1. No Gerenciador de Arquivos, crie a pasta `sicredi_certs` no diretório
-   **home** da conta (FORA de `public_html`) e envie `cert.pem` e `key.pem`
-   (conversão do certificado explicada no README da pasta `backend`).
+1. Pelo Gerenciar FTP (ou FileZilla), crie a pasta `sicredi_certs` no
+   diretório **home** da conta (FORA de `public_html`) e envie `cert.pem` e
+   `key.pem` (conversão do certificado explicada no README da pasta `backend`).
 2. Em `api/config.php`, preencha `SICREDI_CLIENT_ID`, `SICREDI_CLIENT_SECRET`
    e, quando for pra valer, mude `SICREDI_AMBIENTE` para `"producao"`.
 3. No portal do Sicredi, cadastre o webhook:
@@ -88,7 +96,11 @@ chave PIX das Configurações — a loja funciona normalmente.
 ## Rotas (iguais às do backend Node)
 
 - `GET  /api/dados` — todas as coleções
-- `PUT  /api/dados/{colecao}` — grava `produtos`, `pedidos`, `clientes`, `cargos`, `recrutamentos`, `cupons`, `alertasEstoque` ou `config`
+- `PUT  /api/dados/{colecao}` — grava `produtos`, `pedidos`, `clientes`, `cargos`, `recrutamentos`, `cupons`, `alertasEstoque`, `banners`, `cartoesSalvos` ou `config`
+- `GET  /api/avaliacoes/{produtoId}` — avaliações (comentário + vídeo) de um produto
+- `GET  /api/avaliacoes?todas=1` — todas as avaliações, pro painel Admin moderar
+- `POST /api/avaliacoes` — cria/atualiza a avaliação do cliente (só quem comprou o produto)
+- `DELETE /api/avaliacoes/{id}` — Admin exclui uma avaliação imprópria
 - `POST /api/pix/cobranca` — cria cobrança de 30 min
 - `GET  /api/pix/cobranca/{txid}` — status da cobrança
 - `POST /api/webhook/pix` — webhook do Sicredi

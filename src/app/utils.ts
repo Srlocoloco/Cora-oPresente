@@ -8,6 +8,15 @@ export function cupomEstaValido(c: Cupom) {
   return c.ativo && new Date(c.validade + "T23:59:59") >= new Date();
 }
 
+// Cada cupom só pode ser usado uma vez por cliente — true se este e-mail já
+// tem algum pedido (de qualquer status) que usou esse código de cupom
+export function clienteJaUsouCupom(email: string, codigoCupom: string, pedidos: Pedido[]) {
+  const emailLimpo = email.trim().toLowerCase();
+  return pedidos.some(
+    (p) => p.email.toLowerCase() === emailLimpo && p.cupomUsado?.toUpperCase() === codigoCupom.toUpperCase()
+  );
+}
+
 
 export function obterNivelVendedor(sales: number) {
   return NIVEIS_VENDEDOR.findIndex((l) => sales >= l.min && sales < l.max);
@@ -144,7 +153,11 @@ export function produtoFoiCompradoPor(email: string, produto: Produto, pedidos: 
     (o) =>
       o.email.trim().toLowerCase() === emailLimpo &&
       (o.status === "Pago" || o.status === "Entregue") &&
-      (o.items === produto.name || o.items.startsWith(`${produto.name} (`))
+      // "Nome", "Nome (2x)", "Nome - Cor" ou "Nome - Cor (2x)" — cobre compras
+      // com e sem cor escolhida
+      (o.items === produto.name ||
+        o.items.startsWith(`${produto.name} (`) ||
+        o.items.startsWith(`${produto.name} - `))
   );
 }
 

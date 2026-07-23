@@ -32,11 +32,12 @@ RewriteRule ^webhook/mercadopago$ mercadopago.php?acao=webhook [L,QSA]
   Require all denied
 </FilesMatch>
 
-# Avaliações podem chegar com vídeo em base64 (até ~16 MB) — alguns planos da
-# HostGator vêm com limite padrão menor (8 MB), o que rejeitaria o envio antes
-# mesmo de rodar o PHP. Isso só funciona se o servidor usa mod_php (a maioria
-# das contas cPanel/HostGator); se não fizer efeito, ajuste em cPanel →
-# "Selecionar versão do PHP" → "Opções" → post_max_size / upload_max_filesize.
+# Avaliações podem chegar com vídeo em base64 (até ~16 MB) — o limite padrão
+# de upload/post de alguns planos (ex.: 8 MB) rejeitaria o envio antes mesmo
+# de rodar o PHP. Isso só funciona se o servidor usa mod_php; se não fizer
+# efeito na KingHost, veja no Painel de Controle se há uma opção de PHP
+# (php.ini personalizado) pra aumentar post_max_size / upload_max_filesize —
+# ou peça ajuda ao suporte da KingHost.
 <IfModule mod_php.c>
   php_value post_max_size 20M
   php_value upload_max_filesize 20M
