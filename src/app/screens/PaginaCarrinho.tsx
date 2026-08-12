@@ -1,9 +1,10 @@
 // Tela PaginaCarrinho
 
-import { useState, useEffect } from "react";
-import { ShoppingCart, X, Plus, Truck, Shield, CreditCard, ChevronLeft, ChevronRight, Zap, MapPin, Lock } from "lucide-react";
-import type { ItemCarrinho, Usuario, ConfigLoja, Cupom, Pedido, DadosPagamento } from "../types";
-import { formatarMoeda, precoParcela } from "../utils";
+import { useState } from "react";
+import { ShoppingCart, X, Truck, Shield, ChevronLeft, ChevronRight, Zap, MapPin, Lock, CreditCard } from "lucide-react";
+import type { ItemCarrinho, Usuario, ConfigLoja, Cupom, DadosPagamento } from "../types";
+import { MAX_PARCELAS_CARTAO } from "../constantes";
+import { formatarMoeda, precoParcela, maxParcelasDoCarrinho } from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
 import { Logo } from "../components/Logo";
 import { CampoCodigoVenda } from "../components/CampoCodigoVenda";
@@ -20,6 +21,7 @@ export function PaginaCarrinho({
   codigoVenda,
   aoMudarCodigoVenda,
   nomeDonoCodigo,
+  vendedorVinculado,
   config,
   cupom,
   aoMudarCupom,
@@ -35,6 +37,7 @@ export function PaginaCarrinho({
   codigoVenda: string;
   aoMudarCodigoVenda: (v: string) => void;
   nomeDonoCodigo: string | null;
+  vendedorVinculado?: string | null;
   config: ConfigLoja;
   cupom: string;
   aoMudarCupom: (v: string) => void;
@@ -42,19 +45,6 @@ export function PaginaCarrinho({
   // true quando o código digitado é de um cupom válido, mas este cliente já usou
   cupomJaUsado?: boolean;
 }) {
-  const [formaPagamento, setFormaPagamento] = useState<"cartao" | "pix">("cartao");
-  const [installments, setInstallments] = useState(12);
-  // Só oferece as opções de parcelamento cadastradas nos produtos do
-  // carrinho — com produtos diferentes, usa a mais restritiva (o menor
-  // número de parcelas definido entre eles)
-  const maxParcelasCarrinho = items.length > 0 ? Math.min(...items.map((i) => i.installments)) : 12;
-  const opcoesParcelamento = [1, 2, 3, 6, 10, 12].filter((n) => n <= maxParcelasCarrinho);
-  useEffect(() => {
-    if (installments > maxParcelasCarrinho) {
-      setInstallments(opcoesParcelamento[opcoesParcelamento.length - 1] ?? 1);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [maxParcelasCarrinho]);
   const subtotal = items.reduce((acum, i) => acum + i.price * i.qty, 0);
   // Se TODOS os itens do carrinho têm o selo "Frete Grátis", o frete some de
   // verdade — não só na etiqueta do produto. Com itens misturados (alguns
@@ -80,6 +70,13 @@ export function PaginaCarrinho({
   const [numeroEndereco, setNumeroEndereco] = useState("");
   const [complementoEndereco, setComplementoEndereco] = useState("");
   const [erroCompra, setErroCompra] = useState("");
+  // Forma de pagamento escolhida pelo cliente (o desconto do PIX só vale no PIX)
+  const [metodoPagamento, setMetodoPagamento] = useState<"pix" | "cartao">("pix");
+  const [parcelas, setParcelas] = useState(1);
+  // Teto de parcelas do carrinho: o menor "Parcelamento" entre os produtos
+  const maxParcelas = maxParcelasDoCarrinho(items, MAX_PARCELAS_CARTAO);
+  // Se o carrinho mudar e o teto cair, a escolha volta para o máximo permitido
+  const parcelasEscolhidas = Math.min(parcelas, maxParcelas);
 
   const calcularFrete = async () => {
     const cepLimpo = cep.replace(/\D/g, "");
@@ -123,9 +120,10 @@ export function PaginaCarrinho({
 
   // Frete: usa o valor calculado pelo CEP; sem CEP informado, regra padrão da loja
   const shipping = todosFreteGratis ? 0 : freteInfo ? freteInfo.valor : subtotal >= config.freteGratisAcima ? 0 : config.fretePadrao;
-  // Desconto PIX definido produto a produto (soma item a item do carrinho)
+  // Desconto PIX definido produto a produto (soma item a item do carrinho).
+  // Só entra na conta quando o cliente escolhe pagar com PIX.
   const pixDiscount =
-    formaPagamento === "pix"
+    metodoPagamento === "pix"
       ? items.reduce((acum, i) => acum + i.price * i.qty * ((i.pixDesconto ?? 0) / 100), 0)
       : 0;
   // Desconto do cupom (aplicado sobre o subtotal)
@@ -135,23 +133,26 @@ export function PaginaCarrinho({
   return (
     <div className="min-h-screen bg-[#FBF4EA]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#C8102E] to-[#A50E27] py-3 px-4 shadow-md">
-        <div className="max-w-[1440px] mx-auto flex items-center gap-4">
-          <button onClick={aoVoltar} className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-semibold transition-colors">
+      <div className="bg-[#A8102A] py-3 px-4">
+        <div className="max-w-[1440px] mx-auto grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <button
+            onClick={aoVoltar}
+            className="justify-self-start text-white/85 hover:text-white flex items-center gap-1.5 text-[13px] font-semibold transition-colors py-2 pr-2 -my-2 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+          >
             <ChevronLeft size={18} />
-            Continuar comprando
+            <span className="hidden sm:inline">Continuar comprando</span>
           </button>
-          <div className="flex-1 flex justify-center">
-            <Logo />
+          <div className="justify-self-center">
+            <Logo claro />
           </div>
-          <div className="w-36" />
+          <div />
         </div>
       </div>
 
       {/* Breadcrumb */}
       <div className="max-w-[1440px] mx-auto px-4 py-3">
         <div className="flex items-center gap-2 text-[12px] text-gray-500 font-medium">
-          <button onClick={aoVoltar} className="hover:text-[#C8102E] transition-colors">Início</button>
+          <button onClick={aoVoltar} className="hover:text-[#A8102A] transition-colors">Início</button>
           <ChevronRight size={13} />
           <span className="text-gray-800 font-semibold">Carrinho de Compras</span>
         </div>
@@ -160,11 +161,11 @@ export function PaginaCarrinho({
       {items.length === 0 ? (
         <div className="max-w-[1440px] mx-auto px-4 py-20 text-center">
           <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-5">
-            <ShoppingCart size={32} strokeWidth={1.5} className="text-[#C8102E]" />
+            <ShoppingCart size={32} strokeWidth={1.5} className="text-[#A8102A]" />
           </div>
           <h2 className="text-2xl font-black text-gray-800 mb-2">Seu carrinho está vazio</h2>
           <p className="text-gray-500 mb-6">Adicione produtos e volte aqui para finalizar sua compra.</p>
-          <button onClick={aoVoltar} className="bg-[#C8102E] text-white font-bold px-8 py-3 rounded-xl hover:bg-[#8C1626] transition-colors">
+          <button onClick={aoVoltar} className="bg-[#A8102A] text-white font-bold px-8 py-3 rounded-xl hover:bg-[#7A1220] transition-colors">
             Explorar Produtos
           </button>
         </div>
@@ -178,37 +179,48 @@ export function PaginaCarrinho({
               </h2>
 
               {items.map((item) => (
-                <div key={`${item.id}-${item.corEscolhida ?? ""}`} className="bg-white rounded-2xl p-4 flex gap-4 border border-gray-100 shadow-sm">
-                  <div className="w-24 h-24 bg-gray-50 rounded-xl flex items-center justify-center p-2 flex-shrink-0">
+                <div key={`${item.id}-${item.corEscolhida ?? ""}`} className="bg-white rounded-2xl p-4 md:p-5 flex gap-4 border border-gray-100">
+                  <div className="w-24 h-24 md:w-28 md:h-28 bg-gray-50 rounded-xl flex items-center justify-center p-2 flex-shrink-0">
                     <ImagemProduto src={item.image} alt={item.name} className="w-full h-full object-contain" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">{item.brand}</p>
-                        <p className="text-sm text-gray-800 font-semibold leading-snug mt-0.5 line-clamp-2">{item.name}</p>
+                        <p className="text-[13px] md:text-sm text-gray-800 font-semibold leading-snug mt-0.5 line-clamp-2">{item.name}</p>
                         {item.corEscolhida && (
                           <p className="text-[11px] text-gray-500 font-semibold mt-0.5">Cor: {item.corEscolhida}</p>
                         )}
                       </div>
-                      <button onClick={() => onRemove(item.id, item.corEscolhida)} className="text-gray-300 hover:text-red-500 p-1 transition-colors flex-shrink-0">
-                        <X size={16} />
+                      <button
+                        onClick={() => onRemove(item.id, item.corEscolhida)}
+                        aria-label={`Remover ${item.name} do carrinho`}
+                        className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-2 -m-1 rounded-lg transition-colors flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#A8102A]"
+                      >
+                        <X size={17} />
                       </button>
                     </div>
                     {item.freeShipping && (
-                      <div className="flex items-center gap-1 text-green-600 text-[11px] font-bold mt-1.5">
+                      <div className="flex items-center gap-1 text-green-700 text-[11px] font-bold mt-1.5">
                         <Truck size={11} /> FRETE GRÁTIS
                       </div>
                     )}
                     <div className="flex items-center justify-between mt-3 flex-wrap gap-3">
                       <div>
-                        <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1">
-                          <button onClick={() => aoMudarQtd(item.id, -1, item.corEscolhida)} className="w-7 h-7 bg-white rounded-lg flex items-center justify-center text-sm font-black shadow-sm hover:shadow transition-shadow">-</button>
-                          <span className="w-7 text-center text-sm font-black">{item.qty}</span>
+                        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+                          <button
+                            onClick={() => aoMudarQtd(item.id, -1, item.corEscolhida)}
+                            aria-label="Diminuir quantidade"
+                            className="w-9 h-9 bg-white rounded-lg flex items-center justify-center text-base font-black hover:bg-gray-50 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#A8102A]"
+                          >
+                            −
+                          </button>
+                          <span className="w-8 text-center text-[14px] font-black" aria-live="polite">{item.qty}</span>
                           <button
                             onClick={() => aoMudarQtd(item.id, 1, item.corEscolhida)}
                             disabled={item.qty >= item.stock}
-                            className="w-7 h-7 bg-white rounded-lg flex items-center justify-center text-sm font-black shadow-sm hover:shadow transition-shadow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-sm"
+                            aria-label="Aumentar quantidade"
+                            className="w-9 h-9 bg-white rounded-lg flex items-center justify-center text-base font-black hover:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#A8102A]"
                           >
                             +
                           </button>
@@ -229,9 +241,9 @@ export function PaginaCarrinho({
               ))}
 
               {/* Cálculo de frete pelo CEP (somente Paraná) */}
-              <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+              <div className="bg-white rounded-2xl p-4 md:p-5 border border-gray-100">
                 <div className="flex items-center gap-2 mb-1">
-                  <MapPin size={16} className="text-[#C8102E]" />
+                  <MapPin size={16} className="text-[#A8102A]" />
                   <span className="text-[13px] font-bold text-gray-700">Calcular prazo de entrega</span>
                 </div>
                 <p className="text-[11px] text-gray-400 mb-3">Entregamos em todo o estado do Paraná</p>
@@ -244,7 +256,7 @@ export function PaginaCarrinho({
                       setCep(numeros.length > 5 ? `${numeros.slice(0, 5)}-${numeros.slice(5)}` : numeros);
                     }}
                     onKeyDown={(e) => { if (e.key === "Enter") calcularFrete(); }}
-                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] transition-colors"
+                    className="flex-1 min-w-0 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#A8102A] transition-colors"
                     placeholder="Digite seu CEP"
                     inputMode="numeric"
                     maxLength={9}
@@ -252,7 +264,7 @@ export function PaginaCarrinho({
                   <button
                     onClick={calcularFrete}
                     disabled={calculandoFrete}
-                    className="bg-[#C8102E] text-white font-bold text-sm px-5 py-2.5 rounded-xl hover:bg-[#8C1626] disabled:opacity-70 transition-colors flex items-center gap-2"
+                    className="bg-[#A8102A] text-white font-bold text-sm px-5 py-2.5 rounded-xl hover:bg-[#7A1220] disabled:opacity-70 transition-colors flex items-center gap-2"
                   >
                     {calculandoFrete ? (
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -288,20 +300,20 @@ export function PaginaCarrinho({
                       value={ruaEndereco}
                       onChange={(e) => setRuaEndereco(e.target.value)}
                       placeholder="Rua / Avenida"
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] transition-colors"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#A8102A] transition-colors"
                     />
                     <div className="flex gap-2">
                       <input
                         value={numeroEndereco}
                         onChange={(e) => setNumeroEndereco(e.target.value)}
                         placeholder="Número"
-                        className="w-28 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] transition-colors"
+                        className="w-28 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#A8102A] transition-colors"
                       />
                       <input
                         value={complementoEndereco}
                         onChange={(e) => setComplementoEndereco(e.target.value)}
                         placeholder="Complemento (opcional)"
-                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] transition-colors"
+                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#A8102A] transition-colors"
                       />
                     </div>
                     {freteInfo.bairro && (
@@ -311,13 +323,14 @@ export function PaginaCarrinho({
                 )}
               </div>
 
-              {/* Código de venda: credita esta compra a um vendedor ou ao Master */}
-              <CampoCodigoVenda codigo={codigoVenda} aoMudar={aoMudarCodigoVenda} nomeDono={nomeDonoCodigo} />
+              {!vendedorVinculado && (
+                <CampoCodigoVenda codigo={codigoVenda} aoMudar={aoMudarCodigoVenda} nomeDono={nomeDonoCodigo} />
+              )}
             </div>
 
             {/* Pedido Summary */}
             <div className="lg:w-[360px] flex-shrink-0">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden sticky top-20">
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden sticky top-4">
                 <div className="p-5 border-b border-gray-100">
                   <h3 className="font-black text-gray-900 text-base">Resumo do Pedido</h3>
                 </div>
@@ -326,44 +339,35 @@ export function PaginaCarrinho({
                 <div className="p-5 border-b border-gray-100">
                   <p className="text-[12px] font-bold text-gray-500 mb-3 uppercase tracking-wide">Forma de Pagamento</p>
                   <div className="grid grid-cols-2 gap-2">
-                    {(["cartao", "pix"] as const).map((m) => {
-                      const labels = { cartao: "Cartão", pix: "PIX" };
-                      const icons = { cartao: <CreditCard size={16} />, pix: <Zap size={16} /> };
-                      return (
-                        <button
-                          key={m}
-                          onClick={() => setFormaPagamento(m)}
-                          className={`py-2.5 rounded-xl text-[12px] font-bold border-2 transition-all flex flex-col items-center gap-0.5 ${
-                            formaPagamento === m
-                              ? "border-[#C8102E] bg-red-50 text-[#C8102E]"
-                              : "border-gray-200 text-gray-600 hover:border-gray-300"
-                          }`}
-                        >
-                          {icons[m]}
-                          {labels[m]}
-                        </button>
-                      );
-                    })}
+                    <button
+                      type="button"
+                      onClick={() => setMetodoPagamento("pix")}
+                      aria-pressed={metodoPagamento === "pix"}
+                      className={`py-3 rounded-xl text-[13px] font-bold border-2 flex items-center justify-center gap-1.5 transition-colors ${
+                        metodoPagamento === "pix"
+                          ? "border-[#A8102A] bg-red-50 text-[#A8102A]"
+                          : "border-gray-200 text-gray-500 hover:border-gray-300"
+                      }`}
+                    >
+                      <Zap size={16} />
+                      PIX
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMetodoPagamento("cartao")}
+                      aria-pressed={metodoPagamento === "cartao"}
+                      className={`py-3 rounded-xl text-[13px] font-bold border-2 flex items-center justify-center gap-1.5 transition-colors ${
+                        metodoPagamento === "cartao"
+                          ? "border-[#A8102A] bg-red-50 text-[#A8102A]"
+                          : "border-gray-200 text-gray-500 hover:border-gray-300"
+                      }`}
+                    >
+                      <CreditCard size={16} />
+                      Cartão
+                    </button>
                   </div>
 
-                  {formaPagamento === "cartao" && (
-                    <div className="mt-3">
-                      <label className="text-[11px] font-semibold text-gray-500 block mb-1.5">Parcelamento</label>
-                      <select
-                        value={installments}
-                        onChange={(e) => setInstallments(Number(e.target.value))}
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#C8102E] transition-colors"
-                      >
-                        {opcoesParcelamento.map((n) => (
-                          <option key={n} value={n}>
-                            {n}x de {precoParcela(subtotal, n)} sem juros
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {formaPagamento === "pix" && (
+                  {metodoPagamento === "pix" ? (
                     <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
                       <span className="text-emerald-700 text-[12px] font-medium">
                         {pixDiscount > 0
@@ -371,8 +375,35 @@ export function PaginaCarrinho({
                           : "Aprovação imediata pagando com PIX"}
                       </span>
                     </div>
+                  ) : (
+                    <div className="mt-3">
+                      <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">
+                        {maxParcelas === 1 ? "Pagamento à vista" : "Parcelas"}
+                      </label>
+                      <select
+                        disabled={maxParcelas === 1}
+                        value={parcelasEscolhidas}
+                        onChange={(e) => setParcelas(Number(e.target.value))}
+                        className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:border-[#A8102A] transition-colors"
+                      >
+                        {Array.from({ length: maxParcelas }, (_, i) => i + 1).map((n) => (
+                          <option key={n} value={n}>
+                            {n}x de {precoParcela(total, n)} sem juros
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-gray-400 mt-1.5">
+                        {maxParcelas === 1
+                          ? "Os produtos deste carrinho não têm parcelamento."
+                          : `Até ${maxParcelas}x conforme o parcelamento cadastrado nos produtos.`}
+                      </p>
+                      {pixDiscount > 0 && (
+                        <p className="text-[11px] text-amber-600 font-medium mt-2">
+                          O desconto do PIX não vale no cartão.
+                        </p>
+                      )}
+                    </div>
                   )}
-
                 </div>
 
                 {/* Cupom de desconto */}
@@ -382,7 +413,7 @@ export function PaginaCarrinho({
                     value={cupom}
                     onChange={(e) => aoMudarCupom(e.target.value.toUpperCase())}
                     placeholder="Tem um cupom? Digite aqui"
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#C8102E] transition-colors font-mono"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#A8102A] transition-colors font-mono"
                   />
                   {cupom.trim().length > 0 && cupomAplicado && (
                     <div className="mt-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[12px] font-semibold px-3 py-2 rounded-lg">
@@ -429,11 +460,6 @@ export function PaginaCarrinho({
                     <span className="font-black text-gray-900">Total</span>
                     <div className="text-right">
                       <div className="text-2xl font-black text-gray-900">{formatarMoeda(total)}</div>
-                      {formaPagamento === "cartao" && (
-                        <div className="text-[11px] text-gray-500">
-                          ou {installments}x de {precoParcela(total, installments)}
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -456,25 +482,27 @@ export function PaginaCarrinho({
                       }
                       // Código de venda é obrigatório: toda compra precisa ser
                       // creditada a um vendedor ou ao Master
-                      if (!codigoVenda.trim()) {
-                        setErroCompra("Informe o código de venda de quem indicou a compra para continuar.");
-                        return;
-                      }
-                      if (!nomeDonoCodigo) {
-                        setErroCompra("Código de venda inválido — confira o código e tente de novo.");
-                        return;
+                      if (!vendedorVinculado) {
+                        if (!codigoVenda.trim()) {
+                          setErroCompra("Informe o código de venda de quem indicou a compra para continuar.");
+                          return;
+                        }
+                        if (!nomeDonoCodigo) {
+                          setErroCompra("Código de venda inválido — confira o código e tente de novo.");
+                          return;
+                        }
                       }
                       setErroCompra("");
                       const complemento = complementoEndereco.trim() ? ` - ${complementoEndereco.trim()}` : "";
                       const bairro = freteInfo.bairro ? `, ${freteInfo.bairro}` : "";
                       aoFinalizarCompra({
-                        metodo: formaPagamento,
+                        metodo: metodoPagamento,
                         total,
-                        parcelas: formaPagamento === "cartao" ? installments : 1,
+                        parcelas: metodoPagamento === "cartao" ? parcelasEscolhidas : 1,
                         endereco: `${ruaEndereco.trim()}, ${numeroEndereco.trim()}${complemento}${bairro} — ${freteInfo.cidade} · CEP ${cep}`,
                       });
                     }}
-                    className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-4 rounded-xl transition-colors text-base flex items-center justify-center gap-2"
+                    className="w-full bg-[#A8102A] hover:bg-[#7A1220] text-white font-black py-4 rounded-xl transition-colors text-base flex items-center justify-center gap-2"
                   >
                     <Shield size={16} />
                     Finalizar Compra

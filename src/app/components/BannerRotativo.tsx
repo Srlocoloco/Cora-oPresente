@@ -52,7 +52,7 @@ export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[];
   return (
     <div className="max-w-[1440px] mx-auto px-4 pt-5">
       <div
-        className="relative overflow-hidden bg-[#C8102E] rounded-none sm:rounded-2xl md:rounded-3xl shadow-lg h-[120px] sm:h-[170px] md:h-[315px]"
+        className="relative overflow-hidden bg-[#A8102A] rounded-none sm:rounded-2xl md:rounded-3xl shadow-sm h-[120px] sm:h-[170px] md:h-[315px]"
         onMouseEnter={() => setPausado(true)}
         onMouseLeave={() => setPausado(false)}
       >

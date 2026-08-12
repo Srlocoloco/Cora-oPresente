@@ -106,15 +106,14 @@ export function TelaPix({
     <div className="min-h-screen bg-[#FBF4EA]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Header */}
       <div className="bg-[#C8102E] py-3 px-4 shadow-md">
-        <div className="max-w-[1440px] mx-auto flex items-center gap-4">
-          <button onClick={aoVoltar} className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-semibold transition-colors">
+        <div className="max-w-[1440px] mx-auto relative flex items-center min-h-[40px]">
+          <button onClick={aoVoltar} className="relative z-10 text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-semibold transition-colors">
             <ChevronLeft size={18} />
-            Voltar ao carrinho
+            <span className="hidden sm:inline">Voltar ao carrinho</span>
           </button>
-          <div className="flex-1 flex justify-center">
-            <Logo />
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <Logo claro />
           </div>
-          <div className="w-36" />
         </div>
       </div>
 

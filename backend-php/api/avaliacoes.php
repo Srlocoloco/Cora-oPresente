@@ -85,9 +85,12 @@ if ($metodo === "GET") {
 
 // ── Criação/atualização de uma avaliação ──────────────────────────────────────
 if ($metodo === "POST") {
+    limitar_taxa($pdo, "avaliacoes_criar", 20, 300);
+    // Usa o e-mail da sessão autenticada, nunca o que vem no corpo — impede
+    // que alguém publique uma avaliação em nome de outro cliente
+    $clienteEmail = strtolower(email_autenticado($pdo));
     $corpo = corpo_json();
     $produtoId = (int) ($corpo["produtoId"] ?? 0);
-    $clienteEmail = trim((string) ($corpo["clienteEmail"] ?? ""));
     $clienteNome = trim((string) ($corpo["clienteNome"] ?? ""));
     $nota = (int) ($corpo["nota"] ?? 0);
     $comentario = trim((string) ($corpo["comentario"] ?? ""));
@@ -96,6 +99,9 @@ if ($metodo === "POST") {
 
     if ($produtoId <= 0 || $clienteEmail === "" || $clienteNome === "") {
         json_out(["erro" => "Dados incompletos."], 400);
+    }
+    if ($video !== null && !validar_video_base64($video)) {
+        json_out(["erro" => "Arquivo de vídeo inválido."], 400);
     }
     if ($nota < 1 || $nota > 5) {
         json_out(["erro" => "Escolha de 1 a 5 estrelas."], 400);
@@ -148,6 +154,7 @@ if ($metodo === "POST") {
 
 // ── Exclusão (Admin remove avaliação imprópria) ───────────────────────────────
 if ($metodo === "DELETE") {
+    exigir_admin($pdo);
     $id = (int) ($_GET["produtoId"] ?? 0); // rota /avaliacoes/{id} reaproveita o mesmo parâmetro
     if ($id <= 0) json_out(["erro" => "Id inválido."], 400);
     try {
@@ -157,6 +164,7 @@ if ($metodo === "DELETE") {
         if ($linha) {
             $pdo->prepare("DELETE FROM avaliacoes WHERE id = ?")->execute([$id]);
             recalcularResumoProduto($pdo, (int) $linha["produtoId"]);
+            registrar_auditoria($pdo, "excluir_avaliacao", (string) $id);
         }
         json_out(["ok" => true]);
     } catch (Throwable $e) {

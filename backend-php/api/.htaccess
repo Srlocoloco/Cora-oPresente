@@ -3,6 +3,17 @@
 RewriteEngine On
 RewriteBase /api/
 
+# Força HTTPS também na API (mesma proteção do site)
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+<IfModule mod_headers.c>
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
 # Banco de dados
 RewriteRule ^dados$ dados.php [L,QSA]
 RewriteRule ^dados/([A-Za-z]+)$ dados.php?colecao=$1 [L,QSA]
@@ -15,20 +26,53 @@ RewriteRule ^avaliacoes/([0-9]+)$ avaliacoes.php?produtoId=$1 [L,QSA]
 RewriteRule ^pix/cobranca$ pix.php?acao=cobranca [L,QSA]
 RewriteRule ^pix/cobranca/([A-Za-z0-9]+)$ pix.php?acao=status&txid=$1 [L,QSA]
 
-# Webhook do Sicredi
+# Pagamento no cartão de crédito
+RewriteRule ^cartao/pagamento$ cartao.php?acao=pagamento [L,QSA]
+RewriteRule ^cartao/pagamento/([A-Za-z0-9]+)$ cartao.php?acao=status&transacaoId=$1 [L,QSA]
+
+# Webhooks do Sicredi
 RewriteRule ^webhook/pix$ pix.php?acao=webhook [L,QSA]
+RewriteRule ^webhook/cartao$ cartao.php?acao=webhook [L,QSA]
 
-# Pagamento com cartão (Mercado Pago)
-RewriteRule ^pagamento/cartao$ mercadopago.php?acao=pagamento [L,QSA]
+# Login do Admin (senha nunca fica no código do site — só aqui no servidor)
+RewriteRule ^admin/login$ admin.php?acao=login [L,QSA]
+RewriteRule ^admin/verificar-2fa$ admin.php?acao=verificar-2fa [L,QSA]
+RewriteRule ^admin/logout$ admin.php?acao=logout [L,QSA]
+RewriteRule ^admin/auditoria$ admin.php?acao=auditoria [L,QSA]
 
-# Cofre de cartões (Mercado Pago)
-RewriteRule ^cartao/salvar$ mercadopago.php?acao=salvar_cartao [L,QSA]
+# Finalização de compra (grava só o que a compra mudou, não a tabela inteira)
+RewriteRule ^checkout$ checkout.php [L,QSA]
 
-# Webhook do Mercado Pago
-RewriteRule ^webhook/mercadopago$ mercadopago.php?acao=webhook [L,QSA]
+# Foto de um produto como imagem de verdade (usada nos e-mails de compra/entrega)
+RewriteRule ^produtos/([0-9]+)/imagem$ imagem.php?id=$1 [L,QSA]
+
+# Rastreamento público (nº do pedido + e-mail) — antes da regra genérica abaixo
+RewriteRule ^pedidos/rastrear$ pedidos.php?acao=rastrear [L,QSA]
+
+# Status de UM pedido (Admin)
+RewriteRule ^pedidos/([^/]+)$ pedidos.php?id=$1 [L,QSA]
+
+# Notificações no celular (Web Push)
+RewriteRule ^push/chave-publica$ notificacoes.php?acao=chave-publica [L,QSA]
+RewriteRule ^push/inscrever$ notificacoes.php?acao=inscrever [L,QSA]
+RewriteRule ^push/pendentes$ notificacoes.php?acao=pendentes [L,QSA]
+
+# Conta do cliente: cadastro, login (senha) e login com Google
+RewriteRule ^clientes/cadastro$ clientes.php?acao=cadastro [L,QSA]
+RewriteRule ^clientes/login$ clientes.php?acao=login [L,QSA]
+RewriteRule ^clientes/verificar-2fa$ clientes.php?acao=verificar-2fa [L,QSA]
+RewriteRule ^clientes/login-google$ clientes.php?acao=login-google [L,QSA]
+RewriteRule ^clientes/logout$ clientes.php?acao=logout [L,QSA]
+RewriteRule ^clientes/verificar-email$ clientes.php?acao=verificar-email [L,QSA]
+RewriteRule ^clientes/reenviar-verificacao$ clientes.php?acao=reenviar-verificacao [L,QSA]
+RewriteRule ^clientes/esqueci-senha$ clientes.php?acao=esqueci-senha [L,QSA]
+RewriteRule ^clientes/redefinir-senha$ clientes.php?acao=redefinir-senha [L,QSA]
+
+# Cliente ativa o código de vendedor recebido do Master
+RewriteRule ^recrutamentos/([^/]+)/ativar$ recrutamentos.php?codigo=$1 [L,QSA]
 
 # Bloqueia acesso direto aos arquivos de apoio
-<FilesMatch "^(config|lib)\.php$">
+<FilesMatch "^(config|lib|avisos|correios|smtp)\.php$">
   Require all denied
 </FilesMatch>
 

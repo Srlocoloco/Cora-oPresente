@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { Star, Trash2, Video } from "lucide-react";
 import { URL_BACKEND_PIX } from "../constantes";
+import { cabecalhosAdmin } from "../authToken";
 
 interface AvaliacaoAdmin {
   id: number;
@@ -50,7 +51,10 @@ export function PaginaAvaliacoesAdmin({
   const excluir = async (a: AvaliacaoAdmin) => {
     setExcluindo(a.id);
     try {
-      const resposta = await fetch(`${URL_BACKEND_PIX}/api/avaliacoes/${a.id}`, { method: "DELETE" });
+      const resposta = await fetch(`${URL_BACKEND_PIX}/api/avaliacoes/${a.id}`, {
+        method: "DELETE",
+        headers: cabecalhosAdmin(),
+      });
       if (!resposta.ok) throw new Error();
       setAvaliacoes((anterior) => anterior.filter((x) => x.id !== a.id));
       const restantes = avaliacoes.filter((x) => x.id !== a.id && x.produtoId === a.produtoId);

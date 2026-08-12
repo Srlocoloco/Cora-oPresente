@@ -180,3 +180,16 @@ export const formatarMoeda = (v: number) =>
 export const precoParcela = (price: number, n: number) => formatarMoeda(price / n);
 export const pctDesconto = (orig: number, curr: number) =>
   Math.round(((orig - curr) / orig) * 100);
+
+// Máximo de parcelas do carrinho no cartão: vale o parcelamento cadastrado no
+// produto (campo "Parcelamento" do Admin). Com vários produtos, manda o MENOR
+// deles — nenhum item pode ser parcelado além do que o Admin permitiu.
+// "teto" é o limite geral da loja (MAX_PARCELAS_CARTAO).
+export function maxParcelasDoCarrinho(items: { installments?: number }[], teto = 12) {
+  if (items.length === 0) return 1;
+  const menor = items.reduce((min, i) => {
+    const n = Math.floor(i.installments ?? 1);
+    return Math.min(min, n >= 1 ? n : 1);
+  }, teto);
+  return Math.max(1, Math.min(menor, teto));
+}

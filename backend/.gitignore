@@ -7,3 +7,6 @@ certs/*.cer
 certs/*.key
 node_modules/
 .claude
+
+# Chave das notificações no celular (Web Push) — nunca versionar
+vapid.pem

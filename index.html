@@ -6,14 +6,16 @@
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <link rel="icon" type="image/png" href="/favicon.png" />
+      <!-- Instalável no celular (PWA): ícone na tela inicial + notificações -->
+      <link rel="manifest" href="/manifest.webmanifest" />
+      <meta name="theme-color" content="#C8102E" />
+      <link rel="apple-touch-icon" href="/logo.png" />
+      <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="apple-mobile-web-app-title" content="Coração Presente" />
       <title>Coração Presente</title>
       <meta name="description" content="Offers an e-commerce platform styled like Magazine Luiza Brazil with an admin system to manage products, orders, and customer interactions efficiently." />
       <meta name="robots" content="noindex, nofollow" />
       <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
-      <!-- SDK do Mercado Pago: usado no navegador para tokenizar o cartão
-           (transformar os dados digitados num "token" seguro, sem que o
-           número e o CVV cheguem no nosso backend). -->
-      <script src="https://sdk.mercadopago.com/js/v2"></script>
     </head>
 
     <body>

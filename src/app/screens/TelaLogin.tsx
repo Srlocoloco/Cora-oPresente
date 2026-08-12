@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus, Heart, Truck, CreditCard, Eye, EyeOff, ChevronLeft, Check, Zap, Lock } from "lucide-react";
 import type { Usuario, Cliente } from "../types";
-import { EMAIL_ADMIN, SENHA_ADMIN, NOME_ADMIN, GOOGLE_CLIENT_ID } from "../constantes";
+import { EMAIL_ADMIN, NOME_ADMIN, GOOGLE_CLIENT_ID, URL_BACKEND_PIX } from "../constantes";
 import { Logo } from "../components/Logo";
+import { definirSessao } from "../authToken";
+import { IndicadorForcaSenha } from "../components/IndicadorForcaSenha";
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 
@@ -32,6 +34,19 @@ export function TelaLogin({
   // Cadastro rápido com Google: só pede o nome de usuário
   const [modoGoogle, setModoGoogle] = useState(false);
   const [nomeGoogle, setNomeGoogle] = useState("");
+  // 2FA (Admin ou cliente): depois da senha certa, pede o código de 6
+  // dígitos mandado por e-mail. "email2fa" guarda pra qual conta o código foi
+  // pedido — no caso do cliente, é o que a etapa de confirmação manda de volta.
+  const [tipo2fa, setTipo2fa] = useState<"admin" | "cliente" | null>(null);
+  const [email2fa, setEmail2fa] = useState("");
+  const [codigo2fa, setCodigo2fa] = useState("");
+  const [erro2fa, setErro2fa] = useState("");
+  const [verificando2fa, setVerificando2fa] = useState(false);
+  // "Esqueci minha senha"
+  const [modoEsqueciSenha, setModoEsqueciSenha] = useState(false);
+  const [emailRecuperacao, setEmailRecuperacao] = useState("");
+  const [avisoRecuperacao, setAvisoRecuperacao] = useState("");
+  const [enviandoRecuperacao, setEnviandoRecuperacao] = useState(false);
   // Onde o Google desenha o botão oficial de login (quando há Client ID)
   const botaoGoogleRef = useRef<HTMLDivElement>(null);
 
@@ -44,15 +59,33 @@ export function TelaLogin({
       if (!g?.accounts?.id || !botaoGoogleRef.current) return;
       g.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
-        callback: (resposta: any) => {
+        callback: async (resposta: any) => {
+          // O id_token vai pro backend, que confere de verdade com a Google
+          // (nunca confia só no que o navegador manda) e devolve um token de
+          // sessão nosso.
+          setErro("");
+          setCarregando(true);
           try {
-            // O Google devolve um token JWT: o payload traz nome e e-mail verificados
-            const payload = JSON.parse(
-              atob(resposta.credential.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))
-            );
-            aoLogar({ name: payload.name || payload.email.split("@")[0], email: payload.email }, true);
+            const r = await fetch(`${URL_BACKEND_PIX}/api/clientes/login-google`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ idToken: resposta.credential }),
+            });
+            const corpo = await r.json().catch(() => ({}));
+            setCarregando(false);
+            if (!r.ok || !corpo?.token) {
+              setErro(corpo?.erro || "Não foi possível entrar com o Google. Tente novamente.");
+              return;
+            }
+            // E-mail do Admin: o backend devolve um token de Admin de verdade
+            // (ver login-google em clientes.php) — guarda como tal, senão as
+            // ações do painel (salvar produto, banner, config...) dão
+            // "sessão expirada" mesmo estando logado.
+            definirSessao(corpo.token, corpo.admin ? "admin" : "cliente");
+            aoLogar({ name: corpo.cliente?.name ?? "Cliente", email: corpo.cliente?.email }, true);
           } catch {
-            setErro("Não foi possível entrar com o Google. Tente novamente.");
+            setCarregando(false);
+            setErro("Não foi possível conectar ao servidor. Tente novamente.");
           }
         },
       });
@@ -95,36 +128,136 @@ export function TelaLogin({
     }, 1000);
   };
 
-  const aoEnviarFormulario = (e: React.FormEvent) => {
+  // Confere o código de 6 dígitos mandado por e-mail (2ª etapa do login do Admin)
+  const confirmarCodigo2fa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!codigo2fa.trim()) { setErro2fa("Informe o código."); return; }
+    setErro2fa("");
+    setVerificando2fa(true);
+    try {
+      const caminho = tipo2fa === "admin" ? "/api/admin/verificar-2fa" : "/api/clientes/verificar-2fa";
+      const corpoEnvio = tipo2fa === "admin"
+        ? { codigo: codigo2fa.trim() }
+        : { email: email2fa, codigo: codigo2fa.trim() };
+      const resposta = await fetch(`${URL_BACKEND_PIX}${caminho}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(corpoEnvio),
+      });
+      const corpo = await resposta.json().catch(() => ({}));
+      setVerificando2fa(false);
+      if (!resposta.ok || !corpo?.token) {
+        setErro2fa(corpo?.erro || "Código incorreto.");
+        return;
+      }
+      if (tipo2fa === "admin") {
+        definirSessao(corpo.token, "admin");
+        aoLogar({ name: NOME_ADMIN, email: EMAIL_ADMIN });
+      } else {
+        definirSessao(corpo.token, "cliente");
+        aoLogar({ name: corpo.cliente?.name ?? email2fa.split("@")[0], email: corpo.cliente?.email ?? email2fa });
+      }
+    } catch {
+      setVerificando2fa(false);
+      setErro2fa("Não foi possível conectar ao servidor. Tente novamente.");
+    }
+  };
+
+  // Pede o link de redefinição de senha por e-mail. Sempre mostra a mesma
+  // mensagem de sucesso, exista a conta ou não (evita que dê pra descobrir
+  // quais e-mails têm cadastro no site só tentando aqui).
+  const solicitarRecuperacaoSenha = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailRecuperacao.trim()) { setAvisoRecuperacao("Informe seu e-mail."); return; }
+    setEnviandoRecuperacao(true);
+    try {
+      await fetch(`${URL_BACKEND_PIX}/api/clientes/esqueci-senha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailRecuperacao.trim().toLowerCase() }),
+      });
+    } catch {
+      // segue mostrando a mesma mensagem — não revela erro de conexão vs. conta inexistente
+    }
+    setEnviandoRecuperacao(false);
+    setAvisoRecuperacao("Se este e-mail tiver uma conta, enviamos um link para redefinir a senha.");
+  };
+
+  const aoEnviarFormulario = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !senha) { setErro("Preencha todos os campos."); return; }
     if (modo === "cadastro" && !name) { setErro("Informe seu nome."); return; }
 
     const emailLimpo = email.trim().toLowerCase();
 
-    // Conta reservada do Admin: exige a senha correta e não pode ser recadastrada
+    // Conta reservada do Admin: a senha é conferida no backend (nunca fica
+    // no código do site); acertando a senha, o backend manda um código de
+    // 6 dígitos por e-mail — só depois desse código o painel libera.
     if (emailLimpo === EMAIL_ADMIN) {
       if (modo === "cadastro") {
         setErro("Este e-mail é reservado. Use a opção Entrar.");
         return;
       }
-      if (senha !== SENHA_ADMIN) {
-        setErro("Senha incorreta.");
-        return;
+      setErro("");
+      setCarregando(true);
+      try {
+        const resposta = await fetch(`${URL_BACKEND_PIX}/api/admin/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ senha }),
+        });
+        const corpo = await resposta.json().catch(() => ({}));
+        setCarregando(false);
+        if (!resposta.ok) {
+          setErro(corpo?.erro || "Senha incorreta.");
+          return;
+        }
+        if (corpo?.precisa2fa) {
+          setTipo2fa("admin");
+          return;
+        }
+      } catch {
+        setCarregando(false);
+        setErro("Não foi possível conectar ao servidor. Tente novamente.");
       }
+      return;
     }
 
+    // Cliente comum: cadastro cria a conta com senha própria (nunca fica no
+    // código do site — só um hash, no backend); login confere a senha lá.
     setErro("");
     setCarregando(true);
-    setTimeout(() => {
+    try {
+      const caminho = modo === "cadastro" ? "/api/clientes/cadastro" : "/api/clientes/login";
+      const corpoEnvio = modo === "cadastro" ? { name, email: emailLimpo, senha } : { email: emailLimpo, senha };
+      const resposta = await fetch(`${URL_BACKEND_PIX}${caminho}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(corpoEnvio),
+      });
+      const corpo = await resposta.json().catch(() => ({}));
       setCarregando(false);
-      // Login da conta reservada usa sempre o nome oficial
-      if (emailLimpo === EMAIL_ADMIN) {
-        aoLogar({ name: NOME_ADMIN, email: EMAIL_ADMIN });
+      if (!resposta.ok) {
+        setErro(corpo?.erro || "Não foi possível entrar. Tente novamente.");
         return;
       }
-      aoLogar({ name: name || email.split("@")[0], email });
-    }, 1200);
+      // Login (não cadastro): senha certa não entra direto — precisa do
+      // código de 6 dígitos mandado por e-mail (mesma ideia do Admin)
+      if (modo === "login" && corpo?.precisa2fa) {
+        setEmail2fa(emailLimpo);
+        setTipo2fa("cliente");
+        return;
+      }
+      if (!corpo?.token) {
+        setErro(corpo?.erro || "Não foi possível entrar. Tente novamente.");
+        return;
+      }
+      definirSessao(corpo.token, "cliente");
+      aoLogar({ name: corpo.cliente?.name ?? name ?? email.split("@")[0], email: corpo.cliente?.email ?? emailLimpo });
+    } catch {
+      setCarregando(false);
+      setErro("Não foi possível conectar ao servidor. Tente novamente.");
+    }
   };
 
   return (
@@ -142,7 +275,7 @@ export function TelaLogin({
         <div className="absolute inset-0 bg-gradient-to-br from-[#4A1218] via-[#C8102E]/60 to-[#4A1218]/80" />
 
         <div className="relative z-10 flex flex-col h-full p-12">
-          <Logo />
+          <Logo claro />
 
           <div className="flex-1 flex flex-col justify-center">
             <div className="max-w-sm">
@@ -199,6 +332,93 @@ export function TelaLogin({
             </div>
           )}
 
+          {tipo2fa ? (
+            <>
+              <div className="mb-8">
+                <h2 className="text-2xl font-black text-gray-900">Confirme o código</h2>
+                <p className="text-gray-500 text-sm mt-1">
+                  {tipo2fa === "admin"
+                    ? "Enviamos um código de 6 dígitos para o e-mail do Admin. Confira sua caixa de entrada."
+                    : <>Enviamos um código de 6 dígitos para <strong className="text-gray-700">{email2fa}</strong>. Confira sua caixa de entrada.</>}
+                </p>
+              </div>
+              <form onSubmit={confirmarCodigo2fa} className="space-y-4">
+                <div>
+                  <label className="text-[13px] font-semibold text-gray-700 block mb-1.5">Código</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={codigo2fa}
+                    onChange={(e) => setCodigo2fa(e.target.value.replace(/\D/g, ""))}
+                    placeholder="000000"
+                    autoFocus
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.4em] font-black outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all"
+                  />
+                </div>
+                {erro2fa && (
+                  <div className="bg-red-50 border border-red-200 text-red-600 text-[12px] font-medium px-3 py-2.5 rounded-lg">
+                    {erro2fa}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={verificando2fa}
+                  className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-black py-3.5 rounded-xl transition-colors text-[15px]"
+                >
+                  {verificando2fa ? "Confirmando..." : "Confirmar e entrar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTipo2fa(null); setEmail2fa(""); setCodigo2fa(""); setErro2fa(""); }}
+                  className="w-full text-center text-[13px] text-gray-500 hover:text-[#C8102E] font-semibold"
+                >
+                  Voltar
+                </button>
+              </form>
+            </>
+          ) : modoEsqueciSenha ? (
+            <>
+              <div className="mb-8">
+                <h2 className="text-2xl font-black text-gray-900">Redefinir senha</h2>
+                <p className="text-gray-500 text-sm mt-1">
+                  Informe seu e-mail — se tiver uma conta, mandamos um link para você escolher uma senha nova.
+                </p>
+              </div>
+              <form onSubmit={solicitarRecuperacaoSenha} className="space-y-4">
+                <div>
+                  <label className="text-[13px] font-semibold text-gray-700 block mb-1.5">E-mail</label>
+                  <input
+                    type="email"
+                    value={emailRecuperacao}
+                    onChange={(e) => setEmailRecuperacao(e.target.value)}
+                    placeholder="seu@email.com"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all"
+                  />
+                </div>
+                {avisoRecuperacao && (
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[12px] font-medium px-3 py-2.5 rounded-lg">
+                    {avisoRecuperacao}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={enviandoRecuperacao}
+                  className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-black py-3.5 rounded-xl transition-colors text-[15px]"
+                >
+                  {enviandoRecuperacao ? "Enviando..." : "Enviar link de redefinição"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setModoEsqueciSenha(false); setAvisoRecuperacao(""); }}
+                  className="w-full text-center text-[13px] text-gray-500 hover:text-[#C8102E] font-semibold"
+                >
+                  Voltar para o login
+                </button>
+              </form>
+            </>
+          ) : (
+          <>
           <div className="mb-8">
             <h2 className="text-2xl font-black text-gray-900">
               {modo === "login" ? "Entrar na sua conta" : "Criar sua conta"}
@@ -259,6 +479,7 @@ export function TelaLogin({
                   {mostrarSenha ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {modo === "cadastro" && <IndicadorForcaSenha senha={senha} />}
             </div>
 
             {modo === "login" && (
@@ -274,7 +495,11 @@ export function TelaLogin({
                   </div>
                   <span className="text-[12px] text-gray-600 font-medium">Lembrar de mim</span>
                 </label>
-                <button type="button" className="text-[12px] text-[#C8102E] font-semibold hover:underline">
+                <button
+                  type="button"
+                  onClick={() => { setModoEsqueciSenha(true); setEmailRecuperacao(email); setAvisoRecuperacao(""); }}
+                  className="text-[12px] text-[#C8102E] font-semibold hover:underline"
+                >
                   Esqueci minha senha
                 </button>
               </div>
@@ -379,6 +604,8 @@ export function TelaLogin({
             <Lock size={11} />
             <span>Seus dados estão seguros e protegidos</span>
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>

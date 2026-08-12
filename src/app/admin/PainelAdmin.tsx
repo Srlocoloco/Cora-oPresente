@@ -73,7 +73,7 @@ export function PainelAdmin({
   produtos: Produto[];
   aoSalvarProduto: (p: Produto) => void;
   aoExcluirProduto: (id: number) => void;
-  aoAtualizarStatusPedido: (id: string, status: string) => void;
+  aoAtualizarStatusPedido: (id: string, mudancas: { status?: string; codigoRastreio?: string }) => void;
   alertasEstoque: { id: number; name: string; date: string }[];
   cargos?: Record<string, Cargo>;
   aoDefinirCargo?: (email: string, cargo: Cargo | null) => void;
@@ -107,8 +107,15 @@ export function PainelAdmin({
   const [notifAberta, setNotifAberta] = useState(false);
   const [notifVistas, setNotifVistas] = useState<number>(() => lerArmazenamento<number>("cp_notif_seen", 0));
 
-  // Alertas de estoque esgotado só fazem sentido para o Admin — vendedores
-  // e o Master não veem esse tipo de notificação
+  // As notificações do Admin (pedidos da loja inteira e alertas de estoque) são
+  // só dele. Master e MasterPlus recebem o painel com todos os pedidos para as
+  // páginas de rede, mas o sino mostra apenas as vendas do próprio código.
+  const pedidosNotificacao =
+    modo === "admin"
+      ? pedidos
+      : usuario
+        ? pedidos.filter((o) => o.vendedor?.toLowerCase() === usuario.email.toLowerCase())
+        : [];
   const notificacoes = [
     ...(modo === "admin"
       ? alertasEstoque.slice(0, 5).map((a) => ({
@@ -118,14 +125,14 @@ export function PainelAdmin({
           date: a.date,
         }))
       : []),
-    ...pedidos.slice(0, 8).map((o) => ({
+    ...pedidosNotificacao.slice(0, 8).map((o) => ({
       icon: <ShoppingCart size={18} className="text-[#C8102E]" />,
       title: `Novo pedido ${o.id}`,
       desc: `${o.customer} · ${formatarMoeda(o.total)}`,
       date: o.date,
     })),
   ];
-  const totalEventos = pedidos.length + (modo === "admin" ? alertasEstoque.length : 0);
+  const totalEventos = pedidosNotificacao.length + (modo === "admin" ? alertasEstoque.length : 0);
   const naoLidas = Math.max(0, totalEventos - notifVistas);
 
   const alternarNotificacoes = () => {
@@ -239,7 +246,7 @@ export function PainelAdmin({
     <div className="flex h-screen bg-[#FBF4EA] overflow-hidden" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       <aside className={`fixed md:static inset-y-0 left-0 z-50 w-56 bg-[#4A1218] text-white flex flex-col transition-transform duration-300 ${menuMobileAberto ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
         <div className="p-4 border-b border-white/8">
-          <Logo small />
+          <Logo small claro />
           <div className="text-[9px] text-white/40 mt-2 font-semibold tracking-widest uppercase">{rotulosPainel[modo]}</div>
         </div>
         <nav className="flex-1 p-3 space-y-0.5">

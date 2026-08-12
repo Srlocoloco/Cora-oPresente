@@ -128,9 +128,12 @@ export const PREFIXOS_CATEGORIA: Record<string, string> = {
 };
 
 
-// Conta do administrador da loja — somente ela enxerga e acessa o painel Admin
+// Conta do administrador da loja — somente ela enxerga e acessa o painel Admin.
+// A senha NUNCA fica aqui (nem em nenhum outro arquivo do site) — ela só
+// existe, como um hash, no backend (config.php). O login do Admin chama o
+// backend para conferir a senha e devolve um token temporário — ver
+// TelaLogin.tsx e authToken.ts.
 export const EMAIL_ADMIN = "balorense@gmail.com";
-export const SENHA_ADMIN = "Kayth254321";
 export const NOME_ADMIN = "Kayke Spoti";
 
 
@@ -196,6 +199,9 @@ export const NOTIFICACAO_POR_STATUS: Record<string, { icon: React.ReactNode; tex
 // O código PIX expira em 30 minutos
 export const VALIDADE_PIX_MS = 30 * 60 * 1000;
 
+// Número máximo de parcelas sem juros no cartão de crédito
+export const MAX_PARCELAS_CARTAO = 12;
+
 // Endereço do backend (banco de dados + cobranças PIX oficiais do Sicredi).
 // Hospedagem definitiva: KingHost, com o backend-php publicado no mesmo
 // domínio do site (veja backend-php/README.md). Antes de rodar "npm run
@@ -205,19 +211,6 @@ export const VALIDADE_PIX_MS = 30 * 60 * 1000;
 // que só funciona na sua própria máquina — por isso o aviso de "banco
 // desconectado" quando publicado sem essa variável definida.
 export const URL_BACKEND_PIX = (import.meta as any).env?.VITE_BACKEND_URL || "http://localhost:3333";
-
-
-// ─── Pagamento com Cartão (Mercado Pago) ──────────────────────────────────────
-
-// Chave pública do Mercado Pago — usada só no navegador para transformar os
-// dados do cartão num "token" (o SDK fala direto com o Mercado Pago, o número
-// do cartão e o CVV nunca passam pelo nosso backend). É segura de expor no
-// código do site: só a chave PRIVADA (o Access Token) precisa ficar em segredo,
-// e essa fica só no backend (config.php / .env).
-// Troque pela chave de produção (prefixo "APP_USR-") quando for pra valer —
-// se quiser configurar por ambiente, crie VITE_MP_PUBLIC_KEY no ".env".
-export const MP_PUBLIC_KEY =
-  (import.meta as any).env?.VITE_MP_PUBLIC_KEY || "TEST-85a56c57-c387-411d-a303-aad0182ddb65";
 
 
 // ─── Avaliações de produto (comentário + vídeo do cliente) ────────────────────

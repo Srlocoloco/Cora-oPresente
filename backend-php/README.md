@@ -48,7 +48,7 @@ No seu computador, na pasta do projeto:
 
 Envie a pasta `api` (desta pasta `backend-php`) para dentro de `public_html`,
 ficando `public_html/api/` com: `.htaccess`, `config.php`, `lib.php`,
-`dados.php`, `avaliacoes.php`, `pix.php`, `mercadopago.php`.
+`dados.php`, `avaliacoes.php`, `pix.php`.
 
 Teste: abra `https://www.seudominio.com.br/api/dados` — deve responder um JSON
 com as coleções. Se aparecer erro de MySQL, revise o passo 2.
@@ -73,40 +73,91 @@ domínio já estar apontado para a KingHost. O site e o PIX exigem HTTPS.
 Enquanto o Sicredi não estiver configurado, o site usa o QR estático com a
 chave PIX das Configurações — a loja funciona normalmente.
 
-### 7. Mercado Pago (pagamento com cartão)
+### 7. Correios (rastreamento — quando tiver contrato)
 
-1. Em `api/config.php`, preencha `MP_ACCESS_TOKEN` e `MP_PUBLIC_KEY` com as
-   credenciais de developers.mercadopago.com → sua aplicação → Credenciais.
-   Use as de **teste** (prefixo `TEST-`) enquanto estiver testando, e troque
-   pelas de **produção** (prefixo `APP_USR-`) quando for pra valer.
-2. No painel do Mercado Pago, vá em **Webhooks** → **Configurar notificações**
-   → **URL de produção** e cadastre:
-   `https://www.seudominio.com.br/api/webhook/mercadopago`
-   Marque o evento **"Pagamentos"**.
-   - Testando local com XAMPP: use a URL pública do **ngrok** no lugar do seu
-     domínio (ex.: `https://abc123.ngrok-free.app/api/webhook/mercadopago`).
-     O ngrok precisa apontar para a porta do Apache/XAMPP (normalmente 80).
-3. Depois de cadastrar a URL, o painel mostra uma **"Assinatura secreta"**.
-   Copie e cole em `MP_WEBHOOK_SECRET` (`config.php`) — isso faz o webhook
-   validar o cabeçalho `X-Signature` e recusar notificações falsas.
-4. O front-end precisa gerar o **token do cartão** com o SDK do Mercado Pago
-   (usando `MP_PUBLIC_KEY`) e mandar esse token para `POST /api/pagamento/cartao`
-   — o número do cartão, validade e CVV nunca devem chegar neste servidor.
+1. No **Portal Meu Correios** (`meucorreios.correios.com.br`), menu API →
+   Credenciais, gere o **código de acesso** (não é a senha do portal) e anote
+   o número do **cartão de postagem** do contrato.
+2. Em `api/config.php`, preencha `CORREIOS_USUARIO`, `CORREIOS_CODIGO_ACESSO`
+   e `CORREIOS_CARTAO_POSTAGEM` (deixe `CORREIOS_AMBIENTE` em `"producao"`).
+3. Ao despachar um pedido, abra-o no painel Admin → Pedidos → ícone de olho e
+   cole o código de postagem (`AA123456789BR`) no campo **Código de rastreio**.
+
+O cliente passa a ver a movimentação real da encomenda em "Rastrear Pedido",
+mais o link para o site dos Correios. Sem as credenciais preenchidas — ou
+antes de o objeto ser postado — a página mostra só o andamento interno da
+loja (Processando → Em trânsito → Entregue): a integração nunca derruba o
+rastreamento.
+
+### 8. E-mail confiável (SMTP)
+
+Por padrão o site manda e-mail pelo `mail()` nativo do PHP — funciona sem
+configurar nada, mas costuma cair como spam ou nem chegar, porque não é um
+envio autenticado (qualquer servidor pode alegar que está mandando em nome
+do seu domínio).
+
+Para resolver de vez:
+
+1. No Painel de Controle da KingHost → **Central de E-mails**, crie uma
+   caixa no seu domínio só para o site usar (ex.:
+   `sistema@coracaopresente.com.br`).
+2. Na tela dessa caixa, procure **"Configurar no computador/celular"** — ali
+   a KingHost mostra o **servidor SMTP** e a **porta** certos pra sua conta
+   (variam por servidor, por isso não tem como cravar um valor fixo aqui).
+3. Em `api/config.php`, preencha `SMTP_HOST`, `SMTP_PORTA`, `SMTP_USUARIO`
+   (o e-mail completo da caixa) e `SMTP_SENHA` (senha dessa caixa, não a do
+   painel). Troque também `MAIL_DE` pra ser esse mesmo e-mail — a maioria
+   dos servidores rejeita mandar em nome de um remetente diferente do
+   autenticado.
+
+Enquanto esses campos ficarem vazios, o site continua usando o `mail()`
+nativo — nada quebra por falta de configuração.
+
+### 9. Avisos do pedido: e-mail e notificação no celular
+
+O **e-mail** já funciona sem configurar nada além do item 8 acima: toda vez
+que o Admin muda o status de um pedido, o cliente recebe um aviso.
+
+A **notificação no celular** (Web Push) precisa de um par de chaves, gerado
+uma única vez no seu computador:
+
+```
+openssl ecparam -genkey -name prime256v1 -noout -out vapid.pem
+```
+
+Envie o `vapid.pem` por FTP para o diretório **home** da conta (FORA de
+`public_html`, do lado da pasta `sicredi_certs`) e confira o caminho em
+`VAPID_CHAVE_PRIVADA_PEM`, no `config.php`. Não há chave para copiar e colar
+no site: a parte pública é derivada desse arquivo automaticamente.
+
+Sem o arquivo, o site nem mostra o botão de notificações — o e-mail continua
+saindo normalmente.
+
+**Como o cliente ativa:** logado, ele abre o sininho de notificações e toca em
+"Ativar notificações". No Android funciona direto pelo navegador; no iPhone
+(iOS 16.4+) ele precisa antes adicionar o site à tela inicial pelo menu
+Compartilhar → "Adicionar à Tela de Início" — é uma exigência da Apple, não
+uma limitação do site.
+
+**Exige HTTPS.** Como o `.htaccess` já força HTTPS, isso está resolvido.
 
 ## Rotas (iguais às do backend Node)
 
 - `GET  /api/dados` — todas as coleções
-- `PUT  /api/dados/{colecao}` — grava `produtos`, `pedidos`, `clientes`, `cargos`, `recrutamentos`, `cupons`, `alertasEstoque`, `banners`, `cartoesSalvos` ou `config`
+- `PUT  /api/dados/{colecao}` — grava `produtos`, `pedidos`, `clientes`, `cargos`, `recrutamentos`, `cupons`, `alertasEstoque`, `banners` ou `config`
 - `GET  /api/avaliacoes/{produtoId}` — avaliações (comentário + vídeo) de um produto
 - `GET  /api/avaliacoes?todas=1` — todas as avaliações, pro painel Admin moderar
 - `POST /api/avaliacoes` — cria/atualiza a avaliação do cliente (só quem comprou o produto)
 - `DELETE /api/avaliacoes/{id}` — Admin exclui uma avaliação imprópria
 - `POST /api/pix/cobranca` — cria cobrança de 30 min
 - `GET  /api/pix/cobranca/{txid}` — status da cobrança
+- `GET  /api/pedidos/rastrear?id={pedido}&email={email}` — rastreamento público (nº do pedido + e-mail da compra)
+- `PATCH /api/pedidos/{id}` — Admin muda `status` e/ou `codigoRastreio`
+- `GET  /api/push/chave-publica` — chave VAPID (null = notificações desligadas)
+- `POST /api/push/inscrever` — autoriza este celular (exige login)
+- `DELETE /api/push/inscrever` — cancela
+- `GET  /api/push/pendentes?e={hash}` — avisos que o service worker ainda não mostrou
 - `POST /api/webhook/pix` — webhook do Sicredi
-- `POST /api/pagamento/cartao` — processa pagamento com cartão (Mercado Pago)
-- `POST /api/webhook/mercadopago` — webhook do Mercado Pago
-- `POST /api/cartao/salvar` — cofre: anexa um cartão tokenizado ao cliente (via customer do Mercado Pago)
 
 ## Segurança
 
@@ -114,9 +165,3 @@ chave PIX das Configurações — a loja funciona normalmente.
 PHP), e o `.htaccess` ainda bloqueia acesso direto a `config.php` e `lib.php`.
 Os certificados ficam fora de `public_html`. Mesmo assim, não compartilhe
 esses arquivos com ninguém.
-
-Este `config.php` fica versionado no Git. Enquanto as chaves do Mercado Pago
-forem as de **teste** (prefixo `TEST-`) o risco é baixo — não movem dinheiro
-real. Antes de trocar para as chaves de **produção**, considere tirar
-`backend-php/api/config.php` do repositório (`.gitignore` + `git rm --cached`)
-para não deixar segredos reais no histórico do Git.

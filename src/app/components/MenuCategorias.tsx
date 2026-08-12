@@ -8,17 +8,18 @@ export function MenuCategorias({ categorias, selecionada, aoSelecionar }: {
   aoSelecionar: (c: string) => void;
 }) {
   return (
-    <nav className="bg-white/95 backdrop-blur sticky top-0 z-30 border-b border-gray-100">
+    <nav className="bg-white border-b border-gray-100">
       <div className="max-w-[1440px] mx-auto px-4 relative">
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-2.5 md:justify-center">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-3 md:justify-center">
           {categorias.map((c) => (
             <button
               key={c}
               onClick={() => aoSelecionar(c)}
-              className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition-all ${
+              aria-current={selecionada === c ? "true" : undefined}
+              className={`px-4 py-2.5 rounded-full text-[14px] font-bold whitespace-nowrap transition-colors ${
                 selecionada === c
-                  ? "bg-[#C8102E] text-white shadow-sm shadow-[#C8102E]/30"
-                  : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                  ? "bg-[#A8102A] text-white"
+                  : "bg-gray-50 text-gray-700 hover:bg-gray-100"
               }`}
             >
               {c}

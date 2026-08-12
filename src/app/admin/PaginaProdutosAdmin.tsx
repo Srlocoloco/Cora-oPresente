@@ -178,6 +178,7 @@ export function FormularioProduto({
   const [freeShipping, setFreeShipping] = useState(inicial?.freeShipping ?? true);
   // % de desconto no PIX deste produto (vazio = sem desconto)
   const [pixDesconto, setPixDesconto] = useState(inicial?.pixDesconto ? String(inicial.pixDesconto) : "");
+  const [description, setDescription] = useState(inicial?.description || "");
   const [erro, setErro] = useState("");
 
   const estiloInput =
@@ -188,11 +189,20 @@ export function FormularioProduto({
     e.preventDefault();
     const p = parseFloat(price.replace(",", "."));
     const op = originalPrice ? parseFloat(originalPrice.replace(",", ".")) : undefined;
-    const st = parseInt(stock, 10);
+    // Com cores/modelos cadastrados, cada um tem o próprio estoque (descontado
+    // à parte na compra) — o estoque geral vira opcional: se ficar em branco,
+    // usa a soma do estoque de cada cor (cores sem estoque próprio entram
+    // como 0 nessa soma; elas seguem o estoque geral só quando ele é
+    // preenchido, como já indicado no aviso abaixo do campo de cores).
+    const temCores = colors.filter((c) => c.nome.trim()).length > 0;
+    let st = parseInt(stock, 10);
+    if (isNaN(st) && temCores) {
+      st = colors.reduce((soma, c) => soma + (c.estoque ?? 0), 0);
+    }
     if (!name.trim() || !brand.trim()) { setErro("Informe o nome e a marca do produto."); return; }
     if (!p || p <= 0) { setErro("Informe um preço válido."); return; }
     if (op !== undefined && op <= p) { setErro("O preço original deve ser maior que o preço com desconto."); return; }
-    if (isNaN(st) || st < 0) { setErro("Informe o estoque."); return; }
+    if (isNaN(st) || st < 0) { setErro(temCores ? "Informe o estoque geral ou o estoque de cada cor." : "Informe o estoque."); return; }
     const pix = pixDesconto ? parseInt(pixDesconto, 10) : 0;
     if (pix < 0 || pix > 90) { setErro("O desconto no PIX deve ser entre 0% e 90%."); return; }
     aoSalvar({
@@ -213,6 +223,7 @@ export function FormularioProduto({
       stock: st,
       pixDesconto: pix > 0 ? pix : undefined,
       owner: inicial?.owner,
+      description: description.trim() || undefined,
     });
   };
 
@@ -303,8 +314,16 @@ export function FormularioProduto({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={estiloRotulo}>Estoque *</label>
-              <input className={estiloInput} value={stock} onChange={(e) => setStock(e.target.value)} placeholder="10" inputMode="numeric" />
+              <label className={estiloRotulo}>
+                Estoque {colors.filter((c) => c.nome.trim()).length > 0 ? "(opcional)" : "*"}
+              </label>
+              <input
+                className={estiloInput}
+                value={stock}
+                onChange={(e) => setStock(e.target.value)}
+                placeholder={colors.filter((c) => c.nome.trim()).length > 0 ? "Deixe vazio para somar o estoque das cores" : "10"}
+                inputMode="numeric"
+              />
             </div>
             <div>
               <label className={estiloRotulo}>Parcelamento</label>
@@ -326,6 +345,18 @@ export function FormularioProduto({
               inputMode="numeric"
             />
             <p className="text-[11px] text-gray-400 mt-1">Aplicado sobre o preço de venda somente quando o cliente paga com PIX.</p>
+          </div>
+
+          <div>
+            <label className={estiloRotulo}>Descrição do produto (opcional)</label>
+            <textarea
+              className={`${estiloInput} min-h-[90px] resize-y`}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Detalhes, características, material, o que vem na caixa..."
+              rows={4}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">Aparece na página do produto, abaixo das informações principais. Deixe vazio se não quiser mostrar nada.</p>
           </div>
 
           <div>
