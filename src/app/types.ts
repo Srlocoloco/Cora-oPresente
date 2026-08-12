@@ -27,6 +27,8 @@ export interface Produto {
   // Variações de cor/modelo do produto (ex.: pulseiras/mostradores diferentes
   // do mesmo relógio), para o cliente escolher antes de comprar
   colors?: CorProduto[];
+  // Descrição opcional do produto, mostrada na página de detalhes
+  description?: string;
   // Nome da cor escolhida na página do produto antes de "Comprar" — só
   // existe numa cópia do produto colocada no carrinho (ItemCarrinho), nunca
   // no cadastro em si. Cada cor escolhida vira uma linha separada no
@@ -143,6 +145,14 @@ export interface Pedido {
   // Código do cupom de desconto usado nesta compra (se houve) — cada cupom só
   // pode ser usado uma vez por cliente, então isso é checado no próximo carrinho
   cupomUsado?: string;
+  // Código de postagem dos Correios (ex.: AA123456789BR), preenchido pelo
+  // Admin ao despachar. É o que permite mostrar o rastreamento real na
+  // página "Rastrear Pedido".
+  codigoRastreio?: string;
+  // Produto comprado nesta linha (cada item do carrinho vira uma linha de
+  // pedido própria — ver confirmarPagamento em App.tsx). Usado para buscar a
+  // foto do produto nos e-mails de confirmação de compra e de entrega.
+  produtoId?: number;
 }
 
 
@@ -159,62 +169,21 @@ export interface Cliente {
   // true = e-mail verificado de verdade pelo login do Google (JWT do Google);
   // usado para exigir e-mail verificado antes de dar o cargo de Vendedor
   viaGoogle?: boolean;
+  vendedorVinculado?: string;
 }
 
 
-export type Tela = "login" | "loja" | "carrinho" | "pagamento" | "admin" | "master" | "masterplus" | "vendedor" | "sucesso" | "perfil" | "notificacoes";
+export type Tela = "login" | "loja" | "carrinho" | "pagamento" | "admin" | "master" | "masterplus" | "vendedor" | "sucesso" | "perfil" | "notificacoes" | "institucional";
 
 
 // Dados do pagamento escolhido no carrinho (aguardando confirmação)
 export interface DadosPagamento {
-  metodo: "cartao" | "pix";
+  metodo: "pix" | "cartao";
   total: number;
+  // Parcelas escolhidas no cartão (PIX é sempre 1)
   parcelas: number;
   // Endereço de entrega montado no carrinho (via CEP + número informado)
   endereco: string;
-}
-
-
-// Cartão salvo do cliente, guardado no banco após uma compra com Cartão.
-// POR SEGURANÇA (padrão PCI): nunca guarda o número completo nem o CVV —
-// só o suficiente para o cliente reconhecer o cartão numa lista.
-export interface CartaoSalvo {
-  id: number;
-  email: string; // dono do cartão (cliente logado)
-  bandeira: string; // Visa, Mastercard, Elo, Amex... (detectada pelo número digitado)
-  nomeCartao: string; // nome impresso no cartão
-  ultimosDigitos: string; // só os 4 últimos dígitos
-  validade: string; // MM/AA
-  // Cofre do Mercado Pago: presentes só quando esse cartão foi de fato
-  // tokenizado e salvo lá (POST /api/cartao/salvar). Sem esses ids não dá pra
-  // cobrar de novo — é preciso digitar o cartão de novo.
-  mpCardId?: string;
-  mpCustomerId?: string;
-}
-
-
-// Dados digitados no formulário de cartão, na tela de pagamento — só existem
-// no navegador durante a compra. O número completo e o CVV NUNCA são salvos
-// em lugar nenhum (nem no banco, nem no estado do app depois de confirmado).
-export interface DadosCartaoDigitado {
-  numero: string;
-  nome: string;
-  validade: string;
-  cvv: string;
-  // Preenchidos quando o cartão foi salvo de verdade no cofre do Mercado
-  // Pago nesta compra (cartão novo) ou reaproveitado de um já salvo — é o
-  // que permite cobrar de novo só com CVV numa próxima compra.
-  mpCardId?: string;
-  mpCustomerId?: string;
-  bandeira?: string;
-}
-
-// Resultado real de uma cobrança no Mercado Pago, devolvido pelo backend
-// (POST /api/pagamento/cartao) depois de tokenizar o cartão no navegador.
-export interface ResultadoPagamentoCartao {
-  paymentId: string | number;
-  status: "approved" | "in_process" | "pending" | "rejected" | "cancelled" | string;
-  statusDetail?: string | null;
 }
 
 

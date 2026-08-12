@@ -20,9 +20,12 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, Plus, Check } from "lucide-react";
-import type { Produto, ItemCarrinho, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, Pedido, Cliente, Tela, DadosPagamento, CartaoSalvo, DadosCartaoDigitado } from "./types";
+import type { Produto, ItemCarrinho, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, Pedido, Cliente, Tela, DadosPagamento } from "./types";
 import { CONFIG_PADRAO, CATEGORIAS, EMAIL_ADMIN, NOMES_MESES, URL_BACKEND_PIX, COMISSAO_MASTER_PROMOVIDO_EQUIPE } from "./constantes";
-import { cupomEstaValido, clienteJaUsouCupom, gerarCodigoRecrutamento, codigoVendaDe, lerArmazenamento, gerarCodigoProduto, bandeiraCartao } from "./utils";
+import { cabecalhosAdmin, cabecalhosAuth, definirSessao } from "./authToken";
+import { sincronizarInscricao } from "./notificacoesPush";
+import { cupomEstaValido, clienteJaUsouCupom, gerarCodigoRecrutamento, codigoVendaDe, lerArmazenamento, gerarCodigoProduto } from "./utils";
+import { toast } from "sonner";
 import { ImagemProduto } from "./components/ImagemProduto";
 import { AvisoBancoDesconectado } from "./components/AvisoBancoDesconectado";
 import { BarraInferiorMobile } from "./components/BarraInferiorMobile";
@@ -30,10 +33,16 @@ import { ModalVendedorAtivado } from "./components/ModalVendedorAtivado";
 import { CabecalhoLoja } from "./components/CabecalhoLoja";
 import { MenuCategorias } from "./components/MenuCategorias";
 import { BannerRotativo } from "./components/BannerRotativo";
+import { BarraFiltros, type Ordenacao, type FaixaPreco } from "./components/BarraFiltros";
+import { FaixaBeneficios } from "./components/FaixaBeneficios";
+import { SecaoMaisVendidos } from "./components/SecaoMaisVendidos";
+import { SecaoAvaliacoesClientes } from "./components/SecaoAvaliacoesClientes";
 import { CartaoProduto } from "./components/CartaoProduto";
 import { RodapeLoja } from "./components/RodapeLoja";
 import { TelaLogin } from "./screens/TelaLogin";
+import { TelaRedefinirSenha } from "./screens/TelaRedefinirSenha";
 import { TelaNotificacoesCliente } from "./screens/TelaNotificacoesCliente";
+import { TelaInstitucional, type PaginaInstitucional } from "./screens/TelaInstitucional";
 import { TelaPerfil } from "./screens/TelaPerfil";
 import { PaginaProduto } from "./screens/PaginaProduto";
 import { PaginaCarrinho } from "./screens/PaginaCarrinho";
@@ -43,8 +52,43 @@ import { TelaCompraConcluida } from "./screens/TelaCompraConcluida";
 import { PainelAdmin } from "./admin/PainelAdmin";
 
 export default function App() {
+  // Links especiais recebidos por e-mail (redefinir senha / confirmar
+  // e-mail) chegam como "?redefinir-senha=TOKEN" ou "?verificar-email=TOKEN"
+  // na própria URL do site — lidos uma vez, no primeiro carregamento.
+  const [tokenRedefinirSenha] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("redefinir-senha")
+  );
+  const [avisoVerificacaoEmail, setAvisoVerificacaoEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const tokenVerificacao = new URLSearchParams(window.location.search).get("verificar-email");
+    if (!tokenVerificacao) return;
+    fetch(`${URL_BACKEND_PIX}/api/clientes/verificar-email?token=${encodeURIComponent(tokenVerificacao)}`)
+      .then((r) => r.json().then((corpo) => ({ ok: r.ok, corpo })))
+      .then(({ ok, corpo }) => {
+        setAvisoVerificacaoEmail(ok ? "E-mail confirmado com sucesso!" : corpo?.erro || "Não foi possível confirmar o e-mail.");
+      })
+      .catch(() => setAvisoVerificacaoEmail("Não foi possível confirmar o e-mail."))
+      .finally(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("verificar-email");
+        window.history.replaceState({}, "", url.toString());
+      });
+  }, []);
+
+  // "?pedido=PED-1024" é o link que sai no e-mail de andamento e no toque da
+  // notificação do celular: abre direto o rastreamento, já com o número
+  // preenchido, em vez de largar o cliente na home.
+  const [pedidoDoLink] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("pedido")
+  );
+
   // Tela atual do app: loja, login, carrinho, admin ou sucesso
-  const [tela, setTela] = useState<Tela>("loja");
+  const [tela, setTela] = useState<Tela>(pedidoDoLink ? "institucional" : "loja");
+  // Página de conteúdo aberta pelos links do rodapé (Sobre Nós, Central de Ajuda…)
+  const [paginaInstitucional, setPaginaInstitucional] = useState<PaginaInstitucional>(
+    pedidoDoLink ? "rastreio" : "sobre"
+  );
   // Página ativa dentro dos painéis (admin, master, vendedor)
   const [paginaAdmin, setPaginaAdmin] = useState<string>("dashboard");
   // Itens que o cliente colocou no carrinho
@@ -55,6 +99,15 @@ export default function App() {
   const [categoriaSelecionada, setCategoriaSelecionada] = useState("Outros");
   // IDs dos produtos favoritados (coração)
   const [favoritos, setFavoritos] = useState<number[]>([]);
+  // Alterna o grid de produtos para mostrar só os favoritados (atalho do coração no cabeçalho)
+  const [verSoFavoritos, setVerSoFavoritos] = useState(false);
+  // Filtros e ordenação do catálogo (BarraFiltros) — client-side, sobre o
+  // que já está carregado; não precisa ir ao servidor de novo.
+  const [ordenacao, setOrdenacao] = useState<Ordenacao>("relevancia");
+  const [faixaPreco, setFaixaPreco] = useState<FaixaPreco>("");
+  const [marcaFiltro, setMarcaFiltro] = useState("");
+  const [avaliacaoMinFiltro, setAvaliacaoMinFiltro] = useState(0);
+  const [apenasEstoqueFiltro, setApenasEstoqueFiltro] = useState(false);
   const [menuMobileAdmin, setMenuMobileAdmin] = useState(false);
   // Cliente logado (null = visitante). Recuperado do navegador para que o
   // usuário continue logado mesmo depois de fechar e abrir o site de novo.
@@ -89,9 +142,6 @@ export default function App() {
   const [banners, setBanners] = useState<Banner[]>([]);
   // Cupom digitado pelo cliente no carrinho
   const [cupomDigitado, setCupomDigitado] = useState("");
-  // Cartões salvos dos clientes (dados seguros só: bandeira, nome, últimos 4
-  // dígitos e validade — NUNCA o número completo nem o CVV), carregados do banco
-  const [cartoesSalvos, setCartoesSalvos] = useState<CartaoSalvo[]>([]);
   // Pedidos de compras finalizadas (carregados do banco de dados)
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   // Clientes cadastrados (carregados do banco de dados)
@@ -103,6 +153,10 @@ export default function App() {
   // Produto aberto na página de detalhes (null = vitrine)
   const [produtoSelecionado, setProdutoSelecionado] = useState<Produto | null>(null);
   const [totalUltimaCompra, setTotalUltimaCompra] = useState(0);
+  // Produtos comprados na última compra (convite de avaliação na tela de sucesso)
+  const [produtosUltimaCompra, setProdutosUltimaCompra] = useState<Produto[]>([]);
+  // true = abrir a página do produto já rolada até a seção de avaliações
+  const [irParaAvaliacoes, setIrParaAvaliacoes] = useState(false);
   // Controla o aviso animado de adicionado ao carrinho
   const [toastAdicionado, setToastAdicionado] = useState<{ p: Produto; key: number } | null>(null);
 
@@ -116,6 +170,10 @@ export default function App() {
   useEffect(() => {
     if (usuario) localStorage.setItem("cp_usuario_logado", JSON.stringify(usuario));
     else localStorage.removeItem("cp_usuario_logado");
+    // Um celular pode ser usado por mais de uma pessoa da casa: reapresenta a
+    // inscrição de notificação a cada login, para os avisos irem para a conta
+    // que está usando o site agora.
+    if (usuario) sincronizarInscricao();
   }, [usuario]);
 
   // ── Banco de dados (XAMPP/MySQL via backend) — fonte única dos dados ─────
@@ -125,6 +183,9 @@ export default function App() {
   const bancoPronto = useRef(false);
   // null = verificando · true = conectado · false = desconectado (mostra aviso)
   const [bancoConectado, setBancoConectado] = useState<boolean | null>(null);
+  // Muda a cada login/logout: refaz a carga do banco com o token novo, porque
+  // o backend recorta a resposta conforme quem está pedindo.
+  const [recargaBanco, setRecargaBanco] = useState(0);
 
   useEffect(() => {
     // Cópias antigas do navegador (usadas só para a migração inicial)
@@ -157,7 +218,6 @@ export default function App() {
       const escolher = <T,>(doBanco: T[] | undefined, antigo: T[]) =>
         doBanco && doBanco.length > 0 ? doBanco : antigo;
       setProdutos(comCodigosPreenchidos(escolher(banco?.produtos, locais.produtos)));
-      setCartoesSalvos(banco?.cartoesSalvos ?? []);
       setPedidos(escolher(banco?.pedidos, locais.pedidos));
       setClientes(escolher(banco?.clientes, locais.clientes));
       setRecrutamentos(escolher(banco?.recrutamentos, locais.recrutamentos));
@@ -182,7 +242,9 @@ export default function App() {
       if (configFinal) setConfig((anterior) => ({ ...anterior, ...configFinal }));
     };
 
-    fetch(`${URL_BACKEND_PIX}/api/dados`)
+    // Com o token da sessão, o backend devolve também os dados privados desta
+    // conta (pedidos dela, equipe). Sem token, vem só a vitrine pública.
+    fetch(`${URL_BACKEND_PIX}/api/dados`, { headers: cabecalhosAuth() })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((banco) => {
         aplicar(banco);
@@ -194,37 +256,113 @@ export default function App() {
          "cp_cupons", "cp_banners", "cp_stock_alerts", "cp_config"].forEach((k) => localStorage.removeItem(k));
       })
       .catch(() => {
-        // Banco fora do ar: mostra o que houver, mas avisa que nada será salvo
-        aplicar(null);
+        // Falha ao carregar. Esta carga é refeita a cada login/logout, então
+        // aqui pode ser uma RECARGA que falhou (rede caiu, sessão expirou,
+        // servidor engasgou) com o banco já carregado antes.
+        //
+        // Nesse caso NÃO se pode chamar aplicar(null): as cópias do navegador
+        // já foram apagadas na primeira carga, então ele zeraria o catálogo na
+        // tela. E, pior, como a gravação continuava ligada, o próximo "salvar
+        // produto" do Admin reescreveria a tabela inteira a partir dessa lista
+        // vazia — apagando todos os produtos no banco de verdade.
+        //
+        // Então: mantém na tela o que já havia e desliga a gravação, para que
+        // nenhuma cópia desatualizada sobrescreva o banco.
+        const jaTinhaCarregado = bancoPronto.current;
+        bancoPronto.current = false;
+        if (!jaTinhaCarregado) aplicar(null);
         setBancoConectado(false);
       });
-  }, []);
+  }, [recargaBanco]);
 
-  // Grava uma coleção no banco. Nada é salvo no navegador.
+  // Grava uma coleção INTEIRA no banco (reescreve a tabela). Só deve ser
+  // chamada explicitamente em ações do Admin (poucas, controladas por uma
+  // pessoa só) — nunca automaticamente a cada mudança de estado. Se algo
+  // aqui rodasse pra qualquer mudança, uma ação comum de cliente (comprar,
+  // logar, avaliar) poderia reescrever a tabela inteira com uma cópia
+  // desatualizada, apagando o que o Admin acabou de cadastrar. Por isso
+  // ações de cliente usam endpoints próprios (ver salvarNoServidor abaixo),
+  // que mudam só a linha necessária.
   const salvarNoBanco = (colecao: string, dados: unknown) => {
-    if (!bancoPronto.current) return;
+    // Sem conexão confirmada com o banco, gravar seria perigoso: esta função
+    // reescreve a tabela inteira, e o que está na memória pode estar
+    // desatualizado. Avisa em vez de falhar calado (antes, o Admin só
+    // descobria ao recarregar e ver que o cadastro tinha sumido).
+    if (!bancoPronto.current) {
+      toast.error(
+        "Sem conexão com o servidor — nada foi salvo. Recarregue a página e tente de novo.",
+        { duration: 8000 }
+      );
+      return;
+    }
     fetch(`${URL_BACKEND_PIX}/api/dados/${colecao}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...cabecalhosAdmin() },
       body: JSON.stringify({ dados }),
-    }).catch(() => setBancoConectado(false));
+    })
+      .then(async (r) => {
+        if (r.ok) return;
+        // A gravação falhou (sessão expirada, imagem inválida, erro do
+        // servidor...) — sem isso, o Admin só percebia ao recarregar a
+        // página e ver que o que cadastrou tinha sumido, sem entender por quê.
+        let mensagem = "Não foi possível salvar. Tente novamente.";
+        try {
+          const corpo = await r.json();
+          if (corpo?.erro) mensagem = corpo.erro;
+        } catch {
+          // resposta sem JSON — mantém a mensagem genérica
+        }
+        toast.error(mensagem, { duration: 8000 });
+        if (r.status === 401) setBancoConectado(false);
+      })
+      .catch(() => {
+        toast.error("Sem conexão com o servidor. As alterações NÃO foram salvas.", { duration: 8000 });
+        setBancoConectado(false);
+      });
   };
 
-  useEffect(() => {
-    salvarNoBanco("pedidos", pedidos);
-  }, [pedidos]);
-
-  useEffect(() => {
-    salvarNoBanco("produtos", produtos);
-  }, [produtos]);
-
-  useEffect(() => {
-    salvarNoBanco("alertasEstoque", alertasEstoque);
-  }, [alertasEstoque]);
+  // Chama um endpoint pontual do backend (muda uma linha só, não a tabela
+  // inteira). Usado nas ações de cliente: comprar, logar, avaliar, ativar
+  // código de vendedor, salvar/excluir cartão — e também em ações pontuais
+  // do Admin (ex.: status de um pedido), que exigem o token de sessão.
+  const salvarNoServidor = (caminho: string, metodo: string, corpo?: unknown) => {
+    if (!bancoPronto.current) {
+      toast.error(
+        "Sem conexão com o servidor — nada foi salvo. Recarregue a página e tente de novo.",
+        { duration: 8000 }
+      );
+      return Promise.resolve(false);
+    }
+    return fetch(`${URL_BACKEND_PIX}${caminho}`, {
+      method: metodo,
+      headers: { "Content-Type": "application/json", ...cabecalhosAdmin() },
+      body: corpo !== undefined ? JSON.stringify(corpo) : undefined,
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          let mensagem = "Não foi possível salvar. Tente novamente.";
+          try {
+            const corpoResposta = await r.json();
+            if (corpoResposta?.erro) mensagem = corpoResposta.erro;
+          } catch {
+            // resposta sem JSON — mantém a mensagem genérica
+          }
+          toast.error(mensagem, { duration: 8000 });
+          if (r.status === 401) setBancoConectado(false);
+        }
+        return r.ok;
+      })
+      .catch(() => {
+        toast.error("Sem conexão com o servidor. As alterações NÃO foram salvas.", { duration: 8000 });
+        setBancoConectado(false);
+        return false;
+      });
+  };
 
   // Limpa automaticamente os alertas de estoque assim que o produto volta a
   // ter estoque (ou é excluído) — sem isso, cada "esgotado" ficava para
-  // sempre na lista e lotava o sino de notificações do Admin.
+  // sempre na lista e lotava o sino de notificações do Admin. Só ajusta a
+  // visão local (a tabela em si só ganha linhas via /api/checkout).
   useEffect(() => {
     setAlertasEstoque((atual) => {
       const aindaEsgotados = atual.filter((a) => {
@@ -235,96 +373,57 @@ export default function App() {
     });
   }, [produtos]);
 
-  useEffect(() => {
-    salvarNoBanco("cargos", cargos);
-  }, [cargos]);
+  // vinculosMasterPlus, config e banners agora gravam direto nos handlers que
+  // realmente mudam esses dados (salvarBanner, excluirBanner, definirCargo,
+  // promoverVendedorAMaster, salvarConfig) — igual ao padrão já usado por
+  // produtos/cupons/cargos. Antes isso era feito por um useEffect reativo a
+  // cada um desses estados, mas ele disparava de novo assim que os dados
+  // vindos do banco eram aplicados no carregamento da página (é uma mudança
+  // de estado como qualquer outra do ponto de vista do React) — ou seja,
+  // TODO visitante regravava a loja inteira ao abrir o site, usando um token
+  // de Admin antigo/expirado se houvesse um sobrando no navegador, e via
+  // "Sessão expirada" à toa. Chamando salvarNoBanco só nos handlers, a
+  // gravação só acontece quando o Admin realmente muda algo.
 
-  useEffect(() => {
-    salvarNoBanco("recrutamentos", recrutamentos);
-  }, [recrutamentos]);
-
-  useEffect(() => {
-    salvarNoBanco("vinculosMasterPlus", vinculosMasterPlus);
-  }, [vinculosMasterPlus]);
-
-  useEffect(() => {
-    salvarNoBanco("config", config);
-  }, [config]);
-
-  useEffect(() => {
-    salvarNoBanco("cupons", cupons);
-  }, [cupons]);
-
-  useEffect(() => {
-    salvarNoBanco("banners", banners);
-  }, [banners]);
-
-  useEffect(() => {
-    salvarNoBanco("cartoesSalvos", cartoesSalvos);
-  }, [cartoesSalvos]);
-
-  // Salva um cartão novo após uma compra confirmada com Cartão (ou atualiza
-  // os ids do cofre num cartão que já existia localmente). Não duplica se o
-  // cliente já tiver salvo o mesmo cartão antes (mesmos últimos 4 dígitos +
-  // validade). O número completo e o CVV são descartados aqui — só entram na
-  // memória do navegador durante a digitação, nunca são salvos.
-  const salvarCartao = (email: string, dados: DadosCartaoDigitado) => {
-    const ultimosDigitos = dados.numero.replace(/\D/g, "").slice(-4);
-    const emailChave = email.toLowerCase();
-    if (!ultimosDigitos) return;
-    const existente = cartoesSalvos.find(
-      (c) => c.email.toLowerCase() === emailChave && c.ultimosDigitos === ultimosDigitos && c.validade === dados.validade
-    );
-    if (existente) {
-      // Já estava salvo (ex.: reuso de cartão salvo) — só atualiza os ids do
-      // cofre se agora tivermos um (ex.: cartão antigo que nunca tinha sido
-      // vinculado ao Mercado Pago e acabou de ser tokenizado de novo).
-      if (dados.mpCardId && !existente.mpCardId) {
-        setCartoesSalvos((anterior) =>
-          anterior.map((c) => (c.id === existente.id ? { ...c, mpCardId: dados.mpCardId, mpCustomerId: dados.mpCustomerId } : c))
-        );
-      }
-      return;
-    }
-    setCartoesSalvos((anterior) => [
-      {
-        id: Date.now(),
-        email: emailChave,
-        bandeira: dados.bandeira || bandeiraCartao(dados.numero),
-        nomeCartao: dados.nome.trim(),
-        ultimosDigitos,
-        validade: dados.validade,
-        mpCardId: dados.mpCardId,
-        mpCustomerId: dados.mpCustomerId,
-      },
-      ...anterior,
-    ]);
+  // Cria um cupom novo ou atualiza um existente (mesmo código). Ação do
+  // Admin — grava a tabela inteira (são poucos cupons, e só o Admin mexe
+  // aqui). O uso do cupom numa compra normal NÃO passa por aqui — vai pelo
+  // /api/checkout, que só soma +1 no cupom usado, sem reescrever a tabela.
+  const salvarCupom = (c: Cupom) => {
+    const novo = cupons.some((x) => x.codigo === c.codigo)
+      ? cupons.map((x) => (x.codigo === c.codigo ? c : x))
+      : [c, ...cupons];
+    setCupons(novo);
+    salvarNoBanco("cupons", novo);
   };
 
-  // Remove um cartão salvo (só o dono do cartão consegue, via perfil)
-  const excluirCartao = (id: number) => setCartoesSalvos((anterior) => anterior.filter((c) => c.id !== id));
+  const excluirCupom = (codigo: string) => {
+    const novo = cupons.filter((c) => c.codigo !== codigo);
+    setCupons(novo);
+    salvarNoBanco("cupons", novo);
+  };
 
-  // Cria um cupom novo ou atualiza um existente (mesmo código)
-  const salvarCupom = (c: Cupom) =>
-    setCupons((anterior) =>
-      anterior.some((x) => x.codigo === c.codigo)
-        ? anterior.map((x) => (x.codigo === c.codigo ? c : x))
-        : [c, ...anterior]
-    );
-
-  const excluirCupom = (codigo: string) =>
-    setCupons((anterior) => anterior.filter((c) => c.codigo !== codigo));
+  // O Admin muda a configuração da loja (frete, chave PIX, comissão...) —
+  // salva no banco na hora, igual às outras ações do Admin
+  const salvarConfig = (novaConfig: ConfigLoja) => {
+    setConfig(novaConfig);
+    salvarNoBanco("config", novaConfig);
+  };
 
   // Cria um banner novo ou atualiza um existente (mesmo id)
-  const salvarBanner = (b: Banner) =>
-    setBanners((anterior) =>
-      anterior.some((x) => x.id === b.id)
-        ? anterior.map((x) => (x.id === b.id ? b : x))
-        : [...anterior, b]
-    );
+  const salvarBanner = (b: Banner) => {
+    const novo = banners.some((x) => x.id === b.id)
+      ? banners.map((x) => (x.id === b.id ? b : x))
+      : [...banners, b];
+    setBanners(novo);
+    salvarNoBanco("banners", novo);
+  };
 
-  const excluirBanner = (id: number) =>
-    setBanners((anterior) => anterior.filter((b) => b.id !== id));
+  const excluirBanner = (id: number) => {
+    const novo = banners.filter((b) => b.id !== id);
+    setBanners(novo);
+    salvarNoBanco("banners", novo);
+  };
 
 
   // Master/MasterPlus/Admin dá (ou remove) um cargo de um usuário.
@@ -344,23 +443,20 @@ export default function App() {
         const mastersDela = Object.keys(vinculosMasterPlus).filter((m) => vinculosMasterPlus[m] === chave);
         mastersDela.forEach((m) => delete novo[m]);
       }
+      salvarNoBanco("cargos", novo);
       return novo;
     });
-    if (cargo !== "master") {
-      setVinculosMasterPlus((anterior) => {
-        if (!(chave in anterior)) return anterior;
-        const novo = { ...anterior };
-        delete novo[chave];
-        return novo;
-      });
+    if (cargo !== "master" && chave in vinculosMasterPlus) {
+      const novo = { ...vinculosMasterPlus };
+      delete novo[chave];
+      setVinculosMasterPlus(novo);
+      salvarNoBanco("vinculosMasterPlus", novo);
     }
-    if (cargo !== "masterplus") {
-      setVinculosMasterPlus((anterior) => {
-        if (!Object.values(anterior).includes(chave)) return anterior;
-        const novo = { ...anterior };
-        for (const k of Object.keys(novo)) if (novo[k] === chave) delete novo[k];
-        return novo;
-      });
+    if (cargo !== "masterplus" && Object.values(vinculosMasterPlus).includes(chave)) {
+      const novo = { ...vinculosMasterPlus };
+      for (const k of Object.keys(novo)) if (novo[k] === chave) delete novo[k];
+      setVinculosMasterPlus(novo);
+      salvarNoBanco("vinculosMasterPlus", novo);
     }
   };
 
@@ -377,7 +473,9 @@ export default function App() {
     );
     if (!daEquipe) return "Você só pode promover vendedores que você mesmo cadastrou.";
     definirCargo(chave, "master");
-    setVinculosMasterPlus((anterior) => ({ ...anterior, [chave]: masterPlusChave }));
+    const novosVinculos = { ...vinculosMasterPlus, [chave]: masterPlusChave };
+    setVinculosMasterPlus(novosVinculos);
+    salvarNoBanco("vinculosMasterPlus", novosVinculos);
     return null;
   };
 
@@ -394,10 +492,13 @@ export default function App() {
     );
     if (!vinculo) return "Código inválido para esta conta. Confira com quem te cadastrou.";
     if (vinculo.ativado) return "Este código já foi ativado.";
+    // Ação do cliente: usa o endpoint pontual (não reescreve as tabelas
+    // inteiras de recrutamentos/cargos, que são compartilhadas por todos).
+    salvarNoServidor(`/api/recrutamentos/${codigoLimpo}/ativar`, "POST", { email: emailLimpo });
     setRecrutamentos((anterior) =>
       anterior.map((r) => (r.codigo === codigoLimpo ? { ...r, ativado: true } : r))
     );
-    definirCargo(emailLimpo, "vendedor");
+    setCargos((anterior) => ({ ...anterior, [emailLimpo]: "vendedor" }));
     setAvisoVendedorAtivado(true);
     return null;
   };
@@ -413,7 +514,7 @@ export default function App() {
     if (chave === masterEmail.toLowerCase()) return "Você não pode convidar a si mesmo.";
     if (recrutamentos.some((r) => r.email.toLowerCase() === chave))
       return "Este e-mail já foi cadastrado.";
-    setRecrutamentos((anterior) => [
+    const novo = [
       {
         codigo: gerarCodigoRecrutamento(),
         recrutador: masterEmail.toLowerCase(),
@@ -422,25 +523,30 @@ export default function App() {
         ativado: false,
         date: new Date().toLocaleDateString("pt-BR"),
       },
-      ...anterior,
-    ]);
+      ...recrutamentos,
+    ];
+    setRecrutamentos(novo);
+    salvarNoBanco("recrutamentos", novo);
     return null;
   };
 
   // Cria um produto novo (gera o código sequencial da categoria, ex.:
   // "BEL-001") ou atualiza um existente (mantém o código já atribuído)
-  const salvarProduto = (p: Produto) =>
-    setProdutos((anterior) => {
-      const existente = anterior.find((x) => x.id === p.id);
-      if (existente) {
-        return anterior.map((x) => (x.id === p.id ? { ...p, codigo: existente.codigo ?? p.codigo } : x));
-      }
-      const comCodigo = { ...p, codigo: p.codigo ?? gerarCodigoProduto(p.category, anterior) };
-      return [comCodigo, ...anterior];
-    });
+  const salvarProduto = (p: Produto) => {
+    const existente = produtos.find((x) => x.id === p.id);
+    const novo = existente
+      ? produtos.map((x) => (x.id === p.id ? { ...p, codigo: existente.codigo ?? p.codigo } : x))
+      : [{ ...p, codigo: p.codigo ?? gerarCodigoProduto(p.category, produtos) }, ...produtos];
+    setProdutos(novo);
+    salvarNoBanco("produtos", novo);
+  };
 
   // Remove um produto do catálogo
-  const excluirProduto = (id: number) => setProdutos((anterior) => anterior.filter((p) => p.id !== id));
+  const excluirProduto = (id: number) => {
+    const novo = produtos.filter((p) => p.id !== id);
+    setProdutos(novo);
+    salvarNoBanco("produtos", novo);
+  };
 
   // Atualiza na hora o resumo (estrelas + quantidade) de um produto depois que
   // uma avaliação é enviada ou excluída — o pedido de verdade (POST/DELETE em
@@ -449,13 +555,20 @@ export default function App() {
   const atualizarResumoAvaliacoes = (produtoId: number, rating: number, reviews: number) =>
     setProdutos((anterior) => anterior.map((p) => (p.id === produtoId ? { ...p, rating, reviews } : p)));
 
-  // Atualiza o status de um pedido (Processando, Entregue...)
-  const atualizarStatusPedido = (id: string, status: string) =>
-    setPedidos((anterior) => anterior.map((o) => (o.id === id ? { ...o, status } : o)));
-
-  useEffect(() => {
-    salvarNoBanco("clientes", clientes);
-  }, [clientes]);
+  // Atualiza o status de um pedido (Processando, Entregue...). Ação do
+  // Admin sobre UM pedido — usa o endpoint pontual, não reescreve a tabela
+  // inteira (que é compartilhada e pode ter pedidos novíssimos de outros
+  // clientes comprando ao mesmo tempo).
+  // Admin mexe em UM pedido: status e/ou código de rastreio dos Correios.
+  // Só as chaves informadas vão para o servidor — mandar codigoRastreio: ""
+  // apaga o código, não mandar a chave deixa o que já estava.
+  const atualizarStatusPedido = (
+    id: string,
+    mudancas: { status?: string; codigoRastreio?: string },
+  ) => {
+    setPedidos((anterior) => anterior.map((o) => (o.id === id ? { ...o, ...mudancas } : o)));
+    salvarNoServidor(`/api/pedidos/${id}`, "PATCH", mudancas);
+  };
 
   // Insere o produto no carrinho respeitando o estoque disponível. Cores
   // diferentes do mesmo produto viram linhas separadas no carrinho (cada uma
@@ -520,29 +633,19 @@ export default function App() {
   };
 
   // Chamado quando o pagamento é confirmado: cria os pedidos, dá baixa no
-  // estoque e gera alertas. PIX é sempre "Pago" (o site só chama isso depois
-  // de confirmar o PIX de verdade). Cartão manda o status REAL devolvido pelo
-  // Mercado Pago (statusCartao) — "approved" vira Pago, "in_process"/"pending"
-  // vira Processando (ex.: análise antifraude); pagamento recusado nunca chega
-  // aqui (a tela de pagamento barra antes). Se foi pago com um cartão novo,
-  // salva o cartão (dados seguros) no perfil.
-  const confirmarPagamento = (dadosCartao?: DadosCartaoDigitado, statusCartao?: "approved" | "in_process" | "pending") => {
+  // estoque e gera alertas. O site só chama isso depois de confirmar o PIX
+  // de verdade — o status inicial do pedido é sempre "Pago".
+  const confirmarPagamento = () => {
     if (!usuario || !pagamentoPendente) return;
-    if (pagamentoPendente.metodo === "cartao" && dadosCartao) {
-      salvarCartao(usuario.email, dadosCartao);
-    }
     const agora = new Date();
     const date = agora.toLocaleDateString("pt-BR");
     const month = NOMES_MESES[agora.getMonth()];
     const sufixo = String(Date.now()).slice(-5);
-    const rotuloPagamento = { pix: "PIX", cartao: "Cartão" }[pagamentoPendente.metodo];
-    // Cartão: Pago só quando o Mercado Pago aprovou na hora; se ficou em
-    // análise (antifraude), entra como Processando. PIX só chega aqui depois
-    // de confirmado de verdade, então é sempre Pago.
-    const statusInicial =
-      pagamentoPendente.metodo === "cartao" && statusCartao && statusCartao !== "approved"
-        ? "Processando"
-        : "Pago";
+    const rotuloPagamento =
+      pagamentoPendente.metodo === "cartao"
+        ? `Cartão ${pagamentoPendente.parcelas}x`
+        : "PIX";
+    const statusInicial = "Pago";
 
     const novosPedidos: Pedido[] = carrinho.map((item, i) => {
       // Nome-base + cor escolhida (se houver) + quantidade — nessa ordem —
@@ -559,11 +662,12 @@ export default function App() {
         month,
         category: item.category,
         pagamento: rotuloPagamento,
+        produtoId: item.id,
         // Atribuição da venda: com código de venda válido, a venda conta somente
         // para a conta dona do código. Sem código, a venda cai para o
         // administrador (a loja) — só o código credita o vendedor ou o Master.
-        vendedor: donoCodigoVenda ?? EMAIL_ADMIN,
-        codigoVenda: donoCodigoVenda ? codigoVendaLimpo : undefined,
+        vendedor: vendedorVinculado ?? donoCodigoVenda ?? EMAIL_ADMIN,
+        codigoVenda: !vendedorVinculado && donoCodigoVenda ? codigoVendaLimpo : undefined,
         // Endereço de entrega preenchido no carrinho (CEP + número)
         endereco: pagamentoPendente.endereco,
         // Cupom usado nesta compra — trava o mesmo cupom para o cliente de novo
@@ -595,17 +699,44 @@ export default function App() {
       })
       .map((p) => ({ id: p.id, name: p.name, date }));
 
+    // Grava a compra no banco pelo endpoint pontual — só insere os pedidos
+    // novos e dá baixa no estoque dos itens comprados (com lock de linha),
+    // sem reescrever as tabelas inteiras de produtos/pedidos/cupons (que
+    // outros clientes podem estar alterando ao mesmo tempo).
+    salvarNoServidor("/api/checkout", "POST", {
+      pedidos: novosPedidos,
+      itens: carrinho.map((i) => ({ id: i.id, qty: i.qty, corEscolhida: i.corEscolhida })),
+      cupomCodigo: cupomAplicado ? cupomAplicado.codigo : undefined,
+    });
+
+    // Atualiza o estado local na hora, só para a UI — o servidor já fez o
+    // cálculo real e definitivo acima.
     setProdutos(produtosAtualizados);
     // Mantém só os 30 mais recentes — o efeito acima já remove o que foi
     // reabastecido, isso aqui é só uma trava extra contra crescimento sem fim
     if (esgotados.length > 0) setAlertasEstoque((anterior) => [...esgotados, ...anterior].slice(0, 30));
 
     setPedidos((anterior) => [...novosPedidos, ...anterior]);
+    // Primeira compra com código válido: o cliente fica vinculado a essa conta
+    // para sempre (o servidor grava o vínculo no checkout). A partir daqui o
+    // campo de código de venda some — só é pedido uma vez por conta.
+    if (!vendedorVinculado && donoCodigoVenda) {
+      const chaveCliente = usuario.email.toLowerCase();
+      setClientes((anterior) =>
+        anterior.map((c) =>
+          c.email.toLowerCase() === chaveCliente ? { ...c, vendedorVinculado: donoCodigoVenda } : c
+        )
+      );
+    }
     setTotalUltimaCompra(pagamentoPendente.total);
+    // Produtos desta compra: viram o convite de avaliação na tela de sucesso
+    setProdutosUltimaCompra(
+      produtos.filter((p) => carrinho.some((i) => i.id === p.id))
+    );
     setCarrinho([]);
     setPagamentoPendente(null);
-    setCodigoVenda(""); // o código de venda vale para uma compra por vez
-    // Registra o uso do cupom e limpa para a próxima compra
+    setCodigoVenda(""); // já virou vínculo fixo da conta, não é pedido de novo
+    // Registra o uso do cupom (localmente) e limpa para a próxima compra
     if (cupomAplicado) {
       setCupons((anterior) =>
         anterior.map((c) => (c.codigo === cupomAplicado.codigo ? { ...c, usos: c.usos + 1 } : c))
@@ -656,6 +787,9 @@ export default function App() {
   const nomeDonoCodigoVenda = donoCodigoVenda
     ? clientes.find((c) => c.email.toLowerCase() === donoCodigoVenda)?.name ?? donoCodigoVenda
     : null;
+  const vendedorVinculado = usuario
+    ? clientes.find((c) => c.email.toLowerCase() === usuario.email.toLowerCase())?.vendedorVinculado ?? null
+    : null;
 
   // Cupom digitado no carrinho, se existir, estiver válido (ativo e na
   // validade) e ainda não tiver sido usado por este cliente antes (cada
@@ -678,8 +812,18 @@ export default function App() {
       (c) => c.codigo === cupomDigitado.trim().toUpperCase() && cupomEstaValido(c) && clienteJaUsouCupom(usuario.email, c.codigo, pedidos)
     );
 
-  const produtosFiltrados = useMemo(
-    () => produtos.filter((p) => {
+  const produtosFiltrados = useMemo(() => {
+    const dentroDaFaixa = (preco: number): boolean => {
+      switch (faixaPreco) {
+        case "ate-50": return preco <= 50;
+        case "50-150": return preco > 50 && preco <= 150;
+        case "150-300": return preco > 150 && preco <= 300;
+        case "acima-300": return preco > 300;
+        default: return true;
+      }
+    };
+    const filtrados = produtos.filter((p) => {
+      if (verSoFavoritos && !favoritos.includes(p.id)) return false;
       const termo = busca.trim().toLowerCase();
       const matchSearch =
         !termo ||
@@ -688,17 +832,58 @@ export default function App() {
         p.category.toLowerCase().includes(termo);
       // Com uma busca digitada, procura em todas as categorias — só filtra
       // pela categoria selecionada quando o campo de busca está vazio.
-      const matchCat = termo ? true : categoriaSelecionada === "Outros" || p.category === categoriaSelecionada;
-      return matchCat && matchSearch;
-    }),
-    [categoriaSelecionada, busca, produtos]
-  );
+      // Em "só favoritos" a categoria não filtra: são poucos itens, mistura tudo.
+      const matchCat = termo || verSoFavoritos ? true : categoriaSelecionada === "Outros" || p.category === categoriaSelecionada;
+      if (!matchCat || !matchSearch) return false;
+      if (!dentroDaFaixa(p.price)) return false;
+      if (avaliacaoMinFiltro > 0 && p.rating < avaliacaoMinFiltro) return false;
+      if (marcaFiltro && p.brand !== marcaFiltro) return false;
+      if (apenasEstoqueFiltro && p.stock <= 0) return false;
+      return true;
+    });
 
-  // Após login/cadastro: registra o cliente e retoma a compra pendente.
-  // A ativação do código de vendedor agora acontece no perfil do cliente,
-  // depois que a conta já existe — ver ativarCodigoVendedor.
+    const ordenados = [...filtrados];
+    switch (ordenacao) {
+      case "menor-preco": ordenados.sort((a, b) => a.price - b.price); break;
+      case "maior-preco": ordenados.sort((a, b) => b.price - a.price); break;
+      case "avaliacao": ordenados.sort((a, b) => b.rating - a.rating || b.reviews - a.reviews); break;
+      case "novidade": ordenados.sort((a, b) => b.id - a.id); break;
+      // "relevancia": mantém a ordem do catálogo (curadoria do Admin)
+    }
+    return ordenados;
+  }, [categoriaSelecionada, busca, produtos, verSoFavoritos, favoritos, faixaPreco, avaliacaoMinFiltro, marcaFiltro, apenasEstoqueFiltro, ordenacao]);
+
+  // Marcas disponíveis dentro do recorte atual (categoria/busca/favoritos),
+  // pra não oferecer no filtro uma marca que não tem nenhum produto ali
+  const marcasDisponiveis = useMemo(() => {
+    const base = produtos.filter((p) => {
+      if (verSoFavoritos) return favoritos.includes(p.id);
+      const termo = busca.trim().toLowerCase();
+      if (termo) return p.name.toLowerCase().includes(termo) || p.brand.toLowerCase().includes(termo) || p.category.toLowerCase().includes(termo);
+      return categoriaSelecionada === "Outros" || p.category === categoriaSelecionada;
+    });
+    return [...new Set(base.map((p) => p.brand))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [produtos, categoriaSelecionada, busca, verSoFavoritos, favoritos]);
+
+  const filtrosDeCatalogoAtivos = faixaPreco !== "" || avaliacaoMinFiltro > 0 || marcaFiltro !== "" || apenasEstoqueFiltro;
+  const limparFiltrosDeCatalogo = () => {
+    setFaixaPreco(""); setAvaliacaoMinFiltro(0); setMarcaFiltro(""); setApenasEstoqueFiltro(false); setOrdenacao("relevancia");
+  };
+
+  // Home "limpa": sem categoria/busca/favoritos filtrando — é quando faz
+  // sentido mostrar as seções de vitrine (categorias, mais vendidos, etc.),
+  // em vez de competir com o resultado de uma navegação específica.
+  const naHomeLimpa = categoriaSelecionada === "Outros" && busca.trim() === "" && !verSoFavoritos;
+
+  // Após login/cadastro: a conta já foi criada/conferida no backend pela
+  // própria TelaLogin (senha com hash, ou Google verificado de verdade) —
+  // aqui só atualiza o estado local e retoma a compra pendente. A ativação
+  // do código de vendedor acontece no perfil do cliente — ver ativarCodigoVendedor.
   const processarLogin = (u: Usuario, viaGoogle?: boolean) => {
     setUsuario(u);
+    // Recarrega o banco já autenticado: agora o backend libera os pedidos e a
+    // equipe desta conta (deslogado, a resposta traz só a vitrine)
+    setRecargaBanco((n) => n + 1);
     const emailLimpo = u.email.toLowerCase();
     // Só o Administrador não entra na lista de clientes da loja — o Master
     // agora é só uma conta comum com o cargo de Master, então precisa
@@ -709,19 +894,21 @@ export default function App() {
       setAvisoTelaLogin("");
       return;
     }
-    setClientes((anterior) =>
-      anterior.some((c) => c.email === u.email)
-        ? viaGoogle
-          ? anterior.map((c) => (c.email === u.email ? { ...c, viaGoogle: true } : c))
-          : anterior
-        : [...anterior, {
-            name: u.name,
-            email: u.email,
-            since: new Date().toLocaleDateString("pt-BR", { month: "short", year: "numeric" }),
-            criadoEm: new Date().toISOString().slice(0, 10),
-            viaGoogle: Boolean(viaGoogle),
-          }]
-    );
+    const clienteExistente = clientes.find((c) => c.email === u.email);
+    if (!clienteExistente) {
+      setClientes((anterior) => [
+        ...anterior,
+        {
+          name: u.name,
+          email: u.email,
+          since: new Date().toLocaleDateString("pt-BR", { month: "short", year: "numeric" }),
+          criadoEm: new Date().toISOString().slice(0, 10),
+          viaGoogle: Boolean(viaGoogle),
+        },
+      ]);
+    } else if (viaGoogle) {
+      setClientes((anterior) => anterior.map((c) => (c.email === u.email ? { ...c, viaGoogle: true } : c)));
+    }
     if (produtoPendente) {
       colocarNoCarrinho(produtoPendente);
       setProdutoPendente(null);
@@ -732,12 +919,27 @@ export default function App() {
     setAvisoTelaLogin("");
   };
 
+  // Link de "esqueci minha senha" clicado no e-mail — mostra a tela de
+  // redefinição antes de qualquer outra coisa
+  if (tokenRedefinirSenha) {
+    return (
+      <TelaRedefinirSenha
+        token={tokenRedefinirSenha}
+        aoConcluir={() => {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("redefinir-senha");
+          window.location.href = url.toString();
+        }}
+      />
+    );
+  }
+
   if (tela === "login") {
     return (
       <TelaLogin
         aoLogar={processarLogin}
         modoInicial={modoTelaLogin}
-        aviso={avisoTelaLogin}
+        aviso={avisoVerificacaoEmail ?? avisoTelaLogin}
         aoVoltar={() => { setProdutoPendente(null); setAvisoTelaLogin(""); setTela("loja"); }}
         clientes={clientes}
       />
@@ -782,6 +984,15 @@ export default function App() {
     setTela("perfil");
   };
 
+  // Atalho de Favoritos da barra inferior (mobile): volta pra loja já
+  // filtrada nos favoritos, de qualquer tela que a pessoa estiver
+  const abrirFavoritosMobile = () => {
+    setProdutoSelecionado(null);
+    setVerSoFavoritos(true);
+    setTela("loja");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   // Abre as notificações do cliente (pede login se for visitante)
   const abrirNotificacoes = () => {
     if (!usuario) {
@@ -802,21 +1013,29 @@ export default function App() {
           pedidos={pedidos.filter((o) => o.email.toLowerCase() === usuario.email.toLowerCase())}
           cupons={cupons.filter(cupomEstaValido)}
           categorias={CATEGORIAS.filter((c) => c !== "Outros")}
+          desde={clientes.find((c) => c.email.toLowerCase() === usuario.email.toLowerCase())?.since}
           aoVerCategoria={(c) => { setCategoriaSelecionada(c); setProdutoSelecionado(null); setTela("loja"); }}
           aoVoltar={() => setTela("loja")}
-          aoSair={() => { setUsuario(null); setTela("loja"); }}
+          aoSair={() => {
+            const ehAdminSaindo = usuario?.email?.toLowerCase() === EMAIL_ADMIN;
+            salvarNoServidor(ehAdminSaindo ? "/api/admin/logout" : "/api/clientes/logout", "POST");
+            definirSessao(null);
+            setUsuario(null);
+            setTela("loja");
+          }}
+          aoAbrirNotificacoes={abrirNotificacoes}
+          aoAbrirAjuda={() => { setPaginaInstitucional("ajuda"); setTela("institucional"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
           rotuloPainel={rotuloPainel}
           aoAbrirPainel={abrirPainel}
           cargoUsuario={cargoUsuario}
           aoAtivarCodigo={ativarCodigoVendedor}
-          cartoesSalvos={cartoesSalvos.filter((c) => c.email.toLowerCase() === usuario.email.toLowerCase())}
-          aoExcluirCartao={excluirCartao}
-          aoAdicionarCartao={(dados) => salvarCartao(usuario.email, dados)}
         />
         <BarraInferiorMobile
           ativa="perfil"
           qtdCarrinho={qtdCarrinho}
+          qtdFavoritos={favoritos.length}
           aoIrInicio={() => { setProdutoSelecionado(null); setTela("loja"); }}
+          aoAbrirFavoritos={abrirFavoritosMobile}
           aoAbrirCarrinho={() => setTela("carrinho")}
           aoAbrirPerfil={() => {}}
           aoAbrirNotificacoes={abrirNotificacoes}
@@ -833,6 +1052,36 @@ export default function App() {
     );
   }
 
+  // Páginas de conteúdo do rodapé: Institucional e Atendimento
+  if (tela === "institucional") {
+    return (
+      <>
+        <TelaInstitucional
+          pagina={paginaInstitucional}
+          aoTrocarPagina={setPaginaInstitucional}
+          aoVoltar={() => setTela("loja")}
+          pedidos={usuario ? pedidos.filter((o) => o.email.toLowerCase() === usuario.email.toLowerCase()) : []}
+          produtos={produtos}
+          emailUsuario={usuario?.email}
+          pedidoInicial={pedidoDoLink ?? undefined}
+          aoVerPedidos={abrirNotificacoes}
+        />
+        <BarraInferiorMobile
+          ativa="inicio"
+          qtdCarrinho={qtdCarrinho}
+          qtdFavoritos={favoritos.length}
+          aoIrInicio={() => { setProdutoSelecionado(null); setTela("loja"); }}
+          aoAbrirFavoritos={abrirFavoritosMobile}
+          aoAbrirCarrinho={() => setTela("carrinho")}
+          aoAbrirPerfil={abrirPerfil}
+          aoAbrirNotificacoes={abrirNotificacoes}
+          qtdNotificacoes={qtdNotificacoesCliente}
+        />
+        {bancoConectado === false && <AvisoBancoDesconectado />}
+      </>
+    );
+  }
+
   // Notificações do cliente: status dos pedidos (substitui "Categorias" no menu mobile)
   if (tela === "notificacoes" && usuario) {
     return (
@@ -844,7 +1093,9 @@ export default function App() {
         <BarraInferiorMobile
           ativa="notificacoes"
           qtdCarrinho={qtdCarrinho}
+          qtdFavoritos={favoritos.length}
           aoIrInicio={() => { setProdutoSelecionado(null); setTela("loja"); }}
+          aoAbrirFavoritos={abrirFavoritosMobile}
           aoAbrirCarrinho={() => setTela("carrinho")}
           aoAbrirPerfil={abrirPerfil}
           aoAbrirNotificacoes={() => {}}
@@ -884,7 +1135,7 @@ export default function App() {
         aoSalvarBanner={salvarBanner}
         aoExcluirBanner={excluirBanner}
         config={config}
-        aoSalvarConfig={setConfig}
+        aoSalvarConfig={salvarConfig}
         bancoOffline={bancoConectado === false}
         aoAtualizarResumoAvaliacoes={atualizarResumoAvaliacoes}
       />
@@ -1011,8 +1262,6 @@ export default function App() {
         email={usuario?.email ?? ""}
         aoConfirmar={confirmarPagamento}
         aoVoltar={() => { setPagamentoPendente(null); setTela("carrinho"); }}
-        cartoesSalvos={usuario ? cartoesSalvos.filter((c) => c.email.toLowerCase() === usuario.email.toLowerCase()) : []}
-        aoExcluirCartao={excluirCartao}
       />
     );
   }
@@ -1021,7 +1270,15 @@ export default function App() {
     return (
       <TelaCompraConcluida
         total={totalUltimaCompra}
-        aoContinuar={() => setTela("loja")}
+        produtosComprados={produtosUltimaCompra}
+        aoAvaliarProduto={(p) => {
+          // Leva o cliente direto para a seção de avaliações daquele produto
+          setProdutoSelecionado(p);
+          setIrParaAvaliacoes(true);
+          setProdutosUltimaCompra([]);
+          setTela("loja");
+        }}
+        aoContinuar={() => { setProdutosUltimaCompra([]); setTela("loja"); }}
       />
     );
   }
@@ -1038,6 +1295,7 @@ export default function App() {
         codigoVenda={codigoVenda}
         aoMudarCodigoVenda={setCodigoVenda}
         nomeDonoCodigo={nomeDonoCodigoVenda}
+        vendedorVinculado={vendedorVinculado}
         config={config}
         cupom={cupomDigitado}
         aoMudarCupom={setCupomDigitado}
@@ -1049,22 +1307,31 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FBF4EA] pb-14 md:pb-0" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      <CabecalhoLoja
-        qtdCarrinho={qtdCarrinho}
-        aoAbrirCarrinho={() => setTela("carrinho")}
-        aoAbrirPainel={abrirPainel}
-        rotuloPainel={rotuloPainel}
-        aoClicarEntrar={abrirTelaLogin}
-        aoAbrirPerfil={abrirPerfil}
-        busca={busca}
-        aoBuscar={(v) => { setBusca(v); setProdutoSelecionado(null); }}
-        usuario={usuario}
-      />
-      <MenuCategorias
-        categorias={CATEGORIAS}
-        selecionada={categoriaSelecionada}
-        aoSelecionar={(c) => { setCategoriaSelecionada(c); setProdutoSelecionado(null); }}
-      />
+      {/* Cabeçalho + categorias empilhados num único sticky, pra não sobrepor um no outro */}
+      <div className="sticky top-0 z-40">
+        <CabecalhoLoja
+          qtdCarrinho={qtdCarrinho}
+          qtdFavoritos={favoritos.length}
+          aoAbrirCarrinho={() => setTela("carrinho")}
+          aoAbrirFavoritos={() => {
+            setVerSoFavoritos(true);
+            setProdutoSelecionado(null);
+            document.getElementById("produtos-section")?.scrollIntoView({ behavior: "smooth" });
+          }}
+          aoAbrirPainel={abrirPainel}
+          rotuloPainel={rotuloPainel}
+          aoClicarEntrar={abrirTelaLogin}
+          aoAbrirPerfil={abrirPerfil}
+          busca={busca}
+          aoBuscar={(v) => { setBusca(v); setProdutoSelecionado(null); setVerSoFavoritos(false); }}
+          usuario={usuario}
+        />
+        <MenuCategorias
+          categorias={CATEGORIAS}
+          selecionada={categoriaSelecionada}
+          aoSelecionar={(c) => { setCategoriaSelecionada(c); setProdutoSelecionado(null); setVerSoFavoritos(false); }}
+        />
+      </div>
 
       {/* Toast: produto adicionado ao carrinho */}
       {toastAdicionado && (
@@ -1110,13 +1377,14 @@ export default function App() {
           produto={produtoSelecionado}
           produtos={produtos}
           aoAdicionarAoCarrinho={adicionarAoCarrinho}
-          aoAbrirProduto={(p) => { setProdutoSelecionado(p); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-          aoVoltar={() => setProdutoSelecionado(null)}
+          aoAbrirProduto={(p) => { setProdutoSelecionado(p); setIrParaAvaliacoes(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+          aoVoltar={() => { setProdutoSelecionado(null); setIrParaAvaliacoes(false); }}
           aoFavoritar={alternarFavorito}
           favoritos={favoritos}
           usuario={usuario}
           pedidos={pedidos}
           aoAtualizarResumoAvaliacoes={atualizarResumoAvaliacoes}
+          focarAvaliacoes={irParaAvaliacoes}
         />
       ) : (
       <main>
@@ -1125,6 +1393,7 @@ export default function App() {
           aoClicarBanner={(c) => {
             setCategoriaSelecionada(c);
             setProdutoSelecionado(null);
+            setVerSoFavoritos(false);
             document.getElementById("produtos-section")?.scrollIntoView({ behavior: "smooth" });
           }}
         />
@@ -1132,35 +1401,68 @@ export default function App() {
         <section id="produtos-section" className="max-w-[1440px] mx-auto px-4 py-8">
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2.5">
-              <span className="w-1 h-6 rounded-full bg-[#C8102E]" />
+              <span className="w-1 h-6 rounded-full bg-[#A8102A]" />
               <div>
                 <h2 className="text-xl font-black text-gray-900">
-                  {categoriaSelecionada}
+                  {verSoFavoritos ? "Seus favoritos" : naHomeLimpa ? "Produtos em destaque" : categoriaSelecionada}
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {produtosFiltrados.length} produto{produtosFiltrados.length !== 1 ? "s" : ""} encontrado{produtosFiltrados.length !== 1 ? "s" : ""}
                 </p>
               </div>
             </div>
+            {verSoFavoritos && (
+              <button
+                onClick={() => setVerSoFavoritos(false)}
+                className="text-[#A8102A] font-bold text-sm hover:underline flex-shrink-0"
+              >
+                Ver tudo
+              </button>
+            )}
+          </div>
+
+          {/* Filtros de catálogo (preço, avaliação, marca, estoque, ordenação):
+              só a partir do tablet — no celular ficam escondidos pra manter a
+              vitrine limpa, sem a fileira de selects logo abaixo do título */}
+          <div className="hidden md:block">
+            <BarraFiltros
+              marcas={marcasDisponiveis}
+              marcaSelecionada={marcaFiltro}
+              aoMudarMarca={setMarcaFiltro}
+              faixaPreco={faixaPreco}
+              aoMudarFaixaPreco={setFaixaPreco}
+              avaliacaoMin={avaliacaoMinFiltro}
+              aoMudarAvaliacaoMin={setAvaliacaoMinFiltro}
+              apenasEstoque={apenasEstoqueFiltro}
+              aoMudarApenasEstoque={setApenasEstoqueFiltro}
+              ordenacao={ordenacao}
+              aoMudarOrdenacao={setOrdenacao}
+              aoLimpar={limparFiltrosDeCatalogo}
+              filtrosAtivos={filtrosDeCatalogoAtivos}
+            />
           </div>
 
           {produtosFiltrados.length === 0 ? (
             <div className="py-16 md:py-20 text-center bg-white rounded-2xl border border-gray-100">
               <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
-                <Search size={26} strokeWidth={1.75} className="text-[#C8102E]" />
+                <Search size={26} strokeWidth={1.75} className="text-[#A8102A]" />
               </div>
               <p className="font-bold text-gray-700 mb-1">
-                {produtos.length === 0 ? "Nenhum produto cadastrado ainda" : "Nenhum produto encontrado"}
+                {verSoFavoritos
+                  ? "Você ainda não favoritou nenhum produto"
+                  : produtos.length === 0 ? "Nenhum produto cadastrado ainda" : "Nenhum produto encontrado"}
               </p>
               <p className="text-sm text-gray-400 max-w-xs mx-auto">
-                {produtos.length === 0
+                {verSoFavoritos
+                  ? "Toque no coração de um produto para guardá-lo aqui."
+                  : produtos.length === 0
                   ? "Em breve novidades por aqui — cadastre produtos no painel Admin."
                   : "Tente outra categoria ou termo de busca."}
               </p>
-              {categoriaSelecionada !== "Outros" && produtos.length > 0 && (
+              {(verSoFavoritos || filtrosDeCatalogoAtivos || (categoriaSelecionada !== "Outros" && produtos.length > 0)) && (
                 <button
-                  onClick={() => setCategoriaSelecionada("Outros")}
-                  className="mt-5 text-[#C8102E] font-bold text-sm hover:underline"
+                  onClick={() => { setVerSoFavoritos(false); setCategoriaSelecionada("Outros"); limparFiltrosDeCatalogo(); }}
+                  className="mt-5 text-[#A8102A] font-bold text-sm hover:underline"
                 >
                   Ver todos os produtos
                 </button>
@@ -1181,20 +1483,47 @@ export default function App() {
             </div>
           )}
         </section>
+
+        {naHomeLimpa && (
+          <>
+            <FaixaBeneficios />
+            <SecaoMaisVendidos
+              produtos={produtos}
+              aoAdicionarAoCarrinho={adicionarAoCarrinho}
+              aoFavoritar={alternarFavorito}
+              favoritos={favoritos}
+              aoAbrirProduto={(prod) => { setProdutoSelecionado(prod); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+            />
+            <SecaoAvaliacoesClientes />
+          </>
+        )}
       </main>
       )}
 
-      <RodapeLoja />
+      <RodapeLoja
+        aoAbrirPagina={(p) => {
+          setPaginaInstitucional(p);
+          setTela("institucional");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+      />
 
       {/* Navegação inferior no celular: Início · Notificações · Carrinho · Eu */}
       <BarraInferiorMobile
-        ativa="inicio"
+        ativa={verSoFavoritos ? "favoritos" : "inicio"}
         qtdCarrinho={qtdCarrinho}
+        qtdFavoritos={favoritos.length}
         aoIrInicio={() => {
           setProdutoSelecionado(null);
           setCategoriaSelecionada("Outros");
           setBusca("");
+          setVerSoFavoritos(false);
           window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+        aoAbrirFavoritos={() => {
+          setProdutoSelecionado(null);
+          setVerSoFavoritos(true);
+          document.getElementById("produtos-section")?.scrollIntoView({ behavior: "smooth" });
         }}
         aoAbrirCarrinho={() => setTela("carrinho")}
         aoAbrirPerfil={abrirPerfil}

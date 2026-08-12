@@ -1,23 +1,29 @@
 // Componente BarraInferiorMobile
 
-import { ShoppingCart, User, Bell, Home } from "lucide-react";
+import { ShoppingCart, User, Bell, Home, Heart } from "lucide-react";
 
 // ─── Barra Inferior (Mobile) ──────────────────────────────────────────────────
 
 // Navegação fixa no rodapé, visível somente no celular (estilo marketplace):
-// Início · Categorias · Carrinho · Eu
+// Início · Favoritos · Carrinho · Notificações · Eu — o cabeçalho no celular
+// fica só com logo + busca; esses atalhos (que incluíam favoritos/perfil/
+// carrinho lá em cima) vivem exclusivamente aqui embaixo agora.
 export function BarraInferiorMobile({
   ativa,
   qtdCarrinho,
+  qtdFavoritos = 0,
   aoIrInicio,
+  aoAbrirFavoritos,
   aoAbrirCarrinho,
   aoAbrirPerfil,
   aoAbrirNotificacoes,
   qtdNotificacoes = 0,
 }: {
-  ativa: "inicio" | "perfil" | "notificacoes";
+  ativa: "inicio" | "favoritos" | "perfil" | "notificacoes";
   qtdCarrinho: number;
+  qtdFavoritos?: number;
   aoIrInicio: () => void;
+  aoAbrirFavoritos: () => void;
   aoAbrirCarrinho: () => void;
   aoAbrirPerfil: () => void;
   aoAbrirNotificacoes: () => void;
@@ -30,21 +36,21 @@ export function BarraInferiorMobile({
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.05)] z-40 md:hidden pb-[env(safe-area-inset-bottom)]">
-      <div className="grid grid-cols-4">
+      <div className="grid grid-cols-5">
         <button onClick={aoIrInicio} className={classeItem(ativa === "inicio")}>
           <Home size={20} />
           <span className="text-[10px] font-bold">Início</span>
         </button>
-        <button onClick={aoAbrirNotificacoes} className={classeItem(ativa === "notificacoes")}>
+        <button onClick={aoAbrirFavoritos} className={classeItem(ativa === "favoritos")}>
           <div className="relative">
-            <Bell size={20} />
-            {qtdNotificacoes > 0 && (
+            <Heart size={20} />
+            {qtdFavoritos > 0 && (
               <span className="absolute -top-1.5 -right-2 bg-[#C8102E] text-white text-[9px] font-black rounded-full min-w-[15px] h-[15px] px-0.5 flex items-center justify-center">
-                {qtdNotificacoes}
+                {qtdFavoritos}
               </span>
             )}
           </div>
-          <span className="text-[10px] font-bold">Notificações</span>
+          <span className="text-[10px] font-bold">Favoritos</span>
         </button>
         <button onClick={aoAbrirCarrinho} className={classeItem(false)}>
           <div className="relative">
@@ -56,6 +62,17 @@ export function BarraInferiorMobile({
             )}
           </div>
           <span className="text-[10px] font-bold">Carrinho</span>
+        </button>
+        <button onClick={aoAbrirNotificacoes} className={classeItem(ativa === "notificacoes")}>
+          <div className="relative">
+            <Bell size={20} />
+            {qtdNotificacoes > 0 && (
+              <span className="absolute -top-1.5 -right-2 bg-[#C8102E] text-white text-[9px] font-black rounded-full min-w-[15px] h-[15px] px-0.5 flex items-center justify-center">
+                {qtdNotificacoes}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] font-bold">Avisos</span>
         </button>
         <button onClick={aoAbrirPerfil} className={classeItem(ativa === "perfil")}>
           <User size={20} />

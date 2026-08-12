@@ -1,18 +1,29 @@
 // Componente ModalDetalhesPedido
 
-import { X } from "lucide-react";
+import { useState } from "react";
+import { X, Truck } from "lucide-react";
 import type { Produto, Pedido, Cliente } from "../types";
 import { categoriaExibida, formatarMoeda } from "../utils";
+
+// Formato do código de postagem dos Correios: 2 letras + 9 dígitos + 2 letras
+const FORMATO_RASTREIO = /^[A-Z]{2}[0-9]{9}[A-Z]{2}$/;
 
 export function ModalDetalhesPedido({
   pedido,
   aoFechar,
   aoAtualizarStatus,
+  aoSalvarCodigoRastreio,
 }: {
   pedido: Pedido;
   aoFechar: () => void;
   aoAtualizarStatus: (status: string) => void;
+  aoSalvarCodigoRastreio?: (codigo: string) => void;
 }) {
+  const [rastreio, setRastreio] = useState(pedido.codigoRastreio ?? "");
+  const [salvo, setSalvo] = useState(false);
+  const rastreioNormalizado = rastreio.toUpperCase().trim();
+  // Vazio é permitido: é como se apaga um código digitado errado
+  const rastreioValido = rastreioNormalizado === "" || FORMATO_RASTREIO.test(rastreioNormalizado);
   const listaStatus = ["Processando", "Em trânsito", "Entregue", "Cancelado"];
   const campos = [
     { label: "Cliente", value: pedido.customer },
@@ -79,6 +90,41 @@ export function ModalDetalhesPedido({
               Pedidos cancelados não contam no faturamento nem no gráfico de vendas.
             </p>
           </div>
+
+          {/* Código de postagem dos Correios: é o que faz a página "Rastrear
+              Pedido" mostrar o caminho real da encomenda para o cliente. */}
+          {aoSalvarCodigoRastreio && (
+            <div>
+              <p className="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">
+                Código de rastreio (Correios)
+              </p>
+              <div className="flex gap-2">
+                <input
+                  value={rastreio}
+                  onChange={(e) => { setRastreio(e.target.value); setSalvo(false); }}
+                  placeholder="AA123456789BR"
+                  className={`flex-1 border-2 rounded-xl px-3 py-2.5 text-[13px] font-mono uppercase outline-none transition-colors ${
+                    rastreioValido ? "border-gray-200 focus:border-[#C8102E]" : "border-red-300"
+                  }`}
+                />
+                <button
+                  onClick={() => { aoSalvarCodigoRastreio(rastreioNormalizado); setSalvo(true); }}
+                  disabled={!rastreioValido || rastreioNormalizado === (pedido.codigoRastreio ?? "")}
+                  className="bg-gray-900 hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-[12px] rounded-xl px-4 transition-colors"
+                >
+                  Salvar
+                </button>
+              </div>
+              <p className={`text-[11px] mt-2 flex items-center gap-1.5 ${rastreioValido ? "text-gray-400" : "text-red-500"}`}>
+                <Truck size={13} className="flex-shrink-0" />
+                {!rastreioValido
+                  ? "Formato inválido — são 2 letras, 9 números e 2 letras (BR)."
+                  : salvo
+                    ? "Código salvo. O cliente já vê o rastreamento na loja."
+                    : "Deixe em branco para remover. Sem código, o cliente vê só o status acima."}
+              </p>
+            </div>
+          )}
 
           <button
             onClick={aoFechar}

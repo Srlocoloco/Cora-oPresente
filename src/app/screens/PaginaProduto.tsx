@@ -1,12 +1,13 @@
 // Tela PaginaProduto
 
 import { useEffect, useMemo, useState } from "react";
-import { ShoppingCart, Star, Package, Heart, Truck, RotateCcw, ChevronRight, ChevronLeft, Video } from "lucide-react";
+import { ShoppingCart, Star, Package, Heart, Truck, ChevronRight, ChevronLeft, Video } from "lucide-react";
 import type { Produto, Usuario, Pedido, Avaliacao, CorProduto } from "../types";
 import { CORES_SELO, URL_BACKEND_PIX, LIMITE_VIDEO_AVALIACAO_MB, LIMITE_VIDEO_AVALIACAO_SEGUNDOS } from "../constantes";
 import { categoriaExibida, formatarMoeda, precoParcela, pctDesconto, produtoFoiCompradoPor, mediaAvaliacoes } from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
 import { CartaoProduto } from "../components/CartaoProduto";
+import { cabecalhosAdmin } from "../authToken";
 
 export function PaginaProduto({
   produto,
@@ -19,6 +20,7 @@ export function PaginaProduto({
   usuario,
   pedidos,
   aoAtualizarResumoAvaliacoes,
+  focarAvaliacoes = false,
 }: {
   produto: Produto;
   produtos: Produto[];
@@ -30,6 +32,9 @@ export function PaginaProduto({
   usuario: Usuario | null;
   pedidos: Pedido[];
   aoAtualizarResumoAvaliacoes: (produtoId: number, rating: number, reviews: number) => void;
+  // true quando o cliente chegou aqui pelo convite de avaliar depois da compra:
+  // rola direto até a seção de avaliações em vez de abrir no topo da página
+  focarAvaliacoes?: boolean;
 }) {
   // ─── Galeria de fotos e cores/modelos ──────────────────────────────────────
   // Todas as fotos disponíveis: capa + galeria + uma foto por cor cadastrada
@@ -89,6 +94,14 @@ export function PaginaProduto({
     return () => { cancelado = true; };
   }, [produto.id]);
 
+  // Rola até o formulário de avaliação quando o cliente veio do convite
+  // mostrado logo depois da compra
+  useEffect(() => {
+    if (!focarAvaliacoes) return;
+    const alvo = document.getElementById("avaliacoes-produto");
+    if (alvo) alvo.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focarAvaliacoes, produto.id]);
+
   const jaComprou = usuario ? produtoFoiCompradoPor(usuario.email, produto, pedidos) : false;
   const minhaAvaliacao = useMemo(
     () => (usuario ? avaliacoes.find((a) => a.clienteEmail.toLowerCase() === usuario.email.toLowerCase()) : undefined),
@@ -146,10 +159,9 @@ export function PaginaProduto({
     try {
       const resposta = await fetch(`${URL_BACKEND_PIX}/api/avaliacoes`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...cabecalhosAdmin() },
         body: JSON.stringify({
           produtoId: produto.id,
-          clienteEmail: usuario.email,
           clienteNome: usuario.name,
           nota: notaForm,
           comentario: comentarioForm.trim(),
@@ -427,24 +439,20 @@ export function PaginaProduto({
                 </div>
                 <span className="text-emerald-600 text-[12px] font-black flex-shrink-0">Grátis</span>
               </div>
-              <div className="flex items-center justify-between gap-2 px-4 py-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
-                    <RotateCcw size={15} className="text-[#C8102E]" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-gray-800">Devolução grátis</div>
-                    <div className="text-[11px] text-gray-400">Até 30 dias após o recebimento</div>
-                  </div>
-                </div>
-                <span className="text-emerald-600 text-[12px] font-black flex-shrink-0">Grátis</span>
-              </div>
             </div>
           </div>
         </div>
 
+        {/* Descrição (opcional, só aparece se o Admin cadastrou) */}
+        {produto.description && (
+          <div className="mt-8 border-t border-gray-100 pt-6">
+            <h2 className="text-lg font-black text-gray-900 mb-3">Descrição</h2>
+            <p className="text-[13px] text-gray-600 whitespace-pre-line leading-relaxed">{produto.description}</p>
+          </div>
+        )}
+
         {/* Avaliações dos clientes */}
-        <div className="mt-8 border-t border-gray-100 pt-6">
+        <div id="avaliacoes-produto" className="mt-8 border-t border-gray-100 pt-6 scroll-mt-24">
           <h2 className="text-lg font-black text-gray-900 mb-4">Avaliações dos clientes</h2>
 
           {carregandoAvaliacoes ? (

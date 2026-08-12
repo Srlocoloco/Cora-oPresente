@@ -16,7 +16,7 @@ export function PaginaPedidosAdmin({
   modo = "admin",
 }: {
   pedidos: Pedido[];
-  aoAtualizarStatus: (id: string, status: string) => void;
+  aoAtualizarStatus: (id: string, mudancas: { status?: string; codigoRastreio?: string }) => void;
   // Quando informada, mostra quanto a conta logada ganha de comissão em cada
   // venda (vendedor: comissão do nível atual em todas as linhas · master:
   // varia linha a linha — 10% fixo nas próprias vendas, % da equipe nas dos
@@ -129,8 +129,12 @@ export function PaginaPedidosAdmin({
           pedido={pedidoSelecionado}
           aoFechar={() => setPedidoSelecionado(null)}
           aoAtualizarStatus={(s) => {
-            aoAtualizarStatus(pedidoSelecionado.id, s);
+            aoAtualizarStatus(pedidoSelecionado.id, { status: s });
             setPedidoSelecionado({ ...pedidoSelecionado, status: s });
+          }}
+          aoSalvarCodigoRastreio={(codigo) => {
+            aoAtualizarStatus(pedidoSelecionado.id, { codigoRastreio: codigo });
+            setPedidoSelecionado({ ...pedidoSelecionado, codigoRastreio: codigo });
           }}
         />
       )}

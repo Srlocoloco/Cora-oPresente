@@ -25,7 +25,7 @@ export function CampoCodigoVenda({
         <span className="text-[11px] text-[#C8102E] font-bold">(obrigatório)</span>
       </div>
       <p className="text-[11px] text-gray-400 mb-2">
-        Informe o código de quem te atendeu para creditar a venda a essa pessoa. É necessário para continuar a compra.
+        Informe o código de quem te atendeu para creditar a venda a essa pessoa. Pedimos isso só na primeira compra: depois a sua conta fica vinculada e este campo não aparece mais.
       </p>
       <input
         value={codigo}
