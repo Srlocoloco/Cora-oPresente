@@ -20,7 +20,12 @@ ini_set("log_errors", "1");
 define("DB_HOST", "mysql.coracaopresente.com.br");
 define("DB_NAME", "coracaopresent01");
 define("DB_USER", "coracaopresent01");
-define("DB_PASS", "kayth254321");
+
+// A senha de verdade mora em config.local.php (arquivo fora do git, enviado
+// direto por FTP para o servidor). Sem esse arquivo, o site não conecta —
+// isso é proposital, para nunca mais existir senha em texto puro no git.
+require_once __DIR__ . "/config.local.php";
+define("DB_PASS", defined("DB_PASS_REAL") ? DB_PASS_REAL : "");
 
 // ── Sicredi (API Pix) ──
 // "homologacao" para testar | "producao" quando for pra valer
@@ -58,8 +63,8 @@ define("PIX_CHAVE_RESERVA", "44997201104");
 // gere um novo hash rodando no terminal (PHP >= 7):
 //   php -r "$s=bin2hex(random_bytes(16)); $p='SUA_NOVA_SENHA'; echo 'ADMIN_PASSWORD_SALT=\"'.$s.'\"'.PHP_EOL.'ADMIN_PASSWORD_HASH=\"'.hash('sha256',$s.$p).'\"'.PHP_EOL;"
 // e cole os dois valores abaixo.
-define("ADMIN_PASSWORD_SALT", "1cda1bb3d2f43be06d777a838d654c40");
-define("ADMIN_PASSWORD_HASH", "06dcce16b03b33e7baad827443c27446627b6f904f52a2b807198065b14ef54d");
+define("ADMIN_PASSWORD_SALT", defined("ADMIN_PASSWORD_SALT_REAL") ? ADMIN_PASSWORD_SALT_REAL : "");
+define("ADMIN_PASSWORD_HASH", defined("ADMIN_PASSWORD_HASH_REAL") ? ADMIN_PASSWORD_HASH_REAL : "");
 
 // ── E-mail transacional (verificação de cadastro, código de acesso, etc.) ───
 // Troque o "de" pelo seu domínio de verdade quando publicar.
@@ -85,7 +90,7 @@ define("SMTP_HOST", "smtpi.kinghost.net"); // host de "Acesso com SSL/TLS" do pa
 define("SMTP_PORTA", 465);          // SSL direto
 define("SMTP_SEGURANCA", "ssl");
 define("SMTP_USUARIO", "coracaopresente@coracaopresente.com.br");
-define("SMTP_SENHA", "Kayth254321!");
+define("SMTP_SENHA", defined("SMTP_SENHA_REAL") ? SMTP_SENHA_REAL : "");
 // URL pública do site (usada para montar os links dos e-mails)
 define("URL_SITE", "https://coracaopresente.com.br");
 
