@@ -1,6 +1,6 @@
 // Pagina Admin: PaginaFinanceiroAdmin
 
-import { ShoppingBag, Users, TrendingUp, Award, Crown } from "lucide-react";
+import { ShoppingBag, Users, TrendingUp, Crown } from "lucide-react";
 import type { Cargo, Recrutamento, Pedido, Cliente } from "../types";
 import {
   COMISSAO_MASTER_PROPRIA,
@@ -10,7 +10,7 @@ import {
   COMISSAO_MASTER_PROMOVIDO_EQUIPE,
   NOMES_MESES,
 } from "../constantes";
-import { comissaoFracaoPorNivel, bonusDeNivel, totalVendidoPor, formatarMoeda } from "../utils";
+import { comissaoFracaoPorNivel, totalVendidoPor, formatarMoeda, pedidoNoMes } from "../utils";
 
 // ─── Página Financeiro (Admin) ────────────────────────────────────────────────
 
@@ -33,10 +33,15 @@ export function PaginaFinanceiroAdmin({
 }) {
   const validos = pedidos.filter((o) => o.status !== "Cancelado");
   const faturamentoTotal = validos.reduce((acum, o) => acum + o.total, 0);
-  const mesAtual = NOMES_MESES[new Date().getMonth()];
-  const faturamentoMes = validos.filter((o) => o.month === mesAtual).reduce((acum, o) => acum + o.total, 0);
+  const agora = new Date();
+  const mesAtual = NOMES_MESES[agora.getMonth()];
+  // Mês E ano (ver pedidoNoMes em utils.ts): o pedido guarda só "Set", então
+  // comparar por esse campo somaria setembro de todos os anos aqui dentro.
+  const faturamentoMes = validos
+    .filter((o) => pedidoNoMes(o, agora.getMonth(), agora.getFullYear(), mesAtual))
+    .reduce((acum, o) => acum + o.total, 0);
 
-  // Comissão e bônus de nível de cada vendedor, com base nas próprias vendas
+  // Comissão de cada vendedor, com base nas próprias vendas
   const vendedoresList = Object.keys(cargos).filter((e) => cargos[e] === "vendedor");
   const dadosVendedores = vendedoresList.map((email) => {
     const totalProprio = totalVendidoPor(email, pedidos);
@@ -46,18 +51,15 @@ export function PaginaFinanceiroAdmin({
       nome,
       totalProprio,
       comissao: totalProprio * comissaoFracaoPorNivel(totalProprio),
-      bonus: bonusDeNivel(totalProprio),
     };
   });
   const comissoesTotal = dadosVendedores.reduce((acum, v) => acum + v.comissao, 0);
-  const bonusVendedores = dadosVendedores.filter((v) => v.bonus > 0);
-  const bonusTotal = bonusVendedores.reduce((acum, v) => acum + v.bonus, 0);
 
-  // Comissão de cada Master: 10% fixo (nível Diamante) sobre as próprias vendas
+  // Comissão de cada Master: 7% fixo sobre as próprias vendas
   // (código pessoal) + % sobre as vendas da própria equipe de vendedores
   // (padrão configurável, ou 1% se este Master foi promovido por um
-  // MasterPlus — nesse caso 1% vai de repasse ao MasterPlus), mais bônus de
-  // nível (vendas próprias). Pode haver vários Masters, cada um com a
+  // MasterPlus — nesse caso 1% vai de repasse ao MasterPlus). Pode haver
+  // vários Masters, cada um com a
   // própria equipe isolada.
   const emailsMasters = Object.keys(cargos).filter((e) => cargos[e] === "master");
   const dadosMasters = emailsMasters.map((email) => {
@@ -74,7 +76,6 @@ export function PaginaFinanceiroAdmin({
     const suaComissaoEquipePct = promovidoPorMasterPlus ? COMISSAO_MASTER_PROMOVIDO_EQUIPE : comissaoEquipePct;
     const comissaoPropria = totalProprio * COMISSAO_MASTER_PROPRIA;
     const comissaoEquipe = totalEquipe * suaComissaoEquipePct;
-    const bonusNivel = bonusDeNivel(totalProprio);
     return {
       email,
       nome,
@@ -85,14 +86,13 @@ export function PaginaFinanceiroAdmin({
       comissaoEquipe,
       suaComissaoEquipePct,
       promovidoPorMasterPlus,
-      bonusNivel,
-      total: comissaoPropria + comissaoEquipe + bonusNivel,
+      total: comissaoPropria + comissaoEquipe,
     };
   });
   const totalMasters = dadosMasters.reduce((acum, m) => acum + m.total, 0);
 
-  // Comissão de cada MasterPlus: 10% fixo (nível Diamante) sobre as próprias
-  // vendas (código pessoal, igual ao Master) + 2% sobre a própria equipe de
+  // Comissão de cada MasterPlus: 7% fixo sobre as próprias
+  // vendas (código pessoal) + 2% sobre a própria equipe de
   // vendedores + 1% de repasse sobre a equipe de cada Master que ele
   // promoveu (não conta a venda pessoal do Master, só a equipe dele).
   const emailsMasterPlus = Object.keys(cargos).filter((e) => cargos[e] === "masterplus");
@@ -144,7 +144,6 @@ export function PaginaFinanceiroAdmin({
   ];
   const cartoesRepasses = [
     { label: "Comissões dos vendedores a pagar", valor: formatarMoeda(comissoesTotal), icone: <Users size={22} className="text-[#C8102E]" /> },
-    { label: "Bônus de nível a pagar", valor: formatarMoeda(bonusTotal), icone: <Award size={22} className="text-purple-600" /> },
   ];
 
   const cartao = (c: { label: string; valor: string; icone: React.ReactNode }) => (
@@ -187,33 +186,9 @@ export function PaginaFinanceiroAdmin({
                   <div className="text-[13px] font-bold text-gray-800 truncate">{v.nome}</div>
                   <div className="text-[11px] text-gray-400 truncate">
                     {v.email} · vendeu {formatarMoeda(v.totalProprio)}
-                    {v.bonus > 0 && ` · bônus de nível ${formatarMoeda(v.bonus)}`}
                   </div>
                 </div>
                 <span className="font-black text-emerald-600 text-[14px]">{formatarMoeda(v.comissao)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Bônus de nível dos vendedores */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Bônus de nível — Vendedores</h3>
-          <p className="text-[12px] text-gray-400 mt-0.5">Vendedores que atingiram o nível Ouro (R$100) ou Diamante (R$150) em vendas totais.</p>
-        </div>
-        {bonusVendedores.length === 0 ? (
-          <div className="px-5 py-10 text-center text-gray-400 text-[13px]">Nenhum vendedor atingiu o nível Ouro ainda.</div>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {bonusVendedores.map((v) => (
-              <div key={v.email} className="px-5 py-3.5 flex items-center justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
-                  <div className="text-[13px] font-bold text-gray-800 truncate">{v.nome}</div>
-                  <div className="text-[11px] text-gray-400 truncate">{v.email} · vendeu {formatarMoeda(v.totalProprio)}</div>
-                </div>
-                <span className="font-black text-purple-600 text-[14px]">{formatarMoeda(v.bonus)}</span>
               </div>
             ))}
           </div>
@@ -225,10 +200,10 @@ export function PaginaFinanceiroAdmin({
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-black text-gray-900 text-[15px]">Masters</h3>
           <p className="text-[12px] text-gray-400 mt-0.5">
-            Cada Master ganha 10% fixo (nível Diamante) sobre as vendas com o próprio código,{" "}
+            Cada Master ganha {(COMISSAO_MASTER_PROPRIA * 100).toFixed(0)}% fixo sobre as vendas com o próprio código,{" "}
             {(comissaoEquipePct * 100).toFixed(0)}% sobre as vendas da própria equipe de vendedores
             (ou {(COMISSAO_MASTER_PROMOVIDO_EQUIPE * 100).toFixed(0)}% se foi promovido por um
-            MasterPlus), e bônus de nível sobre as próprias vendas.
+            MasterPlus).
           </p>
         </div>
         {dadosMasters.length === 0 ? (
@@ -253,16 +228,12 @@ export function PaginaFinanceiroAdmin({
                 </div>
                 <div className="divide-y divide-gray-50 bg-gray-50/60 rounded-xl overflow-hidden">
                   <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                    <span className="text-[12px] text-gray-600">Comissão própria (10%) · vendeu {formatarMoeda(m.totalProprio)}</span>
+                    <span className="text-[12px] text-gray-600">Comissão própria ({(COMISSAO_MASTER_PROPRIA * 100).toFixed(0)}%) · vendeu {formatarMoeda(m.totalProprio)}</span>
                     <span className="font-black text-emerald-600 text-[13px]">{formatarMoeda(m.comissaoPropria)}</span>
                   </div>
                   <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
                     <span className="text-[12px] text-gray-600">Comissão da equipe ({(m.suaComissaoEquipePct * 100).toFixed(0)}%) · equipe vendeu {formatarMoeda(m.totalEquipe)}</span>
                     <span className="font-black text-emerald-600 text-[13px]">{formatarMoeda(m.comissaoEquipe)}</span>
-                  </div>
-                  <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                    <span className="text-[12px] text-gray-600">Bônus de nível (vendas próprias)</span>
-                    <span className="font-black text-purple-600 text-[13px]">{formatarMoeda(m.bonusNivel)}</span>
                   </div>
                 </div>
               </div>
@@ -284,7 +255,7 @@ export function PaginaFinanceiroAdmin({
           </h3>
           <p className="text-[12px] text-gray-400 mt-0.5">
             Ganha {(COMISSAO_MASTERPLUS_PROPRIA * 100).toFixed(0)}% fixo sobre as vendas com o
-            próprio código (igual ao Master), mais {(COMISSAO_MASTERPLUS_EQUIPE * 100).toFixed(0)}%
+            próprio código, mais {(COMISSAO_MASTERPLUS_EQUIPE * 100).toFixed(0)}%
             sobre as vendas da própria equipe de vendedores, mais{" "}
             {(COMISSAO_MASTERPLUS_OVERRIDE * 100).toFixed(0)}% de repasse sobre as vendas da equipe
             de cada Master que promoveu.

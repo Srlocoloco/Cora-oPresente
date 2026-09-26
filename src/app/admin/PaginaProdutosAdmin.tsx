@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Search, X, Plus, Edit2, Trash2, Upload } from "lucide-react";
-import type { Produto, CorProduto } from "../types";
-import { OPCOES_SELO, CATEGORIAS, CORES_SELO } from "../constantes";
+import type { Produto, CorProduto, TamanhoCaixa } from "../types";
+import { OPCOES_SELO, CATEGORIAS, CORES_SELO, ehFotoGuardada, CATEGORIA_CAIXA, TAMANHOS_CAIXA } from "../constantes";
 import { formatarMoeda, pctDesconto } from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
 
@@ -174,6 +174,9 @@ export function FormularioProduto({
   const [images, setImages] = useState<string[]>(inicial?.images || []);
   // Cores/modelos do produto, para o cliente escolher qual quer comprar
   const [colors, setColors] = useState<CorProduto[]>(inicial?.colors || []);
+  // Tamanhos P/M/G — só aparecem quando a categoria é "Caixas". Cada tamanho
+  // é a mesma caixa em outra medida, com preço, estoque e capacidade próprios.
+  const [tamanhos, setTamanhos] = useState<TamanhoCaixa[]>(inicial?.tamanhos || []);
   const [badge, setBadge] = useState(inicial?.badge || "");
   const [freeShipping, setFreeShipping] = useState(inicial?.freeShipping ?? true);
   // % de desconto no PIX deste produto (vazio = sem desconto)
@@ -185,6 +188,31 @@ export function FormularioProduto({
     "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all";
   const estiloRotulo = "text-[12px] font-bold text-gray-600 block mb-1.5";
 
+  // ─── Tamanhos da caixa ───────────────────────────────────────────────────
+  const ehCaixa = cat === CATEGORIA_CAIXA;
+  const tamanhoDe = (t: "P" | "M" | "G") => tamanhos.find((x) => x.tamanho === t);
+  // Só contam os tamanhos com preço: um marcado e deixado em branco não vira
+  // opção para o cliente, e não pode entrar na conta do preço/estoque geral.
+  const tamanhosValidos = tamanhos.filter((t) => t.price > 0);
+
+  const alternarTamanho = (t: "P" | "M" | "G", capacidadeSugerida: number) =>
+    setTamanhos((anterior) =>
+      anterior.some((x) => x.tamanho === t)
+        ? anterior.filter((x) => x.tamanho !== t)
+        : [...anterior, { tamanho: t, price: 0, estoque: 0, capacidade: capacidadeSugerida }]
+            // mantém sempre na ordem P → M → G, independente da ordem do clique
+            .sort((a, b) => "PMG".indexOf(a.tamanho) - "PMG".indexOf(b.tamanho))
+    );
+
+  const mudarTamanho = (t: "P" | "M" | "G", campo: "price" | "estoque" | "capacidade", valor: string) =>
+    setTamanhos((anterior) =>
+      anterior.map((x) =>
+        x.tamanho === t
+          ? { ...x, [campo]: campo === "price" ? parseFloat(valor.replace(",", ".")) || 0 : parseInt(valor, 10) || 0 }
+          : x
+      )
+    );
+
   const aoEnviarFormulario = (e: React.FormEvent) => {
     e.preventDefault();
     const p = parseFloat(price.replace(",", "."));
@@ -195,21 +223,44 @@ export function FormularioProduto({
     // como 0 nessa soma; elas seguem o estoque geral só quando ele é
     // preenchido, como já indicado no aviso abaixo do campo de cores).
     const temCores = colors.filter((c) => c.nome.trim()).length > 0;
+    // Numa caixa com tamanhos, o preço e o estoque gerais são derivados: o
+    // preço vira o do MENOR tamanho (é o "a partir de" que a loja mostra) e o
+    // estoque, a soma dos três. Assim o Admin preenche os tamanhos e pronto,
+    // sem ter que manter dois números em sincronia na mão.
+    const tamanhosParaSalvar = ehCaixa ? tamanhos.filter((t) => t.price > 0) : [];
+    const temTamanhos = tamanhosParaSalvar.length > 0;
     let st = parseInt(stock, 10);
-    if (isNaN(st) && temCores) {
+    if (isNaN(st) && temTamanhos) {
+      st = tamanhosParaSalvar.reduce((soma, t) => soma + t.estoque, 0);
+    } else if (isNaN(st) && temCores) {
       st = colors.reduce((soma, c) => soma + (c.estoque ?? 0), 0);
     }
+    const precoFinal = temTamanhos ? Math.min(...tamanhosParaSalvar.map((t) => t.price)) : p;
     if (!name.trim() || !brand.trim()) { setErro("Informe o nome e a marca do produto."); return; }
-    if (!p || p <= 0) { setErro("Informe um preço válido."); return; }
-    if (op !== undefined && op <= p) { setErro("O preço original deve ser maior que o preço com desconto."); return; }
-    if (isNaN(st) || st < 0) { setErro(temCores ? "Informe o estoque geral ou o estoque de cada cor." : "Informe o estoque."); return; }
+    if (ehCaixa && temTamanhos && tamanhosParaSalvar.some((t) => t.capacidade <= 0)) {
+      setErro("Informe quantos produtos cabem em cada tamanho da caixa.");
+      return;
+    }
+    if (!precoFinal || precoFinal <= 0) {
+      setErro(ehCaixa ? "Informe o preço da caixa ou o preço de cada tamanho." : "Informe um preço válido.");
+      return;
+    }
+    if (op !== undefined && op <= precoFinal) { setErro("O preço original deve ser maior que o preço com desconto."); return; }
+    if (isNaN(st) || st < 0) {
+      setErro(
+        temTamanhos ? "Informe o estoque geral ou o estoque de cada tamanho."
+        : temCores ? "Informe o estoque geral ou o estoque de cada cor."
+        : "Informe o estoque."
+      );
+      return;
+    }
     const pix = pixDesconto ? parseInt(pixDesconto, 10) : 0;
     if (pix < 0 || pix > 90) { setErro("O desconto no PIX deve ser entre 0% e 90%."); return; }
     aoSalvar({
       id: inicial?.id ?? Date.now(),
       name: name.trim(),
       brand: brand.trim(),
-      price: p,
+      price: precoFinal,
       originalPrice: op,
       installments,
       rating: inicial?.rating ?? 0,
@@ -217,6 +268,7 @@ export function FormularioProduto({
       image: image.trim(),
       images: images.length ? images : undefined,
       colors: colors.length ? colors.filter((c) => c.nome.trim()) : undefined,
+      tamanhos: temTamanhos ? tamanhosParaSalvar : undefined,
       category: cat,
       badge: badge || undefined,
       freeShipping,
@@ -315,13 +367,17 @@ export function FormularioProduto({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={estiloRotulo}>
-                Estoque {colors.filter((c) => c.nome.trim()).length > 0 ? "(opcional)" : "*"}
+                Estoque {colors.filter((c) => c.nome.trim()).length > 0 || tamanhosValidos.length > 0 ? "(opcional)" : "*"}
               </label>
               <input
                 className={estiloInput}
                 value={stock}
                 onChange={(e) => setStock(e.target.value)}
-                placeholder={colors.filter((c) => c.nome.trim()).length > 0 ? "Deixe vazio para somar o estoque das cores" : "10"}
+                placeholder={
+                  tamanhosValidos.length > 0 ? "Deixe vazio para somar o estoque dos tamanhos"
+                  : colors.filter((c) => c.nome.trim()).length > 0 ? "Deixe vazio para somar o estoque das cores"
+                  : "10"
+                }
                 inputMode="numeric"
               />
             </div>
@@ -393,9 +449,9 @@ export function FormularioProduto({
             <div className="flex gap-2">
               <input
                 className={estiloInput}
-                value={image.startsWith("data:") ? "" : image}
+                value={ehFotoGuardada(image) ? "" : image}
                 onChange={(e) => setImage(e.target.value)}
-                placeholder={image.startsWith("data:") ? "Imagem enviada por upload" : "Cole a URL da imagem (https://...)"}
+                placeholder={ehFotoGuardada(image) ? "Imagem enviada por upload" : "Cole a URL da imagem (https://...)"}
               />
               <label className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[12px] px-4 rounded-xl cursor-pointer transition-colors whitespace-nowrap">
                 <Upload size={14} />
@@ -491,6 +547,85 @@ export function FormularioProduto({
               />
             </label>
           </div>
+
+          {/* Tamanhos da caixa — só na categoria "Caixas" */}
+          {ehCaixa && (
+            <div>
+              <label className={estiloRotulo}>Tamanhos da caixa (opcional)</label>
+              <p className="text-[11px] text-gray-400 mb-2">
+                Marque os tamanhos que esta caixa tem. Cada um vira uma opção no “Monte sua Caixa”, com o
+                próprio preço e estoque — e a capacidade é o limite de produtos que o cliente consegue colocar
+                dentro. Sem nenhum marcado, a caixa fica de tamanho único.
+              </p>
+              <div className="space-y-2">
+                {TAMANHOS_CAIXA.map((def) => {
+                  const t = tamanhoDe(def.tamanho);
+                  const ativo = Boolean(t);
+                  return (
+                    <div
+                      key={def.tamanho}
+                      className={`border rounded-xl p-3 transition-colors ${ativo ? "border-[#C8102E]/40 bg-red-50/30" : "border-gray-200"}`}
+                    >
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={ativo}
+                          onChange={() => alternarTamanho(def.tamanho, def.capacidadeSugerida)}
+                          className="w-4 h-4 accent-[#C8102E]"
+                        />
+                        <span className="w-7 h-7 rounded-lg bg-[#4A1218] text-white text-[12px] font-black flex items-center justify-center">
+                          {def.tamanho}
+                        </span>
+                        <span className="text-[13px] font-bold text-gray-700">{def.nome}</span>
+                        <span className="text-[11px] text-gray-400">— {def.descricao}</span>
+                      </label>
+
+                      {ativo && t && (
+                        <div className="grid grid-cols-3 gap-2 mt-2.5">
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">Preço *</label>
+                            <input
+                              className={estiloInput}
+                              value={t.price || ""}
+                              onChange={(e) => mudarTamanho(def.tamanho, "price", e.target.value)}
+                              placeholder="49,90"
+                              inputMode="decimal"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">Estoque</label>
+                            <input
+                              className={estiloInput}
+                              value={t.estoque || ""}
+                              onChange={(e) => mudarTamanho(def.tamanho, "estoque", e.target.value)}
+                              placeholder="10"
+                              inputMode="numeric"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">Cabe *</label>
+                            <input
+                              className={estiloInput}
+                              value={t.capacidade || ""}
+                              onChange={(e) => mudarTamanho(def.tamanho, "capacidade", e.target.value)}
+                              placeholder={String(def.capacidadeSugerida)}
+                              inputMode="numeric"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {tamanhosValidos.length > 0 && (
+                <p className="text-[11px] text-gray-400 mt-2">
+                  O preço mostrado na caixa será o do menor tamanho ({formatarMoeda(Math.min(...tamanhosValidos.map((t) => t.price)))}),
+                  e o estoque geral, a soma dos tamanhos ({tamanhosValidos.reduce((soma, t) => soma + t.estoque, 0)} un.).
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <label className={estiloRotulo}>Cores / modelos (opcional)</label>

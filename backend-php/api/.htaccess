@@ -30,7 +30,15 @@ RewriteRule ^pix/cobranca/([A-Za-z0-9]+)$ pix.php?acao=status&txid=$1 [L,QSA]
 RewriteRule ^cartao/pagamento$ cartao.php?acao=pagamento [L,QSA]
 RewriteRule ^cartao/pagamento/([A-Za-z0-9]+)$ cartao.php?acao=status&transacaoId=$1 [L,QSA]
 
-# Webhooks do Sicredi
+# Webhooks do Sicredi — o segredo faz parte do endereço.
+# É o aviso do banco que marca um pagamento como recebido, então a rota não pode
+# ficar aberta: sem o segredo certo o PHP responde 404 (ver WEBHOOK_SEGREDO em
+# config.php). Cadastre no banco o endereço COMPLETO, com o segredo no fim:
+#   https://coracaopresente.com.br/api/webhook/pix/SEU_SEGREDO
+RewriteRule ^webhook/pix/([A-Za-z0-9_-]+)$ pix.php?acao=webhook&segredo=$1 [L,QSA]
+RewriteRule ^webhook/cartao/([A-Za-z0-9_-]+)$ cartao.php?acao=webhook&segredo=$1 [L,QSA]
+# As formas antigas, sem segredo, seguem mapeadas só para o PHP responder 404 de
+# forma controlada — em vez de o Apache servir/expor o arquivo .php direto.
 RewriteRule ^webhook/pix$ pix.php?acao=webhook [L,QSA]
 RewriteRule ^webhook/cartao$ cartao.php?acao=webhook [L,QSA]
 
@@ -43,8 +51,32 @@ RewriteRule ^admin/auditoria$ admin.php?acao=auditoria [L,QSA]
 # Finalização de compra (grava só o que a compra mudou, não a tabela inteira)
 RewriteRule ^checkout$ checkout.php [L,QSA]
 
-# Foto de um produto como imagem de verdade (usada nos e-mails de compra/entrega)
-RewriteRule ^produtos/([0-9]+)/imagem$ imagem.php?id=$1 [L,QSA]
+# Pagamento semanal do vendedor: o que ele tem a receber nesta semana e o
+# recibo de cada semana já fechada (com o botão de "pago" do Admin).
+RewriteRule ^fechamentos$ fechamentos.php [L,QSA]
+RewriteRule ^fechamentos/([0-9]+)$ fechamentos.php?id=$1 [L,QSA]
+
+# Fotos guardadas no banco, servidas como imagem de verdade (imagem.php).
+# É por aqui que o site busca cada foto: a resposta do /api/dados manda só
+# estes endereços, em vez do base64 das fotos (que somava mais de 19 MB e
+# derrubava o site). Também usadas nos e-mails de compra/entrega.
+#   ?g={n} foto da galeria   ?c={n} foto da cor   ?v=... versão (cache)
+RewriteRule ^produtos/([0-9]+)/imagem$ imagem.php?tipo=produto&id=$1 [L,QSA]
+#   ?m=1 versão do banner para celular
+RewriteRule ^banners/([0-9]+)/imagem$ imagem.php?tipo=banner&id=$1 [L,QSA]
+
+# Produtos, um por vez (cadastro, edição, exclusão e ajuste de estoque)
+RewriteRule ^produtos$ produtos.php [L,QSA]
+RewriteRule ^produtos/([0-9]+)$ produtos.php?id=$1 [L,QSA]
+RewriteRule ^produtos/([0-9]+)/estoque$ produtos.php?id=$1&acao=estoque [L,QSA]
+
+# Compras (pagamento, cancelamento, confirmação manual de PIX pelo Admin)
+RewriteRule ^compras$ compras.php [L,QSA]
+RewriteRule ^compras/([A-Za-z0-9]+)$ compras.php?id=$1 [L,QSA]
+RewriteRule ^compras/([A-Za-z0-9]+)/(cancelar|confirmar)$ compras.php?id=$1&acao=$2 [L,QSA]
+
+# Cargo de uma conta, dado pelo Admin (uma por vez)
+RewriteRule ^admin/cargo$ recrutamentos.php?acao=cargo-admin [L,QSA]
 
 # Rastreamento público (nº do pedido + e-mail) — antes da regra genérica abaixo
 RewriteRule ^pedidos/rastrear$ pedidos.php?acao=rastrear [L,QSA]
@@ -69,10 +101,28 @@ RewriteRule ^clientes/esqueci-senha$ clientes.php?acao=esqueci-senha [L,QSA]
 RewriteRule ^clientes/redefinir-senha$ clientes.php?acao=redefinir-senha [L,QSA]
 
 # Cliente ativa o código de vendedor recebido do Master
-RewriteRule ^recrutamentos/([^/]+)/ativar$ recrutamentos.php?codigo=$1 [L,QSA]
+RewriteRule ^recrutamentos/([^/]+)/ativar$ recrutamentos.php?acao=ativar&codigo=$1 [L,QSA]
 
-# Bloqueia acesso direto aos arquivos de apoio
-<FilesMatch "^(config|lib|avisos|correios|smtp)\.php$">
+# Equipe do Master/MasterPlus: cadastrar vendedor e mudar cargo de quem já é da
+# equipe. São rotas próprias (uma linha por vez) porque o painel do Master não
+# tem — nem pode ter — token de Admin para usar a rota que grava a loja inteira.
+RewriteRule ^recrutamentos$ recrutamentos.php?acao=criar [L,QSA]
+RewriteRule ^equipe/cargo$ recrutamentos.php?acao=cargo [L,QSA]
+
+# Bloqueia acesso direto aos arquivos de apoio.
+# ATENÇÃO ao "config.*": o padrão antigo era "^(config|lib|...)\.php$", que
+# casa com "config.php" mas NÃO com "config.local.php" — justamente o arquivo
+# que guarda a senha do banco, a senha do Admin e a senha do SMTP. Normalmente
+# o servidor executa o PHP (e o visitante recebe uma página vazia), mas se o
+# PHP falhar ou for desligado, o Apache passa a entregar o arquivo como texto
+# puro — e aí todas as senhas vazariam. Esta regra fecha essa porta.
+<FilesMatch "^(config.*|lib.*|avisos|correios|smtp)\.php$">
+  Require all denied
+</FilesMatch>
+
+# Rede de segurança: nenhum arquivo .local.* ou .env é servido, aconteça o que
+# acontecer (vale para qualquer arquivo de segredo criado aqui no futuro).
+<FilesMatch "(\.local\.|^\.env)">
   Require all denied
 </FilesMatch>
 

@@ -13,6 +13,11 @@ try {
     json_out(["erro" => "MySQL indisponível — confira os dados em config.php."], 503);
 }
 
+// Porta de entrada do anti-abuso: barra quem está de castigo por excesso de
+// tentativas e aplica o teto geral de requisições por IP (ver proteger_rota em
+// lib.php). Fica antes de qualquer leitura ou gravação.
+proteger_rota($pdo);
+
 $acao = $_GET["acao"] ?? "";
 
 // Consulta do log de auditoria (login e ações que alteram a loja) — só o
@@ -30,6 +35,11 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
 // Etapa 1: confere a senha e manda o código de 6 dígitos por e-mail — ainda
 // não cria sessão nenhuma
 if ($acao === "login") {
+    // Além do travamento por 5 erros seguidos que já existe em
+    // verificar_senha_admin(), um teto por IP: é a conta mais valiosa da loja e
+    // a rota não tinha limite de taxa próprio. Cada erro aqui também acumula
+    // falta no bloqueio progressivo (ver lib.php).
+    limitar_taxa($pdo, "admin_login", 10, 600);
     $corpo = corpo_json();
     $senha = (string) ($corpo["senha"] ?? "");
     if ($senha === "") json_out(["erro" => "Informe a senha."], 400);
@@ -63,9 +73,11 @@ if ($acao === "verificar-2fa") {
 }
 
 if ($acao === "logout") {
-    $cabecalho = $_SERVER["HTTP_AUTHORIZATION"] ?? "";
-    if (preg_match('/^Bearer\s+(.+)$/i', $cabecalho, $m)) {
-        $pdo->prepare("DELETE FROM admin_sessoes WHERE token = ?")->execute([trim($m[1])]);
+    $token = token_do_cabecalho();
+    if ($token !== "") {
+        $pdo->prepare("DELETE FROM admin_sessoes WHERE token = ?")->execute([$token]);
+        // O Admin também pode estar logado pela loja (sessão de cliente)
+        $pdo->prepare("DELETE FROM clientes_sessoes WHERE token = ?")->execute([$token]);
     }
     json_out(["ok" => true]);
 }

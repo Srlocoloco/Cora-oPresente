@@ -62,8 +62,8 @@ export function PaginaMasterPlusAdmin({
           Dá o cargo de MasterPlus a uma conta já cadastrada na loja (login do Google ou cadastro
           manual). O MasterPlus monta a própria equipe de vendedores (como um Master) e ainda
           pode promover um vendedor de destaque da própria equipe a Master. Ganha{" "}
-          {(COMISSAO_MASTERPLUS_PROPRIA * 100).toFixed(0)}% fixo sobre as próprias vendas (igual ao
-          Master), mais {(COMISSAO_MASTERPLUS_EQUIPE * 100).toFixed(0)}% sobre a equipe própria e
+          {(COMISSAO_MASTERPLUS_PROPRIA * 100).toFixed(0)}% fixo sobre as próprias vendas, mais{" "}
+          {(COMISSAO_MASTERPLUS_EQUIPE * 100).toFixed(0)}% sobre a equipe própria e
           mais {(COMISSAO_MASTERPLUS_OVERRIDE * 100).toFixed(0)}% de repasse sobre a equipe de cada
           Master que promover.
         </p>

@@ -152,12 +152,15 @@ uma limitação do site.
 - `POST /api/pix/cobranca` — cria cobrança de 30 min
 - `GET  /api/pix/cobranca/{txid}` — status da cobrança
 - `GET  /api/pedidos/rastrear?id={pedido}&email={email}` — rastreamento público (nº do pedido + e-mail da compra)
-- `PATCH /api/pedidos/{id}` — Admin muda `status` e/ou `codigoRastreio`
+- `PATCH /api/pedidos/{id}` — Admin muda `status`, `codigoRastreio` e/ou `entregador`; o entregador designado para o pedido muda só o `status` para "Em trânsito" ou "Entregue"
 - `GET  /api/push/chave-publica` — chave VAPID (null = notificações desligadas)
 - `POST /api/push/inscrever` — autoriza este celular (exige login)
 - `DELETE /api/push/inscrever` — cancela
 - `GET  /api/push/pendentes?e={hash}` — avisos que o service worker ainda não mostrou
 - `POST /api/webhook/pix` — webhook do Sicredi
+- `POST /api/recrutamentos` — Master/MasterPlus cadastra um vendedor na própria equipe: quem já tem conta na loja entra ativado, com o cargo dado; quem não tem recebe o código gerado aqui
+- `POST /api/recrutamentos/{codigo}/ativar` — o cliente ativa, no perfil dele, o código recebido
+- `POST /api/equipe/cargo` — Master/MasterPlus dá (`vendedor`), promove (`master`) ou tira (`null`) o cargo de alguém da própria equipe
 
 ## Segurança
 

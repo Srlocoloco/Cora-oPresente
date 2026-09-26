@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X, Plus, Edit2, Trash2, Upload } from "lucide-react";
 import type { Banner } from "../types";
-import { CATEGORIAS } from "../constantes";
+import { CATEGORIAS, ehFotoGuardada } from "../constantes";
 
 // ─── Página Banners (Admin) ───────────────────────────────────────────────────
 
@@ -69,9 +69,9 @@ export function FormularioBanner({
             <div className="flex gap-2">
               <input
                 className={estiloInput}
-                value={image.startsWith("data:") ? "" : image}
+                value={ehFotoGuardada(image) ? "" : image}
                 onChange={(e) => setImage(e.target.value)}
-                placeholder={image.startsWith("data:") ? "Imagem enviada por upload" : "Cole a URL da imagem (https://...)"}
+                placeholder={ehFotoGuardada(image) ? "Imagem enviada por upload" : "Cole a URL da imagem (https://...)"}
               />
               <label className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[12px] px-4 rounded-xl cursor-pointer transition-colors whitespace-nowrap">
                 <Upload size={14} />
@@ -133,9 +133,9 @@ export function FormularioBanner({
             <div className="flex gap-2">
               <input
                 className={estiloInput}
-                value={mobileImage.startsWith("data:") ? "" : mobileImage}
+                value={ehFotoGuardada(mobileImage) ? "" : mobileImage}
                 onChange={(e) => setMobileImage(e.target.value)}
-                placeholder={mobileImage.startsWith("data:") ? "Imagem enviada por upload" : "Cole a URL da imagem (https://...)"}
+                placeholder={ehFotoGuardada(mobileImage) ? "Imagem enviada por upload" : "Cole a URL da imagem (https://...)"}
               />
               <label className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[12px] px-4 rounded-xl cursor-pointer transition-colors whitespace-nowrap">
                 <Upload size={14} />

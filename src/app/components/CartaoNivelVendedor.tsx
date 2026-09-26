@@ -1,149 +1,85 @@
 // Componente CartaoNivelVendedor
 
-import { Check, Award } from "lucide-react";
 import { NIVEIS_VENDEDOR } from "../constantes";
-import { obterNivelVendedor, bonusDeNivel, formatarMoeda } from "../utils";
+import { obterNivelVendedor, comissaoFracaoPorNivel, formatarMoeda } from "../utils";
 
-// ─── Seller Level Card ────────────────────────────────────────────────────────
-
+// ─── Comissão do vendedor ─────────────────────────────────────────────────────
+//
+// Mostra ao vendedor quanto ele ganha por venda e o que ele já vendeu. Nada
+// mais: é informação de pagamento, não premiação.
+//
+// Este componente era um card de jogo — medalhas, barra de progresso animada,
+// "Faltam apenas R$ X!", "Nível máximo atingido!", lista de benefícios
+// desbloqueáveis e aviso de bônus em dinheiro. Tudo isso saiu junto com o
+// sistema de bônus: as medalhas e a corrida por nível prometiam prêmio, e os
+// "benefícios" (banner gratuito, gerente exclusivo, campanhas gratuitas,
+// early access) eram compromissos que a loja não tem como cumprir.
+//
+// A tabela de faixas continua, porque é ela que define a porcentagem paga —
+// mas aparece como tabela de comissão, com a faixa atual em destaque.
 export function CartaoNivelVendedor({ vendasDoMes, vendasTotais = 0 }: { vendasDoMes: number; vendasTotais?: number }) {
-  const indiceNivel = obterNivelVendedor(vendasDoMes);
-  const nivelAtual = NIVEIS_VENDEDOR[indiceNivel];
-  const proximoNivel = NIVEIS_VENDEDOR[indiceNivel + 1];
-
-  const pctProgresso = proximoNivel
-    ? Math.min(100, ((vendasDoMes - nivelAtual.min) / (nivelAtual.max - nivelAtual.min)) * 100)
-    : 100;
-
-  const valorFaltante = proximoNivel ? proximoNivel.min - vendasDoMes : 0;
-
-  // Bônus de nível: pago uma vez, com base nas vendas totais (vitalícias)
-  const bonusNivel = bonusDeNivel(vendasTotais);
+  // A faixa vale pelo TOTAL vendido (vitalício), que é a mesma base usada para
+  // calcular a comissão a pagar no Financeiro — assim o número que o vendedor
+  // vê aqui é o mesmo que o Admin vê lá.
+  const indiceFaixa = obterNivelVendedor(vendasTotais);
+  const faixaAtual = NIVEIS_VENDEDOR[indiceFaixa] ?? NIVEIS_VENDEDOR[0];
+  const comissaoDoMes = vendasDoMes * comissaoFracaoPorNivel(vendasTotais);
 
   return (
-    <div className={`bg-white rounded-2xl border-2 ${nivelAtual.border} shadow-sm overflow-hidden`}>
-      {/* Header gradient */}
-      <div className={`bg-gradient-to-r ${nivelAtual.bg} p-5 border-b border-gray-100`}>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <Award size={36} style={{ color: nivelAtual.color }} />
-            <div>
-              <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Nível Atual</div>
-              <div className="text-2xl font-black text-gray-900">{nivelAtual.name}</div>
-              <div className="text-[12px] text-gray-600 font-medium">Comissão {nivelAtual.commission}</div>
-            </div>
-          </div>
-
-          {/* Level icons */}
-          <div className="flex items-center gap-1">
-            {NIVEIS_VENDEDOR.map((level, i) => (
-              <div key={level.name} className="flex items-center">
-                <div className={`flex flex-col items-center ${i <= indiceNivel ? "opacity-100" : "opacity-30"}`}>
-                  <div className={`${i === indiceNivel ? "scale-125" : ""} transition-transform`}>
-                    <Award size={18} style={{ color: level.color }} />
-                  </div>
-                  <div className={`text-[9px] font-black mt-0.5 ${i === indiceNivel ? "text-gray-800" : "text-gray-400"}`}>
-                    {level.name}
-                  </div>
-                </div>
-                {i < NIVEIS_VENDEDOR.length - 1 && (
-                  <div className={`w-6 h-0.5 mx-1 mb-4 rounded ${i < indiceNivel ? "bg-gray-800" : "bg-gray-300"}`} />
-                )}
-              </div>
-            ))}
-          </div>
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="p-5 border-b border-gray-100">
+        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Sua comissão</p>
+        <div className="flex items-end gap-2 mt-1 flex-wrap">
+          <span className="text-3xl font-black text-gray-900 leading-none">{faixaAtual.commission}</span>
+          <span className="text-[13px] text-gray-500 font-medium pb-0.5">por venda com o seu código</span>
         </div>
       </div>
 
-      <div className="p-5">
-        {bonusNivel > 0 && (
-          <div className="mb-5 bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center gap-2.5">
-            <Award size={20} className="text-purple-600 flex-shrink-0" />
-            <p className="text-[12px] text-purple-700 font-medium">
-              Você já ganhou <span className="font-black">{formatarMoeda(bonusNivel)}</span> em bônus de nível ao
-              atingir o nível {vendasTotais >= NIVEIS_VENDEDOR[3].min ? "Diamante" : "Ouro"} em vendas totais.
-            </p>
-          </div>
-        )}
-        {/* Progress to proximoBanner */}
-        {proximoNivel && (
-          <div className="mb-5">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-[12px] font-bold text-gray-600">
-                Progresso para {proximoNivel.name}
-              </span>
-              <span className="text-[12px] font-black text-gray-900">{pctProgresso.toFixed(1)}%</span>
-            </div>
-            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-1000 relative overflow-hidden"
-                style={{
-                  width: `${pctProgresso}%`,
-                  backgroundColor: nivelAtual.color,
-                }}
-              >
-                <div className="absolute inset-0 bg-white/20 animate-pulse" />
-              </div>
-            </div>
-            <div className="flex justify-between mt-2">
-              <span className="text-[11px] text-gray-500">{formatarMoeda(vendasDoMes)} este mês</span>
-              <span className="text-[11px] font-bold text-emerald-600">
-                Faltam apenas {formatarMoeda(valorFaltante)}!
-              </span>
-            </div>
-          </div>
-        )}
-
-        {!proximoNivel && (
-          <div className="mb-5 bg-cyan-50 border border-cyan-200 rounded-xl p-3 flex items-center gap-2">
-            <Award size={22} className="text-cyan-500" />
-            <div>
-              <div className="font-black text-cyan-800 text-sm">Nível máximo atingido!</div>
-              <div className="text-[11px] text-cyan-600">Você está no topo. Continue assim!</div>
-            </div>
-          </div>
-        )}
-
-        {/* Benefits */}
-        <div>
-          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2.5">
-            Seus Benefícios — {nivelAtual.name}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {nivelAtual.benefits.map((b) => (
-              <div key={b} className="flex items-center gap-2">
-                <div
-                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: nivelAtual.color + "33" }}
-                >
-                  <Check size={10} style={{ color: nivelAtual.color }} strokeWidth={3} />
-                </div>
-                <span className="text-[12px] text-gray-700 font-medium">{b}</span>
-              </div>
-            ))}
-          </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+        <div className="p-4">
+          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Vendas do mês</div>
+          <div className="text-lg font-black text-gray-900 mt-1">{formatarMoeda(vendasDoMes)}</div>
         </div>
+        <div className="p-4">
+          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">A receber do mês</div>
+          <div className="text-lg font-black text-[#A8102A] mt-1">{formatarMoeda(comissaoDoMes)}</div>
+        </div>
+        <div className="p-4">
+          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Vendas totais</div>
+          <div className="text-lg font-black text-gray-900 mt-1">{formatarMoeda(vendasTotais)}</div>
+        </div>
+      </div>
 
-        {/* Next level preview */}
-        {proximoNivel && (
-          <div className="mt-4 bg-gray-50 rounded-xl p-3 border border-gray-100">
-            <p className="text-[11px] font-bold text-gray-500 mb-2">
-              Desbloqueie no {proximoNivel.name}:
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {proximoNivel.benefits
-                .filter((b) => !nivelAtual.benefits.includes(b))
-                .map((b) => (
-                  <span key={b} className="text-[11px] bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium">
-                    + {b}
-                  </span>
-                ))}
+      {/* Tabela de comissão: a faixa atual em destaque, as outras como
+          referência de quanto passa a valer dali em diante. */}
+      <div className="p-5 border-t border-gray-100">
+        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2.5">
+          Tabela de comissão
+        </p>
+        <div className="border border-gray-100 rounded-xl overflow-hidden">
+          {NIVEIS_VENDEDOR.map((faixa, i) => (
+            <div
+              key={faixa.name}
+              className={`flex items-center justify-between gap-3 px-3.5 py-2.5 text-[13px] ${
+                i > 0 ? "border-t border-gray-100" : ""
+              } ${i === indiceFaixa ? "bg-[#C8102E]/5" : ""}`}
+            >
+              <span className={`font-bold ${i === indiceFaixa ? "text-[#A8102A]" : "text-gray-600"}`}>
+                {faixa.name}
+                {i === indiceFaixa && <span className="ml-2 text-[10px] font-black uppercase tracking-wide">você está aqui</span>}
+              </span>
+              <span className="text-gray-400 text-[12px] flex-1 text-right truncate">
+                {faixa.max === Infinity
+                  ? `acima de ${formatarMoeda(faixa.min)} vendidos`
+                  : `${formatarMoeda(faixa.min)} a ${formatarMoeda(faixa.max)} vendidos`}
+              </span>
+              <span className={`font-black tabular-nums ${i === indiceFaixa ? "text-[#A8102A]" : "text-gray-700"}`}>
+                {faixa.commission}
+              </span>
             </div>
-          </div>
-        )}
+          ))}
+        </div>
       </div>
     </div>
   );
 }
-
-// ─── Dashboard Page ───────────────────────────────────────────────────────────

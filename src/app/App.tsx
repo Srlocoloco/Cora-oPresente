@@ -18,16 +18,18 @@
 ══════════════════════════════════════════════════════════════════
 */
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, lazy, Suspense, type ComponentProps } from "react";
 import { Search, Plus, Check } from "lucide-react";
-import type { Produto, ItemCarrinho, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, Pedido, Cliente, Tela, DadosPagamento } from "./types";
-import { CONFIG_PADRAO, CATEGORIAS, EMAIL_ADMIN, NOMES_MESES, URL_BACKEND_PIX, COMISSAO_MASTER_PROMOVIDO_EQUIPE } from "./constantes";
+import type { Produto, ItemCarrinho, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, ResultadoCadastroVendedor, Pedido, Cliente, Tela, DadosPagamento, CaixaMontada } from "./types";
+import { CONFIG_PADRAO, CATEGORIAS_VITRINE, CATEGORIA_CAIXA, CATEGORIA_CAIXA_LEGADO, EMAIL_ADMIN, NOMES_MESES, URL_BACKEND_PIX, COMISSAO_MASTER_PROMOVIDO_EQUIPE, QTD_RECOMENDACOES, ATRASO_POPUP_RECOMENDACAO, ESPERA_APOS_DISPENSAR_RECOMENDACAO } from "./constantes";
 import { cabecalhosAdmin, cabecalhosAuth, definirSessao } from "./authToken";
 import { sincronizarInscricao } from "./notificacoesPush";
-import { cupomEstaValido, clienteJaUsouCupom, gerarCodigoRecrutamento, codigoVendaDe, lerArmazenamento, gerarCodigoProduto } from "./utils";
+import { cupomEstaValido, clienteJaUsouCupom, codigoVendaDe, lerArmazenamento, gerarCodigoProduto, linhaDeCarrinhoDaCaixa, itensParaEstoque, textoDoPedidoDaCaixa } from "./utils";
+import { produtosComprados, recomendarProdutos, motivoDaRecomendacao } from "./recomendacoes";
 import { toast } from "sonner";
 import { ImagemProduto } from "./components/ImagemProduto";
 import { AvisoBancoDesconectado } from "./components/AvisoBancoDesconectado";
+import { PopupRecomendacao } from "./components/PopupRecomendacao";
 import { BarraInferiorMobile } from "./components/BarraInferiorMobile";
 import { ModalVendedorAtivado } from "./components/ModalVendedorAtivado";
 import { CabecalhoLoja } from "./components/CabecalhoLoja";
@@ -37,6 +39,7 @@ import { BarraFiltros, type Ordenacao, type FaixaPreco } from "./components/Barr
 import { FaixaBeneficios } from "./components/FaixaBeneficios";
 import { SecaoMaisVendidos } from "./components/SecaoMaisVendidos";
 import { SecaoAvaliacoesClientes } from "./components/SecaoAvaliacoesClientes";
+import { ChamadaMonteSuaCaixa } from "./components/ChamadaMonteSuaCaixa";
 import { CartaoProduto } from "./components/CartaoProduto";
 import { RodapeLoja } from "./components/RodapeLoja";
 import { TelaLogin } from "./screens/TelaLogin";
@@ -46,10 +49,42 @@ import { TelaInstitucional, type PaginaInstitucional } from "./screens/TelaInsti
 import { TelaPerfil } from "./screens/TelaPerfil";
 import { PaginaProduto } from "./screens/PaginaProduto";
 import { PaginaCarrinho } from "./screens/PaginaCarrinho";
+import { PaginaMontarCaixa } from "./screens/PaginaMontarCaixa";
 import { TelaPix } from "./screens/TelaPix";
 import { TelaPagamento } from "./screens/TelaPagamento";
 import { TelaCompraConcluida } from "./screens/TelaCompraConcluida";
-import { PainelAdmin } from "./admin/PainelAdmin";
+// ─── Painel Admin: baixado só por quem abre o painel ─────────────────────────
+//
+// O painel inteiro (19 telas + a biblioteca de gráficos) pesava dentro do mesmo
+// arquivo que a loja. Resultado: TODO visitante baixava o painel de controle
+// para ver a vitrine — mais de 900 KB, quando o cliente só precisa da loja.
+//
+// Com o import() aqui embaixo, o navegador só busca esse pedaço quando alguém
+// de fato abre o painel. Quem entra para comprar nunca chega a baixá-lo.
+const PainelAdminCarregado = lazy(() =>
+  import("./admin/PainelAdmin").then((m) => ({ default: m.PainelAdmin }))
+);
+
+// Enquanto o pedaço do painel chega (uma vez só, e normalmente em menos de um
+// segundo), mostra uma tela de espera em vez de um branco sem explicação.
+function CarregandoPainel() {
+  return (
+    <div className="min-h-screen bg-[#FBF4EA] flex flex-col items-center justify-center gap-3">
+      <div className="w-8 h-8 border-[3px] border-[#C8102E]/20 border-t-[#C8102E] rounded-full animate-spin" />
+      <p className="text-[13px] font-semibold text-gray-500">Abrindo o painel...</p>
+    </div>
+  );
+}
+
+// Embrulho com o Suspense já dentro: os pontos que renderizam o painel
+// continuam escrevendo <PainelAdmin ... /> como antes.
+function PainelAdmin(props: ComponentProps<typeof PainelAdminCarregado>) {
+  return (
+    <Suspense fallback={<CarregandoPainel />}>
+      <PainelAdminCarregado {...props} />
+    </Suspense>
+  );
+}
 
 export default function App() {
   // Links especiais recebidos por e-mail (redefinir senha / confirmar
@@ -91,14 +126,23 @@ export default function App() {
   );
   // Página ativa dentro dos painéis (admin, master, vendedor)
   const [paginaAdmin, setPaginaAdmin] = useState<string>("dashboard");
-  // Itens que o cliente colocou no carrinho
-  const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([]);
+  // Itens que o cliente colocou no carrinho. Guardado no navegador: antes
+  // bastava atualizar a página, fechar a aba sem querer ou voltar depois do
+  // almoço para o carrinho estar vazio — e quase ninguém monta a compra duas
+  // vezes. Os preços são reconferidos com o catálogo assim que ele chega do
+  // banco (ver o efeito logo abaixo), então um carrinho velho nunca compra
+  // pelo preço velho.
+  const [carrinho, setCarrinho] = useState<ItemCarrinho[]>(() =>
+    lerArmazenamento<ItemCarrinho[]>("cp_carrinho", [])
+  );
   // Texto digitado na busca de produtos
   const [busca, setBusca] = useState("");
   // Categoria selecionada no menu da loja
   const [categoriaSelecionada, setCategoriaSelecionada] = useState("Outros");
   // IDs dos produtos favoritados (coração)
-  const [favoritos, setFavoritos] = useState<number[]>([]);
+  const [favoritos, setFavoritos] = useState<number[]>(() =>
+    lerArmazenamento<number[]>("cp_favoritos", [])
+  );
   // Alterna o grid de produtos para mostrar só os favoritados (atalho do coração no cabeçalho)
   const [verSoFavoritos, setVerSoFavoritos] = useState(false);
   // Filtros e ordenação do catálogo (BarraFiltros) — client-side, sobre o
@@ -122,6 +166,12 @@ export default function App() {
   const [avisoVendedorAtivado, setAvisoVendedorAtivado] = useState(false);
   // Produto que o visitante tentou comprar antes de se cadastrar
   const [produtoPendente, setProdutoPendente] = useState<Produto | null>(null);
+  // Caixa reaberta para edição pelo botão "Editar caixa" do carrinho (null =
+  // montagem começando do zero)
+  const [caixaEmEdicao, setCaixaEmEdicao] = useState<CaixaMontada | null>(null);
+  // Caixa que um visitante terminou de montar antes de ter conta: fica
+  // guardada durante o cadastro e entra no carrinho assim que ele se cadastra
+  const [caixaPendente, setCaixaPendente] = useState<CaixaMontada | null>(null);
   // Pagamento escolhido no carrinho, aguardando confirmação na tela de pagamento
   const [pagamentoPendente, setPagamentoPendente] = useState<DadosPagamento | null>(null);
   // Cargos dados pelo Master (e-mail → vendedor), carregados do banco
@@ -176,6 +226,25 @@ export default function App() {
     if (usuario) sincronizarInscricao();
   }, [usuario]);
 
+  // Carrinho e favoritos guardados no navegador — é o que faz a compra
+  // sobreviver a um F5, a uma queda de sinal no celular ou a "depois eu
+  // termino". Ficam só neste aparelho (não são dados da conta).
+  useEffect(() => {
+    try {
+      localStorage.setItem("cp_carrinho", JSON.stringify(carrinho));
+    } catch {
+      // navegador sem espaço ou em modo anônimo — não é motivo para travar a loja
+    }
+  }, [carrinho]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cp_favoritos", JSON.stringify(favoritos));
+    } catch {
+      // idem
+    }
+  }, [favoritos]);
+
   // ── Banco de dados (XAMPP/MySQL via backend) — fonte única dos dados ─────
   // Tudo que precisa ser guardado vive SOMENTE no banco "coracaopresente".
   // Ao abrir o site, os dados são carregados de lá. Dados antigos que ainda
@@ -204,6 +273,14 @@ export default function App() {
     // Preenche o código sequencial (ex.: "BEL-001") de produtos antigos que
     // ainda não têm um — mantém a ordem original da lista, só processa por
     // id crescente (proxy da ordem de cadastro) para numerar em sequência
+    // A categoria "Cestas" virou "Caixas". Produto cadastrado antes da troca
+    // continua gravado com o nome antigo no banco: aqui ele já entra na loja
+    // com o nome novo (senão sumiria do Monte sua Caixa e do menu do Admin), e
+    // na próxima vez que o Admin salvar o catálogo o banco acompanha. O código
+    // do produto (CES-001...) fica como está — é a identidade dele no estoque.
+    const comCategoriaAtualizada = (lista: Produto[]): Produto[] =>
+      lista.map((p) => (p.category === CATEGORIA_CAIXA_LEGADO ? { ...p, category: CATEGORIA_CAIXA } : p));
+
     const comCodigosPreenchidos = (lista: Produto[]): Produto[] => {
       if (lista.every((p) => p.codigo)) return lista;
       const numerados: Produto[] = [];
@@ -217,7 +294,7 @@ export default function App() {
     const aplicar = (banco: any) => {
       const escolher = <T,>(doBanco: T[] | undefined, antigo: T[]) =>
         doBanco && doBanco.length > 0 ? doBanco : antigo;
-      setProdutos(comCodigosPreenchidos(escolher(banco?.produtos, locais.produtos)));
+      setProdutos(comCodigosPreenchidos(comCategoriaAtualizada(escolher(banco?.produtos, locais.produtos))));
       setPedidos(escolher(banco?.pedidos, locais.pedidos));
       setClientes(escolher(banco?.clientes, locais.clientes));
       setRecrutamentos(escolher(banco?.recrutamentos, locais.recrutamentos));
@@ -325,38 +402,50 @@ export default function App() {
   // inteira). Usado nas ações de cliente: comprar, logar, avaliar, ativar
   // código de vendedor, salvar/excluir cartão — e também em ações pontuais
   // do Admin (ex.: status de um pedido), que exigem o token de sessão.
-  const salvarNoServidor = (caminho: string, metodo: string, corpo?: unknown) => {
+  const salvarNoServidor = (caminho: string, metodo: string, corpo?: unknown) =>
+    chamarServidor(caminho, metodo, corpo).then(({ ok, erro }) => {
+      if (!ok && erro) toast.error(erro, { duration: 8000 });
+      return ok;
+    });
+
+  // Mesma chamada, mas DEVOLVE o que o servidor respondeu e não mostra toast
+  // nenhum. É o que as telas usam quando precisam do conteúdo da resposta (o
+  // código de ativação que o servidor gera ao cadastrar um vendedor, por
+  // exemplo) ou quando o erro aparece dentro do próprio formulário.
+  const chamarServidor = async (
+    caminho: string,
+    metodo: string,
+    corpo?: unknown
+  ): Promise<{ ok: boolean; dados: Record<string, unknown> | null; erro: string | null }> => {
     if (!bancoPronto.current) {
-      toast.error(
-        "Sem conexão com o servidor — nada foi salvo. Recarregue a página e tente de novo.",
-        { duration: 8000 }
-      );
-      return Promise.resolve(false);
+      return {
+        ok: false,
+        dados: null,
+        erro: "Sem conexão com o servidor — nada foi salvo. Recarregue a página e tente de novo.",
+      };
     }
-    return fetch(`${URL_BACKEND_PIX}${caminho}`, {
-      method: metodo,
-      headers: { "Content-Type": "application/json", ...cabecalhosAdmin() },
-      body: corpo !== undefined ? JSON.stringify(corpo) : undefined,
-    })
-      .then(async (r) => {
-        if (!r.ok) {
-          let mensagem = "Não foi possível salvar. Tente novamente.";
-          try {
-            const corpoResposta = await r.json();
-            if (corpoResposta?.erro) mensagem = corpoResposta.erro;
-          } catch {
-            // resposta sem JSON — mantém a mensagem genérica
-          }
-          toast.error(mensagem, { duration: 8000 });
-          if (r.status === 401) setBancoConectado(false);
-        }
-        return r.ok;
-      })
-      .catch(() => {
-        toast.error("Sem conexão com o servidor. As alterações NÃO foram salvas.", { duration: 8000 });
-        setBancoConectado(false);
-        return false;
+    try {
+      const r = await fetch(`${URL_BACKEND_PIX}${caminho}`, {
+        method: metodo,
+        headers: { "Content-Type": "application/json", ...cabecalhosAdmin() },
+        body: corpo !== undefined ? JSON.stringify(corpo) : undefined,
       });
+      let dados: Record<string, unknown> | null = null;
+      try {
+        dados = await r.json();
+      } catch {
+        // resposta sem JSON — segue com o erro genérico abaixo
+      }
+      if (r.status === 401) setBancoConectado(false);
+      return {
+        ok: r.ok,
+        dados,
+        erro: r.ok ? null : (typeof dados?.erro === "string" ? dados.erro : "Não foi possível salvar. Tente novamente."),
+      };
+    } catch {
+      setBancoConectado(false);
+      return { ok: false, dados: null, erro: "Sem conexão com o servidor. As alterações NÃO foram salvas." };
+    }
   };
 
   // Limpa automaticamente os alertas de estoque assim que o produto volta a
@@ -370,6 +459,53 @@ export default function App() {
         return produto ? produto.stock <= 0 : false;
       });
       return aindaEsgotados.length === atual.length ? atual : aindaEsgotados;
+    });
+  }, [produtos]);
+
+  // Carrinho guardado de uma visita anterior x catálogo de agora.
+  //
+  // O carrinho volta do navegador com os preços do dia em que foi montado. O
+  // servidor confere os preços na hora de fechar a compra (ver checkout.php),
+  // então um carrinho desatualizado seria recusado lá na frente, com o cliente
+  // já na tela de pagamento e sem entender o motivo. Aqui ele é reconciliado
+  // logo na abertura da loja: preço e estoque atualizados, produto que saiu do
+  // catálogo removido e quantidade ajustada ao que ainda existe.
+  const carrinhoReconciliado = useRef(false);
+  useEffect(() => {
+    if (carrinhoReconciliado.current || produtos.length === 0) return;
+    carrinhoReconciliado.current = true;
+    setCarrinho((atual) => {
+      if (atual.length === 0) return atual;
+      let mudou = false;
+      const atualizado: ItemCarrinho[] = [];
+      for (const item of atual) {
+        // Caixa montada: o preço dela é a soma do que tem dentro, então quem
+        // sabe remontá-la com os preços de hoje é a própria função que a criou.
+        if (item.caixa) {
+          if (!produtos.some((p) => p.id === item.caixa!.recipienteId)) { mudou = true; continue; }
+          const linha = linhaDeCarrinhoDaCaixa(item.caixa, produtos);
+          const qty = Math.min(item.qty, linha.stock);
+          if (qty <= 0) { mudou = true; continue; }
+          if (linha.price !== item.price || qty !== item.qty) mudou = true;
+          atualizado.push({ ...linha, qty });
+          continue;
+        }
+        const atualDoCatalogo = produtos.find((p) => p.id === item.id);
+        if (!atualDoCatalogo || atualDoCatalogo.stock <= 0) { mudou = true; continue; }
+        const qty = Math.min(item.qty, atualDoCatalogo.stock);
+        if (atualDoCatalogo.price !== item.price || qty !== item.qty) mudou = true;
+        // Mantém o que é escolha do cliente (cor e quantidade) e troca o resto
+        // pelo cadastro de agora.
+        atualizado.push({ ...atualDoCatalogo, corEscolhida: item.corEscolhida, qty });
+      }
+      if (!mudou) return atual;
+      toast.info(
+        atualizado.length === 0
+          ? "Os produtos que estavam no seu carrinho não estão mais disponíveis."
+          : "Seu carrinho foi atualizado com os preços e o estoque de hoje.",
+        { duration: 7000 }
+      );
+      return atualizado;
     });
   }, [produtos]);
 
@@ -433,30 +569,56 @@ export default function App() {
   // promove um vendedor da própria equipe). Por isso, se esta conta deixa
   // de ser MasterPlus (perde o cargo, é removida, etc.), os Masters que ela
   // promoveu não ficam órfãos: são excluídos junto (perdem o cargo).
+  // Quem grava por qual rota: o Admin manda a tabela de cargos inteira (é ele
+  // quem cuida de Masters e MasterPlus, e são poucas contas). Master e
+  // MasterPlus usam a rota da equipe, que muda SÓ a linha daquela pessoa e
+  // confere no servidor se ela é mesmo da equipe de quem pediu — o painel
+  // deles não tem (nem pode ter) token de Admin, e a rota do Admin reescreve
+  // a tabela inteira a partir da fatia que o navegador enxerga.
   const definirCargo = (email: string, cargo: Cargo | null) => {
     const chave = email.toLowerCase();
-    setCargos((anterior) => {
-      const novo = { ...anterior };
-      if (cargo === null) delete novo[chave];
-      else novo[chave] = cargo;
-      if (cargo !== "masterplus") {
-        const mastersDela = Object.keys(vinculosMasterPlus).filter((m) => vinculosMasterPlus[m] === chave);
-        mastersDela.forEach((m) => delete novo[m]);
-      }
-      salvarNoBanco("cargos", novo);
-      return novo;
-    });
-    if (cargo !== "master" && chave in vinculosMasterPlus) {
-      const novo = { ...vinculosMasterPlus };
-      delete novo[chave];
-      setVinculosMasterPlus(novo);
-      salvarNoBanco("vinculosMasterPlus", novo);
+    const souAdmin = usuario?.email?.toLowerCase() === EMAIL_ADMIN;
+
+    const novosCargos = { ...cargos };
+    if (cargo === null) delete novosCargos[chave];
+    else novosCargos[chave] = cargo;
+    // Deixou de ser MasterPlus: os Masters que ele promoveu perdem o cargo junto
+    if (cargo !== "masterplus") {
+      Object.keys(vinculosMasterPlus)
+        .filter((m) => vinculosMasterPlus[m] === chave)
+        .forEach((m) => delete novosCargos[m]);
     }
-    if (cargo !== "masterplus" && Object.values(vinculosMasterPlus).includes(chave)) {
-      const novo = { ...vinculosMasterPlus };
-      for (const k of Object.keys(novo)) if (novo[k] === chave) delete novo[k];
-      setVinculosMasterPlus(novo);
-      salvarNoBanco("vinculosMasterPlus", novo);
+    setCargos(novosCargos);
+
+    const novosVinculos = { ...vinculosMasterPlus };
+    if (cargo !== "master") delete novosVinculos[chave];
+    if (cargo !== "masterplus") {
+      for (const k of Object.keys(novosVinculos)) if (novosVinculos[k] === chave) delete novosVinculos[k];
+    }
+    const vinculosMudaram =
+      Object.keys(novosVinculos).length !== Object.keys(vinculosMasterPlus).length;
+    if (vinculosMudaram) setVinculosMasterPlus(novosVinculos);
+
+    if (souAdmin) {
+      salvarNoBanco("cargos", novosCargos);
+      if (vinculosMudaram) salvarNoBanco("vinculosMasterPlus", novosVinculos);
+    } else {
+      // A rota da equipe cuida do vínculo Master ⇄ MasterPlus junto com o cargo
+      chamarServidor("/api/equipe/cargo", "POST", { email: chave, cargo }).then(({ ok, dados, erro }) => {
+        if (!ok) {
+          toast.error(erro ?? "Não foi possível salvar o cargo.", { duration: 8000 });
+          return;
+        }
+        // Dar cargo por e-mail a quem ainda não era da equipe cria o vínculo no
+        // servidor. Ele volta aqui para a pessoa aparecer na lista na hora, sem
+        // esperar a próxima carga da página.
+        const vinculoNovo = dados?.recrutamento as Recrutamento | undefined;
+        if (vinculoNovo) {
+          setRecrutamentos((anterior) =>
+            anterior.some((r) => r.codigo === vinculoNovo.codigo) ? anterior : [vinculoNovo, ...anterior]
+          );
+        }
+      });
     }
   };
 
@@ -472,10 +634,12 @@ export default function App() {
       (r) => r.email.toLowerCase() === chave && r.recrutador === masterPlusChave && r.ativado
     );
     if (!daEquipe) return "Você só pode promover vendedores que você mesmo cadastrou.";
+    // definirCargo já grava: pelo Admin, a tabela de cargos; pelo MasterPlus,
+    // a rota da equipe — que gravou o vínculo Master ⇄ MasterPlus junto.
     definirCargo(chave, "master");
     const novosVinculos = { ...vinculosMasterPlus, [chave]: masterPlusChave };
     setVinculosMasterPlus(novosVinculos);
-    salvarNoBanco("vinculosMasterPlus", novosVinculos);
+    if (usuario?.email?.toLowerCase() === EMAIL_ADMIN) salvarNoBanco("vinculosMasterPlus", novosVinculos);
     return null;
   };
 
@@ -505,29 +669,46 @@ export default function App() {
 
   // Master cadastra um vendedor: gera o código de ativação e cria o vínculo,
   // marcado com o e-mail do Master que convidou (cada Master tem a própria
-  // equipe — a comissão e o bônus de convite só valem sobre ela).
+  // equipe — a comissão sobre a equipe só vale sobre ela).
   // Retorna uma mensagem de erro, ou null se deu certo.
-  const cadastrarVendedor = (masterEmail: string, nome: string, email: string): string | null => {
+  const cadastrarVendedor = async (
+    masterEmail: string,
+    nome: string,
+    email: string
+  ): Promise<ResultadoCadastroVendedor> => {
     const chave = email.trim().toLowerCase();
-    if (!nome.trim() || !chave) return "Preencha o nome e o e-mail do vendedor.";
-    if (chave === EMAIL_ADMIN) return "Este e-mail é reservado.";
-    if (chave === masterEmail.toLowerCase()) return "Você não pode convidar a si mesmo.";
+    if (!nome.trim() || !chave) return { erro: "Preencha o nome e o e-mail do vendedor." };
+    if (chave === EMAIL_ADMIN) return { erro: "Este e-mail é reservado." };
+    if (chave === masterEmail.toLowerCase()) return { erro: "Você não pode convidar a si mesmo." };
     if (recrutamentos.some((r) => r.email.toLowerCase() === chave))
-      return "Este e-mail já foi cadastrado.";
-    const novo = [
-      {
-        codigo: gerarCodigoRecrutamento(),
-        recrutador: masterEmail.toLowerCase(),
-        nome: nome.trim(),
-        email: chave,
-        ativado: false,
-        date: new Date().toLocaleDateString("pt-BR"),
-      },
-      ...recrutamentos,
-    ];
-    setRecrutamentos(novo);
-    salvarNoBanco("recrutamentos", novo);
-    return null;
+      return { erro: "Este e-mail já foi cadastrado." };
+
+    // Quem cria o vínculo é o SERVIDOR (rota própria da equipe, uma linha por
+    // vez). Antes isso ia pela rota do Admin, que exige token de Admin — o
+    // Master via "Sessão expirada" e nada era salvo — e que ainda reescreveria
+    // a tabela inteira, apagando a equipe dos outros Masters. O código de
+    // ativação também vem de lá: só o servidor enxerga todos os códigos já
+    // usados e consegue garantir que o novo não repete.
+    const { ok, dados, erro } = await chamarServidor("/api/recrutamentos", "POST", {
+      nome: nome.trim(),
+      email: chave,
+    });
+    if (!ok) return { erro: erro ?? "Não foi possível cadastrar o vendedor." };
+
+    const criado = dados?.recrutamento as Recrutamento | undefined;
+    const jaEraCliente = dados?.jaEraCliente === true;
+    if (criado) {
+      setRecrutamentos((anterior) => [criado, ...anterior]);
+      // Quem já tinha conta na loja entrou na equipe na hora, com o cargo
+      // dado pelo servidor — o painel reflete isso sem recarregar a página
+      if (jaEraCliente) setCargos((anterior) => ({ ...anterior, [chave]: "vendedor" }));
+    } else {
+      // Deu certo, mas a resposta não trouxe o vínculo (backend antigo ainda no
+      // ar): busca a lista de novo em vez de inventar aqui um código que o
+      // banco não conhece — código errado na mão do vendedor não ativa nada.
+      setRecargaBanco((n) => n + 1);
+    }
+    return { erro: null, codigo: criado?.codigo, jaEraCliente };
   };
 
   // Cria um produto novo (gera o código sequencial da categoria, ex.:
@@ -564,11 +745,24 @@ export default function App() {
   // apaga o código, não mandar a chave deixa o que já estava.
   const atualizarStatusPedido = (
     id: string,
-    mudancas: { status?: string; codigoRastreio?: string },
+    mudancas: { status?: string; codigoRastreio?: string; entregador?: string | null },
   ) => {
     setPedidos((anterior) => anterior.map((o) => (o.id === id ? { ...o, ...mudancas } : o)));
-    salvarNoServidor(`/api/pedidos/${id}`, "PATCH", mudancas);
+    // encodeURIComponent é obrigatório aqui: o número do pedido começa com "#"
+    // (ex.: "#CP-A0"), e "#" numa URL significa "âncora" — o navegador corta
+    // tudo dali em diante e nunca envia ao servidor. Sem isto a requisição ia
+    // para "/api/pedidos/" sem número nenhum: a tela mostrava o status novo
+    // (que é aplicado aqui em cima, na hora) e o banco continuava com o antigo,
+    // então bastava recarregar a página para a mudança "desaparecer".
+    salvarNoServidor(`/api/pedidos/${encodeURIComponent(id)}`, "PATCH", mudancas);
   };
+
+  // Admin escolhe quem leva o pedido. Vai pela mesma rota do status (PATCH de
+  // uma linha só); o servidor confere que a conta escolhida tem mesmo o cargo
+  // de entregador — senão o pedido ficaria preso com alguém que não enxerga o
+  // painel de entregas.
+  const definirEntregadorDoPedido = (id: string, email: string | null) =>
+    atualizarStatusPedido(id, { entregador: email });
 
   // Insere o produto no carrinho respeitando o estoque disponível. Cores
   // diferentes do mesmo produto viram linhas separadas no carrinho (cada uma
@@ -603,6 +797,146 @@ export default function App() {
     colocarNoCarrinho(produto);
   };
 
+  // Abre a página de um produto na loja. É o atalho de "revisitar o produto"
+  // que sai dos pedidos, das notificações e das recomendações — todos guardam
+  // só o id do produto, e quem sabe navegar é aqui.
+  const abrirProdutoNaLoja = (produto: Produto) => {
+    setProdutoSelecionado(produto);
+    setVerSoFavoritos(false);
+    setTela("loja");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Mesma coisa, mas já rolando até as avaliações e com o formulário à mão.
+  // É para onde vai quem toca em "Avaliar minha compra" — no aviso de entrega
+  // (celular/e-mail) ou no sininho da loja.
+  const abrirAvaliacaoDoProduto = (produto: Produto) => {
+    setProdutoSelecionado(produto);
+    setIrParaAvaliacoes(true);
+    setVerSoFavoritos(false);
+    setTela("loja");
+  };
+
+  // Notificação tocada no celular: o endereço vem com "?produto=12" e o site
+  // abre direto na página daquele produto (ver sw.js e avisos.php). Espera o
+  // catálogo chegar do banco — antes disso não há o que abrir — e acontece uma
+  // vez só: depois disso o parâmetro sai da URL e a ref impede a repetição.
+  const [produtoDoLink] = useState<number | null>(() => {
+    const valor = Number(new URLSearchParams(window.location.search).get("produto"));
+    return Number.isInteger(valor) && valor > 0 ? valor : null;
+  });
+  // "&avaliar=1" no fim do link: o aviso de entrega manda a pessoa direto para
+  // a área de avaliação, e não só para a página do produto.
+  const [avaliarPeloLink] = useState(
+    () => new URLSearchParams(window.location.search).get("avaliar") === "1"
+  );
+  const linkDeProdutoUsado = useRef(false);
+
+  useEffect(() => {
+    if (produtoDoLink === null || linkDeProdutoUsado.current || produtos.length === 0) return;
+    linkDeProdutoUsado.current = true;
+    const produto = produtos.find((p) => p.id === produtoDoLink);
+    if (produto) {
+      setProdutoSelecionado(produto);
+      setIrParaAvaliacoes(avaliarPeloLink);
+      setTela("loja");
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("produto");
+    url.searchParams.delete("avaliar");
+    window.history.replaceState({}, "", url.toString());
+  }, [produtoDoLink, avaliarPeloLink, produtos]);
+
+  // ── Recomendações e ofertas ───────────────────────────────────────────────
+  // O que a conta já comprou é a base do gosto dela; daí saem as sugestões que
+  // aparecem na tela de compra concluída, no sino de notificações e no pop-up
+  // discreto da vitrine. Sem compra nenhuma (visitante), a lista vira as
+  // ofertas da loja — ver recomendacoes.ts.
+  const pedidosDoCliente = useMemo(
+    () => (usuario ? pedidos.filter((o) => o.email.toLowerCase() === usuario.email.toLowerCase()) : []),
+    [pedidos, usuario]
+  );
+  const compradosPeloCliente = useMemo(
+    () => produtosComprados(pedidosDoCliente, produtos),
+    [pedidosDoCliente, produtos]
+  );
+  const recomendacoes = useMemo(
+    () => recomendarProdutos(compradosPeloCliente, produtos, QTD_RECOMENDACOES),
+    [compradosPeloCliente, produtos]
+  );
+
+  // Pop-up de recomendação. As regras existem para ele NÃO atrapalhar: só na
+  // vitrine (nunca no carrinho, no pagamento ou dentro de um produto), depois
+  // de um tempo navegando, uma vez por visita — e, se a pessoa fechou, nada de
+  // recomendação por um dia inteiro.
+  const [popupRecomendado, setPopupRecomendado] = useState<Produto | null>(null);
+  const popupJaMostrado = useRef(false);
+
+  useEffect(() => {
+    if (popupJaMostrado.current || popupRecomendado) return;
+    if (tela !== "loja" || produtoSelecionado || recomendacoes.length === 0) return;
+    const dispensadoEm = lerArmazenamento<number>("cp_reco_dispensada", 0);
+    if (Date.now() - dispensadoEm < ESPERA_APOS_DISPENSAR_RECOMENDACAO) return;
+
+    const relogio = setTimeout(() => {
+      popupJaMostrado.current = true;
+      setPopupRecomendado(recomendacoes[0]);
+    }, ATRASO_POPUP_RECOMENDACAO);
+    return () => clearTimeout(relogio);
+  }, [tela, produtoSelecionado, recomendacoes, popupRecomendado]);
+
+  const fecharPopupRecomendado = () => {
+    setPopupRecomendado(null);
+    try {
+      localStorage.setItem("cp_reco_dispensada", JSON.stringify(Date.now()));
+    } catch {
+      // localStorage indisponível (modo privado) — sem problema, a regra de
+      // "uma vez por visita" já segura o pop-up nesta sessão
+    }
+  };
+
+  // ── Monte sua Caixa ──────────────────────────────────────────────────────
+  // Abre a área de montagem. Com uma caixa em mãos, reabre exatamente como o
+  // cliente deixou (é o "Editar caixa" do carrinho).
+  const abrirMontagemDeCaixa = (caixa?: CaixaMontada | null) => {
+    setCaixaEmEdicao(caixa ?? null);
+    setProdutoSelecionado(null);
+    setTela("montar-caixa");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // A caixa montada entra no carrinho como UMA linha (ver
+  // linhaDeCarrinhoDaCaixa). Editar uma caixa que já está lá atualiza a linha
+  // no lugar — o id da linha vem do id da montagem, então não duplica.
+  const colocarCaixaNoCarrinho = (caixa: CaixaMontada) => {
+    const linha = linhaDeCarrinhoDaCaixa(caixa, produtos);
+    setCarrinho((anterior) =>
+      anterior.some((i) => i.id === linha.id)
+        ? anterior.map((i) =>
+            i.id === linha.id
+              ? { ...linha, qty: Math.max(1, Math.min(i.qty, linha.stock)) }
+              : i
+          )
+        : [...anterior, linha]
+    );
+    setToastAdicionado({ p: linha, key: Date.now() });
+  };
+
+  // Fim da montagem: igual à compra de um produto, exige cadastro. A caixa
+  // pronta fica guardada durante o cadastro para não se perder o trabalho.
+  const concluirMontagemDeCaixa = (caixa: CaixaMontada) => {
+    if (!usuario) {
+      setCaixaPendente(caixa);
+      setModoTelaLogin("cadastro");
+      setAvisoTelaLogin("Crie sua conta para finalizar a sua caixa");
+      setTela("login");
+      return;
+    }
+    colocarCaixaNoCarrinho(caixa);
+    setCaixaEmEdicao(null);
+    setTela("carrinho");
+  };
+
   const abrirTelaCadastro = () => {
     setModoTelaLogin("cadastro");
     setAvisoTelaLogin("");
@@ -632,37 +966,67 @@ export default function App() {
     setTela("pagamento");
   };
 
+  // Trava de uma compra por vez. A tela do PIX pergunta ao servidor a cada 5
+  // segundos se o dinheiro caiu; se duas respostas "CONCLUIDA" chegarem juntas
+  // (a primeira demorou mais que o intervalo), esta função seria chamada duas
+  // vezes e o cliente pagava uma compra e recebia duas — com baixa dobrada no
+  // estoque. A trava é uma ref porque precisa valer no mesmo instante, antes
+  // de qualquer re-renderização.
+  const finalizandoCompra = useRef(false);
+
   // Chamado quando o pagamento é confirmado: cria os pedidos, dá baixa no
   // estoque e gera alertas. O site só chama isso depois de confirmar o PIX
   // de verdade — o status inicial do pedido é sempre "Pago".
-  const confirmarPagamento = () => {
+  const confirmarPagamento = async () => {
     if (!usuario || !pagamentoPendente) return;
+    if (finalizandoCompra.current) return;
+    finalizandoCompra.current = true;
     const agora = new Date();
     const date = agora.toLocaleDateString("pt-BR");
     const month = NOMES_MESES[agora.getMonth()];
-    const sufixo = String(Date.now()).slice(-5);
+    // Número do pedido: aleatório, não o relógio. Os 5 últimos dígitos de
+    // Date.now() repetem a cada 100 segundos — em algumas centenas de vendas
+    // dois pedidos acabariam com o mesmo número, e o segundo era recusado
+    // pelo banco (chave duplicada), derrubando a compra inteira de um cliente
+    // que já tinha pagado.
+    const sufixo = Array.from({ length: 4 }, () =>
+      "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]
+    ).join("") + String(Date.now()).slice(-4);
     const rotuloPagamento =
       pagamentoPendente.metodo === "cartao"
         ? `Cartão ${pagamentoPendente.parcelas}x`
         : "PIX";
     const statusInicial = "Pago";
 
+    // Uma caixa montada é UMA linha do carrinho, mas vários produtos no
+    // estoque: aqui ela é desmontada de volta em produtos de verdade, que é o
+    // que dá baixa (aqui e no servidor) — ver itensParaEstoque.
+    const itensVendidos = itensParaEstoque(carrinho);
+
     const novosPedidos: Pedido[] = carrinho.map((item, i) => {
       // Nome-base + cor escolhida (se houver) + quantidade — nessa ordem —
       // para o produto continuar batendo com produtoFoiCompradoPor
       const nomeComCor = item.corEscolhida ? `${item.name} - ${item.corEscolhida}` : item.name;
+      // Caixa montada pelo cliente tem descrição própria: recipiente,
+      // conteúdo e cartão de mensagem — é por ela que o Admin monta o pedido
+      const descricao = item.caixa
+        ? textoDoPedidoDaCaixa(item.caixa, item.qty)
+        : item.qty > 1
+        ? `${nomeComCor} (${item.qty}x)`
+        : nomeComCor;
       return {
         id: `#CP-${sufixo}${i}`,
         customer: usuario.name,
         email: usuario.email,
-        items: item.qty > 1 ? `${nomeComCor} (${item.qty}x)` : nomeComCor,
+        items: descricao,
         total: item.price * item.qty,
         status: statusInicial,
         date,
         month,
         category: item.category,
         pagamento: rotuloPagamento,
-        produtoId: item.id,
+        // Foto do e-mail de confirmação: numa caixa, a foto é a da caixa
+        produtoId: item.caixa ? item.caixa.recipienteId : item.id,
         // Atribuição da venda: com código de venda válido, a venda conta somente
         // para a conta dona do código. Sem código, a venda cai para o
         // administrador (a loja) — só o código credita o vendedor ou o Master.
@@ -679,7 +1043,7 @@ export default function App() {
     // linhas do carrinho com este id (mesmo produto pode ter cores diferentes
     // no carrinho, cada uma em uma linha) para tirar do estoque geral
     const produtosAtualizados = produtos.map((p) => {
-      const itensDoProduto = carrinho.filter((i) => i.id === p.id);
+      const itensDoProduto = itensVendidos.filter((i) => i.id === p.id);
       if (itensDoProduto.length === 0) return p;
       const qtyTotal = itensDoProduto.reduce((acum, i) => acum + i.qty, 0);
       // Também desconta do estoque da cor específica escolhida (quando ela
@@ -689,12 +1053,24 @@ export default function App() {
         if (!itemDaCor || typeof c.estoque !== "number") return c;
         return { ...c, estoque: Math.max(0, c.estoque - itemDaCor.qty) };
       });
-      return { ...p, stock: Math.max(0, p.stock - qtyTotal), colors: coresAtualizadas ?? p.colors };
+      // Mesma ideia para o tamanho da caixa (P/M/G): a baixa desce no tamanho
+      // que o cliente escolheu, senão o P nunca esgotaria antes do G
+      const tamanhosAtualizados = p.tamanhos?.map((t) => {
+        const itemDoTamanho = itensDoProduto.find((i) => i.tamanhoEscolhido === t.tamanho);
+        if (!itemDoTamanho) return t;
+        return { ...t, estoque: Math.max(0, t.estoque - itemDoTamanho.qty) };
+      });
+      return {
+        ...p,
+        stock: Math.max(0, p.stock - qtyTotal),
+        colors: coresAtualizadas ?? p.colors,
+        tamanhos: tamanhosAtualizados ?? p.tamanhos,
+      };
     });
     // Alerta de produto esgotado (para as notificações do admin)
     const esgotados = produtos
       .filter((p) => {
-        const qtyTotal = carrinho.filter((i) => i.id === p.id).reduce((acum, i) => acum + i.qty, 0);
+        const qtyTotal = itensVendidos.filter((i) => i.id === p.id).reduce((acum, i) => acum + i.qty, 0);
         return qtyTotal > 0 && p.stock > 0 && p.stock - qtyTotal <= 0;
       })
       .map((p) => ({ id: p.id, name: p.name, date }));
@@ -703,11 +1079,40 @@ export default function App() {
     // novos e dá baixa no estoque dos itens comprados (com lock de linha),
     // sem reescrever as tabelas inteiras de produtos/pedidos/cupons (que
     // outros clientes podem estar alterando ao mesmo tempo).
-    salvarNoServidor("/api/checkout", "POST", {
+    //
+    // ESPERA a resposta antes de comemorar. Antes isto era disparado e
+    // esquecido: se o servidor recusasse (estoque acabado, sessão expirada,
+    // banco fora do ar), o cliente via "Compra realizada!" mesmo assim e ia
+    // embora achando que estava tudo certo — enquanto na loja não existia
+    // pedido nenhum para separar e enviar.
+    const resposta = await chamarServidor("/api/checkout", "POST", {
       pedidos: novosPedidos,
-      itens: carrinho.map((i) => ({ id: i.id, qty: i.qty, corEscolhida: i.corEscolhida })),
+      itens: itensVendidos,
       cupomCodigo: cupomAplicado ? cupomAplicado.codigo : undefined,
     });
+
+    if (!resposta.ok) {
+      finalizandoCompra.current = false;
+      toast.error(
+        resposta.erro ?? "Não foi possível registrar seu pedido. Fale com a loja antes de pagar de novo.",
+        { duration: 12000 }
+      );
+      // O carrinho continua intacto e a pessoa volta para ele: dá para
+      // corrigir o que o servidor apontou (quantidade, cupom) e tentar de novo
+      // sem remontar a compra.
+      setTela("carrinho");
+      return;
+    }
+
+    // Números que o servidor realmente gravou (ele troca o número quando já
+    // existe um pedido com aquele id) — é o que vai para a tela e para o
+    // rastreamento do cliente.
+    const idsGravados = Array.isArray(resposta.dados?.pedidos)
+      ? (resposta.dados!.pedidos as string[])
+      : null;
+    const pedidosGravados = idsGravados
+      ? novosPedidos.map((p, i) => ({ ...p, id: idsGravados[i] ?? p.id }))
+      : novosPedidos;
 
     // Atualiza o estado local na hora, só para a UI — o servidor já fez o
     // cálculo real e definitivo acima.
@@ -716,7 +1121,7 @@ export default function App() {
     // reabastecido, isso aqui é só uma trava extra contra crescimento sem fim
     if (esgotados.length > 0) setAlertasEstoque((anterior) => [...esgotados, ...anterior].slice(0, 30));
 
-    setPedidos((anterior) => [...novosPedidos, ...anterior]);
+    setPedidos((anterior) => [...pedidosGravados, ...anterior]);
     // Primeira compra com código válido: o cliente fica vinculado a essa conta
     // para sempre (o servidor grava o vínculo no checkout). A partir daqui o
     // campo de código de venda some — só é pedido uma vez por conta.
@@ -731,7 +1136,7 @@ export default function App() {
     setTotalUltimaCompra(pagamentoPendente.total);
     // Produtos desta compra: viram o convite de avaliação na tela de sucesso
     setProdutosUltimaCompra(
-      produtos.filter((p) => carrinho.some((i) => i.id === p.id))
+      produtos.filter((p) => itensVendidos.some((i) => i.id === p.id))
     );
     setCarrinho([]);
     setPagamentoPendente(null);
@@ -744,6 +1149,8 @@ export default function App() {
       setCupomDigitado("");
     }
     setTela("sucesso");
+    // Compra encerrada: libera a trava para a próxima compra desta sessão.
+    finalizandoCompra.current = false;
   };
 
   // Cada linha do carrinho é identificada por id + cor escolhida (cores
@@ -777,9 +1184,12 @@ export default function App() {
 
   // Dono do código de venda digitado pelo cliente (null = vazio ou inválido).
   // Sem código (ou com código inválido), a compra segue normalmente.
-  // Contas com código: todos que têm o cargo de Master ou Vendedor.
+  // Contas com código: quem vende — Vendedor, Master e MasterPlus. Entregador
+  // não tem código de venda (não divulga produto, não ganha comissão), então
+  // fica de fora: senão o código derivado do e-mail dele seria aceito no
+  // carrinho e a venda ficaria creditada a quem não vendeu nada.
   const codigoVendaLimpo = codigoVenda.trim().toUpperCase();
-  const contasComCodigo = Object.keys(cargos);
+  const contasComCodigo = Object.keys(cargos).filter((email) => cargos[email] !== "entregador");
   const donoCodigoVenda = codigoVendaLimpo
     ? contasComCodigo.find((email) => codigoVendaDe(email) === codigoVendaLimpo) ?? null
     : null;
@@ -812,6 +1222,19 @@ export default function App() {
       (c) => c.codigo === cupomDigitado.trim().toUpperCase() && cupomEstaValido(c) && clienteJaUsouCupom(usuario.email, c.codigo, pedidos)
     );
 
+  // Produtos que a LOJA mostra: tudo menos as caixas. Os recipientes da
+  // categoria "Caixas" não são presente que alguém compre sozinho — eles são
+  // a base do Monte sua Caixa e só fazem sentido lá dentro. Antes apareciam na
+  // vitrine, na busca, nos "mais vendidos" e nos relacionados da página de
+  // produto; agora toda a loja parte desta lista. Quem precisa do catálogo
+  // completo (o painel Admin e o próprio Monte sua Caixa) continua recebendo
+  // `produtos`, e o histórico de pedidos também — senão uma caixa já
+  // comprada perderia nome e foto lá no perfil.
+  const produtosDaVitrine = useMemo(
+    () => produtos.filter((p) => p.category !== CATEGORIA_CAIXA),
+    [produtos]
+  );
+
   const produtosFiltrados = useMemo(() => {
     const dentroDaFaixa = (preco: number): boolean => {
       switch (faixaPreco) {
@@ -822,7 +1245,7 @@ export default function App() {
         default: return true;
       }
     };
-    const filtrados = produtos.filter((p) => {
+    const filtrados = produtosDaVitrine.filter((p) => {
       if (verSoFavoritos && !favoritos.includes(p.id)) return false;
       const termo = busca.trim().toLowerCase();
       const matchSearch =
@@ -837,7 +1260,10 @@ export default function App() {
       if (!matchCat || !matchSearch) return false;
       if (!dentroDaFaixa(p.price)) return false;
       if (avaliacaoMinFiltro > 0 && p.rating < avaliacaoMinFiltro) return false;
-      if (marcaFiltro && p.brand !== marcaFiltro) return false;
+      // Compara sem diferenciar maiúsculas: a lista de marcas junta as
+      // escritas diferentes do mesmo nome numa opção só (ver marcasDisponiveis),
+      // então escolher "Sumax" precisa trazer também os cadastrados "SUMAX".
+      if (marcaFiltro && p.brand?.trim().toLowerCase() !== marcaFiltro.trim().toLowerCase()) return false;
       if (apenasEstoqueFiltro && p.stock <= 0) return false;
       return true;
     });
@@ -851,19 +1277,51 @@ export default function App() {
       // "relevancia": mantém a ordem do catálogo (curadoria do Admin)
     }
     return ordenados;
-  }, [categoriaSelecionada, busca, produtos, verSoFavoritos, favoritos, faixaPreco, avaliacaoMinFiltro, marcaFiltro, apenasEstoqueFiltro, ordenacao]);
+  }, [categoriaSelecionada, busca, produtosDaVitrine, verSoFavoritos, favoritos, faixaPreco, avaliacaoMinFiltro, marcaFiltro, apenasEstoqueFiltro, ordenacao]);
 
   // Marcas disponíveis dentro do recorte atual (categoria/busca/favoritos),
   // pra não oferecer no filtro uma marca que não tem nenhum produto ali
   const marcasDisponiveis = useMemo(() => {
-    const base = produtos.filter((p) => {
+    const base = produtosDaVitrine.filter((p) => {
       if (verSoFavoritos) return favoritos.includes(p.id);
       const termo = busca.trim().toLowerCase();
       if (termo) return p.name.toLowerCase().includes(termo) || p.brand.toLowerCase().includes(termo) || p.category.toLowerCase().includes(termo);
       return categoriaSelecionada === "Outros" || p.category === categoriaSelecionada;
     });
-    return [...new Set(base.map((p) => p.brand))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [produtos, categoriaSelecionada, busca, verSoFavoritos, favoritos]);
+    // O campo "marca" é digitado à mão no cadastro, então o mesmo fabricante
+    // chega escrito de vários jeitos ("SUMAX", "Sumax", "sumax") e muitos
+    // produtos vêm com um preenchimento de ocasião ("nenhum", "NENHUMA", ".").
+    // Listados crus, viravam 70 opções — várias repetidas e várias sem
+    // sentido — e o filtro por marca ficava inútil justamente onde ele mais
+    // ajuda a fechar uma venda. Aqui cada marca aparece uma vez só, e as de
+    // preenchimento não aparecem.
+    const semMarca = new Set(["nenhum", "nenhuma", "none", "sem marca", "n/a", "na", "-", ".", "?"]);
+    const porChave = new Map<string, string>();
+    for (const p of base) {
+      const marca = (p.brand ?? "").trim();
+      const chave = marca.toLowerCase();
+      if (!marca || semMarca.has(chave)) continue;
+      // Entre "SUMAX" e "Sumax", fica a escrita mais legível (a que não é toda
+      // em maiúsculas), para a lista não virar um grito.
+      const atual = porChave.get(chave);
+      if (!atual || (atual === atual.toUpperCase() && marca !== marca.toUpperCase())) {
+        porChave.set(chave, marca);
+      }
+    }
+    return [...porChave.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [produtosDaVitrine, categoriaSelecionada, busca, verSoFavoritos, favoritos]);
+
+  // Categorias que a loja mostra no menu: só as que têm produto. Uma
+  // categoria vazia no menu é um beco sem saída — a pessoa clica em
+  // "Eletrônicos", encontra uma prateleira vazia e vai embora achando que a
+  // loja não tem nada. Assim que o Admin cadastrar o primeiro produto da
+  // categoria, ela volta ao menu sozinha (o cadastro do painel continua
+  // oferecendo a lista completa). "Outros" fica sempre: é o botão que
+  // significa "ver tudo".
+  const categoriasComProduto = useMemo(() => {
+    const comEstoqueNoCatalogo = new Set(produtosDaVitrine.map((p) => p.category));
+    return CATEGORIAS_VITRINE.filter((c) => c === "Outros" || comEstoqueNoCatalogo.has(c));
+  }, [produtosDaVitrine]);
 
   const filtrosDeCatalogoAtivos = faixaPreco !== "" || avaliacaoMinFiltro > 0 || marcaFiltro !== "" || apenasEstoqueFiltro;
   const limparFiltrosDeCatalogo = () => {
@@ -889,8 +1347,9 @@ export default function App() {
     // agora é só uma conta comum com o cargo de Master, então precisa
     // aparecer em clientes (é de lá que o Admin escolhe quem promover)
     if (emailLimpo === EMAIL_ADMIN) {
-      setTela(produtoPendente ? "carrinho" : "loja");
+      setTela(produtoPendente || caixaPendente ? "carrinho" : "loja");
       if (produtoPendente) { colocarNoCarrinho(produtoPendente); setProdutoPendente(null); }
+      if (caixaPendente) { colocarCaixaNoCarrinho(caixaPendente); setCaixaPendente(null); setCaixaEmEdicao(null); }
       setAvisoTelaLogin("");
       return;
     }
@@ -912,6 +1371,12 @@ export default function App() {
     if (produtoPendente) {
       colocarNoCarrinho(produtoPendente);
       setProdutoPendente(null);
+      setTela("carrinho");
+    } else if (caixaPendente) {
+      // Caixa montada antes de ter conta — entra pronta no carrinho
+      colocarCaixaNoCarrinho(caixaPendente);
+      setCaixaPendente(null);
+      setCaixaEmEdicao(null);
       setTela("carrinho");
     } else {
       setTela("loja");
@@ -940,7 +1405,19 @@ export default function App() {
         aoLogar={processarLogin}
         modoInicial={modoTelaLogin}
         aviso={avisoVerificacaoEmail ?? avisoTelaLogin}
-        aoVoltar={() => { setProdutoPendente(null); setAvisoTelaLogin(""); setTela("loja"); }}
+        aoVoltar={() => {
+          setProdutoPendente(null);
+          setAvisoTelaLogin("");
+          // Quem estava montando uma caixa volta para a montagem com ela
+          // inteira, e não para a vitrine com tudo perdido
+          if (caixaPendente) {
+            setCaixaEmEdicao(caixaPendente);
+            setCaixaPendente(null);
+            setTela("montar-caixa");
+            return;
+          }
+          setTela("loja");
+        }}
         clientes={clientes}
       />
     );
@@ -963,6 +1440,8 @@ export default function App() {
     ? "Master"
     : cargoUsuario === "vendedor"
     ? "Vendedor"
+    : cargoUsuario === "entregador"
+    ? "Entregador"
     : null;
 
   // Abre o painel certo para o usuário, já na página inicial adequada
@@ -971,6 +1450,7 @@ export default function App() {
     else if (ehMasterPlus) { setPaginaAdmin("dashboard"); setTela("masterplus"); }
     else if (ehMaster) { setPaginaAdmin("dashboard"); setTela("master"); }
     else if (cargoUsuario === "vendedor") { setPaginaAdmin("pedidos"); setTela("vendedor"); }
+    else if (cargoUsuario === "entregador") { setPaginaAdmin("entregas"); setTela("entregador"); }
   };
 
   // Abre o perfil do cliente (pede login se for visitante)
@@ -1010,11 +1490,13 @@ export default function App() {
       <>
         <TelaPerfil
           usuario={usuario}
-          pedidos={pedidos.filter((o) => o.email.toLowerCase() === usuario.email.toLowerCase())}
+          pedidos={pedidosDoCliente}
+          produtos={produtos}
           cupons={cupons.filter(cupomEstaValido)}
-          categorias={CATEGORIAS.filter((c) => c !== "Outros")}
+          categorias={categoriasComProduto.filter((c) => c !== "Outros")}
           desde={clientes.find((c) => c.email.toLowerCase() === usuario.email.toLowerCase())?.since}
           aoVerCategoria={(c) => { setCategoriaSelecionada(c); setProdutoSelecionado(null); setTela("loja"); }}
+          aoVerProduto={abrirProdutoNaLoja}
           aoVoltar={() => setTela("loja")}
           aoSair={() => {
             const ehAdminSaindo = usuario?.email?.toLowerCase() === EMAIL_ADMIN;
@@ -1061,7 +1543,7 @@ export default function App() {
           aoTrocarPagina={setPaginaInstitucional}
           aoVoltar={() => setTela("loja")}
           pedidos={usuario ? pedidos.filter((o) => o.email.toLowerCase() === usuario.email.toLowerCase()) : []}
-          produtos={produtos}
+          produtos={produtosDaVitrine}
           emailUsuario={usuario?.email}
           pedidoInicial={pedidoDoLink ?? undefined}
           aoVerPedidos={abrirNotificacoes}
@@ -1087,7 +1569,12 @@ export default function App() {
     return (
       <>
         <TelaNotificacoesCliente
-          pedidos={pedidos.filter((o) => o.email.toLowerCase() === usuario.email.toLowerCase())}
+          pedidos={pedidosDoCliente}
+          produtos={produtos}
+          recomendacoes={recomendacoes}
+          compradosPeloCliente={compradosPeloCliente}
+          aoVerProduto={abrirProdutoNaLoja}
+          aoAvaliarProduto={abrirAvaliacaoDoProduto}
           aoVoltar={() => setTela("loja")}
         />
         <BarraInferiorMobile
@@ -1122,6 +1609,8 @@ export default function App() {
         produtos={produtos}
         aoSalvarProduto={salvarProduto}
         aoExcluirProduto={excluirProduto}
+        aoVerProdutoNaLoja={abrirProdutoNaLoja}
+        aoDefinirEntregador={definirEntregadorDoPedido}
         aoAtualizarStatusPedido={atualizarStatusPedido}
         alertasEstoque={alertasEstoque}
         cargos={cargos}
@@ -1163,6 +1652,7 @@ export default function App() {
         produtos={produtos}
         aoSalvarProduto={salvarProduto}
         aoExcluirProduto={excluirProduto}
+        aoVerProdutoNaLoja={abrirProdutoNaLoja}
         aoAtualizarStatusPedido={atualizarStatusPedido}
         alertasEstoque={alertasEstoque}
         cargos={cargos}
@@ -1170,7 +1660,9 @@ export default function App() {
         recrutamentos={recrutamentos}
         vinculosMasterPlus={vinculosMasterPlus}
         aoCadastrarVendedor={(nome, email) =>
-          usuario ? cadastrarVendedor(usuario.email, nome, email) : "Você precisa estar logado."
+          usuario
+            ? cadastrarVendedor(usuario.email, nome, email)
+            : Promise.resolve({ erro: "Você precisa estar logado." })
         }
         codigoVenda={usuario ? codigoVendaDe(usuario.email) : undefined}
         comissaoPct={souMasterPromovido ? COMISSAO_MASTER_PROMOVIDO_EQUIPE : config.comissaoRecrutador / 100}
@@ -1182,8 +1674,8 @@ export default function App() {
   // Painel MasterPlus: monta a própria equipe de vendedores (como um Master)
   // e ainda pode promover um vendedor de destaque da própria equipe a
   // Master (página Promover a Master) e ver a rede completa (página Rede).
-  // Ganha 10% fixo sobre a própria venda pessoal (código pessoal, igual ao
-  // Master) além da comissão de rede (equipe própria + repasse).
+  // Ganha 7% fixo sobre a própria venda pessoal (código pessoal) além da
+  // comissão de rede (equipe própria + repasse).
   if (tela === "masterplus" && ehMasterPlus) {
     return (
       <PainelAdmin
@@ -1199,6 +1691,7 @@ export default function App() {
         produtos={produtos}
         aoSalvarProduto={salvarProduto}
         aoExcluirProduto={excluirProduto}
+        aoVerProdutoNaLoja={abrirProdutoNaLoja}
         aoAtualizarStatusPedido={atualizarStatusPedido}
         alertasEstoque={alertasEstoque}
         cargos={cargos}
@@ -1206,7 +1699,9 @@ export default function App() {
         recrutamentos={recrutamentos}
         vinculosMasterPlus={vinculosMasterPlus}
         aoCadastrarVendedor={(nome, email) =>
-          usuario ? cadastrarVendedor(usuario.email, nome, email) : "Você precisa estar logado."
+          usuario
+            ? cadastrarVendedor(usuario.email, nome, email)
+            : Promise.resolve({ erro: "Você precisa estar logado." })
         }
         aoPromoverMaster={(vendedorEmail) =>
           usuario ? promoverVendedorAMaster(usuario.email, vendedorEmail) : "Você precisa estar logado."
@@ -1220,6 +1715,8 @@ export default function App() {
   // Painel do Vendedor: só divulga os produtos da loja (não tem catálogo
   // próprio) e acompanha as vendas creditadas ao código de venda dele.
   // Vendedor NÃO pode recrutar — o painel não tem nenhuma função de recrutamento.
+  // O catálogo vai junto só para a foto do produto de cada venda: o menu dele
+  // não tem página de Produtos, e salvar/excluir produto aqui não faz nada.
   if (tela === "vendedor" && usuario && cargoUsuario === "vendedor") {
     const emailVendedor = usuario.email.toLowerCase();
     return (
@@ -1233,12 +1730,40 @@ export default function App() {
         usuario={usuario}
         pedidos={pedidos.filter((o) => o.vendedor?.toLowerCase() === emailVendedor)}
         clientes={clientes}
-        produtos={[]}
+        produtos={produtos}
+        aoSalvarProduto={() => {}}
+        aoExcluirProduto={() => {}}
+        aoVerProdutoNaLoja={abrirProdutoNaLoja}
+        aoAtualizarStatusPedido={atualizarStatusPedido}
+        alertasEstoque={[]}
+        codigoVenda={codigoVendaDe(emailVendedor)}
+        bancoOffline={bancoConectado === false}
+      />
+    );
+  }
+
+  // Painel do Entregador: uma página só — as entregas que o Admin designou
+  // para esta conta. Ele não vende, não recruta e não vê pedido de mais
+  // ninguém: o servidor já entrega só as linhas com o e-mail dele em
+  // "entregador", e o filtro abaixo garante o mesmo na tela.
+  if (tela === "entregador" && usuario && cargoUsuario === "entregador") {
+    const emailEntregador = usuario.email.toLowerCase();
+    return (
+      <PainelAdmin
+        modo="entregador"
+        pagina={paginaAdmin}
+        setPagina={setPaginaAdmin}
+        setTela={setTela}
+        menuMobileAberto={menuMobileAdmin}
+        setMenuMobileAberto={setMenuMobileAdmin}
+        usuario={usuario}
+        pedidos={pedidos.filter((o) => (o.entregador ?? "").toLowerCase() === emailEntregador)}
+        clientes={[]}
+        produtos={produtos}
         aoSalvarProduto={() => {}}
         aoExcluirProduto={() => {}}
         aoAtualizarStatusPedido={atualizarStatusPedido}
         alertasEstoque={[]}
-        codigoVenda={codigoVendaDe(emailVendedor)}
         bancoOffline={bancoConectado === false}
       />
     );
@@ -1279,6 +1804,24 @@ export default function App() {
           setTela("loja");
         }}
         aoContinuar={() => { setProdutosUltimaCompra([]); setTela("loja"); }}
+        recomendacoes={recomendarProdutos(
+          produtosUltimaCompra.length > 0 ? produtosUltimaCompra : compradosPeloCliente,
+          produtos,
+          QTD_RECOMENDACOES
+        )}
+        aoVerProduto={(p) => { setProdutosUltimaCompra([]); abrirProdutoNaLoja(p); }}
+      />
+    );
+  }
+
+  // Área dedicada: o cliente escolhe a caixa e monta o presente do zero
+  if (tela === "montar-caixa") {
+    return (
+      <PaginaMontarCaixa
+        produtos={produtos}
+        caixaInicial={caixaEmEdicao}
+        aoVoltar={() => { setCaixaEmEdicao(null); setTela("loja"); }}
+        aoConcluir={concluirMontagemDeCaixa}
       />
     );
   }
@@ -1290,6 +1833,8 @@ export default function App() {
         onRemove={removerDoCarrinho}
         aoMudarQtd={mudarQtd}
         aoVoltar={() => setTela("loja")}
+        aoEditarCaixa={abrirMontagemDeCaixa}
+        aoMontarCaixa={() => abrirMontagemDeCaixa(null)}
         aoFinalizarCompra={finalizarCompra}
         usuario={usuario}
         codigoVenda={codigoVenda}
@@ -1327,9 +1872,10 @@ export default function App() {
           usuario={usuario}
         />
         <MenuCategorias
-          categorias={CATEGORIAS}
+          categorias={categoriasComProduto}
           selecionada={categoriaSelecionada}
           aoSelecionar={(c) => { setCategoriaSelecionada(c); setProdutoSelecionado(null); setVerSoFavoritos(false); }}
+          aoMontarCaixa={() => abrirMontagemDeCaixa(null)}
         />
       </div>
 
@@ -1375,7 +1921,7 @@ export default function App() {
       {produtoSelecionado ? (
         <PaginaProduto
           produto={produtoSelecionado}
-          produtos={produtos}
+          produtos={produtosDaVitrine}
           aoAdicionarAoCarrinho={adicionarAoCarrinho}
           aoAbrirProduto={(p) => { setProdutoSelecionado(p); setIrParaAvaliacoes(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}
           aoVoltar={() => { setProdutoSelecionado(null); setIrParaAvaliacoes(false); }}
@@ -1384,6 +1930,7 @@ export default function App() {
           usuario={usuario}
           pedidos={pedidos}
           aoAtualizarResumoAvaliacoes={atualizarResumoAvaliacoes}
+          config={config}
           focarAvaliacoes={irParaAvaliacoes}
         />
       ) : (
@@ -1398,13 +1945,25 @@ export default function App() {
           }}
         />
 
+        {naHomeLimpa && <ChamadaMonteSuaCaixa aoAbrir={() => abrirMontagemDeCaixa(null)} />}
+
         <section id="produtos-section" className="max-w-[1440px] mx-auto px-4 py-8">
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2.5">
               <span className="w-1 h-6 rounded-full bg-[#A8102A]" />
               <div>
                 <h2 className="text-xl font-black text-gray-900">
-                  {verSoFavoritos ? "Seus favoritos" : naHomeLimpa ? "Produtos em destaque" : categoriaSelecionada}
+                  {/* Com uma busca em andamento o título mostrava o nome da
+                      categoria selecionada — quase sempre "Outros", que não
+                      diz nada sobre o que a pessoa procurou e ainda parecia
+                      que a busca tinha sido ignorada. */}
+                  {verSoFavoritos
+                    ? "Seus favoritos"
+                    : busca.trim()
+                    ? `Resultados para “${busca.trim()}”`
+                    : naHomeLimpa
+                    ? "Produtos em destaque"
+                    : categoriaSelecionada}
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {produtosFiltrados.length} produto{produtosFiltrados.length !== 1 ? "s" : ""} encontrado{produtosFiltrados.length !== 1 ? "s" : ""}
@@ -1488,7 +2047,7 @@ export default function App() {
           <>
             <FaixaBeneficios />
             <SecaoMaisVendidos
-              produtos={produtos}
+              produtos={produtosDaVitrine}
               aoAdicionarAoCarrinho={adicionarAoCarrinho}
               aoFavoritar={alternarFavorito}
               favoritos={favoritos}
@@ -1530,6 +2089,15 @@ export default function App() {
         aoAbrirNotificacoes={abrirNotificacoes}
         qtdNotificacoes={qtdNotificacoesCliente}
       />
+
+      {popupRecomendado && (
+        <PopupRecomendacao
+          produto={popupRecomendado}
+          motivo={motivoDaRecomendacao(popupRecomendado, compradosPeloCliente)}
+          aoAbrir={(p) => { setPopupRecomendado(null); abrirProdutoNaLoja(p); }}
+          aoFechar={fecharPopupRecomendado}
+        />
+      )}
 
       {bancoConectado === false && <AvisoBancoDesconectado />}
     </div>

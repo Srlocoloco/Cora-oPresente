@@ -1,140 +1,102 @@
 <?php
-// ─── Cobranças PIX (API Pix Sicredi) ─────────────────────────────────────────
-// POST /api/pix/cobranca          → cria cobrança de 30 min { txid, pixCopiaECola }
+// ─── Cobranças PIX ───────────────────────────────────────────────────────────
+// POST /api/pix/cobranca          { compraId } → { txid, pixCopiaECola, modo, expiraEm, valor }
 // GET  /api/pix/cobranca/{txid}   → { status: ATIVA | CONCLUIDA }
-// POST /api/webhook/pix           → notificação instantânea do Sicredi
+// POST /api/webhook/pix/{segredo} → aviso instantâneo do Sicredi
+//
+// A cobrança é SEMPRE de uma compra criada pelo /api/checkout e do cliente
+// logado — o valor vem da compra, nunca do navegador (ver lib_compras.php).
 
-require_once __DIR__ . "/lib.php";
+require_once __DIR__ . "/lib_compras.php";
 cors();
 
 $acao = $_GET["acao"] ?? "";
 
-function sicredi_base(): string {
-    return SICREDI_AMBIENTE === "producao"
-        ? "https://api-pix.sicredi.com.br"
-        : "https://api-pix-h.sicredi.com.br";
+try {
+    $pdo = db();
+} catch (Throwable $e) {
+    json_out(["erro" => "MySQL indisponível."], 503);
 }
 
-function pix_configurado(): bool {
-    return SICREDI_CLIENT_ID !== "" && SICREDI_CLIENT_SECRET !== ""
-        && file_exists(SICREDI_CERT_PATH) && file_exists(SICREDI_KEY_PATH);
-}
-
-// Chamada à API do Sicredi com o certificado mTLS
-function chamar_sicredi(string $metodo, string $caminho, ?array $corpo, ?string $token) {
-    $ch = curl_init(sicredi_base() . $caminho);
-    $headers = ["Content-Type: application/json"];
-    if ($token !== null) $headers[] = "Authorization: Bearer " . $token;
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CUSTOMREQUEST => $metodo,
-        CURLOPT_SSLCERT => SICREDI_CERT_PATH,
-        CURLOPT_SSLKEY => SICREDI_KEY_PATH,
-        CURLOPT_TIMEOUT => 20,
-        CURLOPT_HTTPHEADER => $headers,
-    ]);
-    if ($corpo !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($corpo));
-    $resposta = curl_exec($ch);
-    $codigo = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
-    return [$codigo, is_string($resposta) ? json_decode($resposta, true) : null];
-}
-
-// Token OAuth2 (client_credentials)
-function obter_token(): ?string {
-    $url = sicredi_base() . "/oauth/token?grant_type=client_credentials&scope="
-         . urlencode("cob.read cob.write webhook.read webhook.write");
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => "",
-        CURLOPT_USERPWD => SICREDI_CLIENT_ID . ":" . SICREDI_CLIENT_SECRET,
-        CURLOPT_SSLCERT => SICREDI_CERT_PATH,
-        CURLOPT_SSLKEY => SICREDI_KEY_PATH,
-        CURLOPT_TIMEOUT => 20,
-    ]);
-    $resposta = curl_exec($ch);
-    curl_close($ch);
-    $dados = is_string($resposta) ? json_decode($resposta, true) : null;
-    return $dados["access_token"] ?? null;
-}
-
-// Chave PIX: usa a das Configurações da loja (banco); reserva no config.php
-function chave_pix(): string {
-    try {
-        $linha = db()->query("SELECT chavePix FROM config WHERE id = 1")->fetch();
-        if ($linha && !empty($linha["chavePix"])) return $linha["chavePix"];
-    } catch (Throwable $e) {
-        // sem banco, segue com a reserva
-    }
-    return PIX_CHAVE_RESERVA;
-}
-
-// ── Criar cobrança ────────────────────────────────────────────────────────────
+// ── Criar (ou reaproveitar) a cobrança de uma compra ─────────────────────────
 if ($acao === "cobranca") {
-    if (!pix_configurado()) {
-        json_out(["erro" => "PIX Sicredi ainda não configurado (veja o README)."], 503);
+    proteger_rota($pdo);
+    // Cada chamada pode criar uma cobrança de verdade no banco. O teto segura
+    // robô sem atrapalhar quem gera o código de novo algumas vezes.
+    limitar_taxa($pdo, "pix_cobranca", 15, 600);
+    if ($_SERVER["REQUEST_METHOD"] !== "POST") json_out(["erro" => "Método não permitido."], 405);
+
+    $email = strtolower(email_autenticado($pdo));
+    $compraId = (string) (corpo_json()["compraId"] ?? "");
+    $stmt = $pdo->prepare("SELECT * FROM compras WHERE id = ?");
+    $stmt->execute([$compraId]);
+    $compra = $stmt->fetch();
+    if (!$compra || strtolower($compra["email"]) !== $email) json_out(["erro" => "Compra não encontrada."], 404);
+    if ($compra["status"] === "paga") json_out(["erro" => "Esta compra já está paga."], 409);
+    if ($compra["status"] !== "aguardando_pagamento" || strtotime($compra["expiraEm"]) < strtotime(agora_brasil())) {
+        json_out(["erro" => "O prazo para pagar esta compra acabou. Volte ao carrinho e finalize de novo."], 410);
     }
-    $corpo = corpo_json();
-    $valor = (float) ($corpo["valor"] ?? 0);
-    if ($valor <= 0) json_out(["erro" => "Valor inválido."], 400);
+    if ($compra["metodo"] !== "pix") json_out(["erro" => "Esta compra foi feita para pagamento com cartão."], 409);
 
-    $token = obter_token();
-    if ($token === null) json_out(["erro" => "Falha na autenticação com o Sicredi."], 502);
-
-    $txid = substr("CP" . bin2hex(random_bytes(20)), 0, 32);
-    [$codigo, $resposta] = chamar_sicredi("PUT", "/api/v2/cob/" . $txid, [
-        "calendario" => ["expiracao" => 1800], // 30 minutos, igual ao site
-        "valor" => ["original" => number_format($valor, 2, ".", "")],
-        "chave" => chave_pix(),
-        "solicitacaoPagador" => "Compra na loja Coração Presente",
-    ], $token);
-
-    if ($codigo >= 200 && $codigo < 300 && isset($resposta["pixCopiaECola"])) {
-        json_out([
-            "txid" => $txid,
-            "pixCopiaECola" => $resposta["pixCopiaECola"],
-            "status" => $resposta["status"] ?? "ATIVA",
-        ]);
+    try {
+        $cobranca = cobranca_pix_da_compra($pdo, $compra);
+        json_out($cobranca + ["valor" => (float) $compra["total"], "compraId" => $compra["id"]]);
+    } catch (ErroDeCompra $e) {
+        json_out(["erro" => $e->getMessage()], $e->codigo);
+    } catch (Throwable $e) {
+        error_log("pix cobranca: " . $e->getMessage());
+        json_out(["erro" => "Não foi possível gerar o PIX agora."], 500);
     }
-    json_out(["erro" => "Não foi possível criar a cobrança no Sicredi."], 502);
 }
 
-// ── Consultar status ──────────────────────────────────────────────────────────
+// ── Consultar status (compatível com a tela antiga) ──────────────────────────
 if ($acao === "status") {
-    if (!pix_configurado()) json_out(["erro" => "PIX Sicredi não configurado."], 503);
-    $txid = $_GET["txid"] ?? "";
-    if ($txid === "") json_out(["erro" => "txid ausente."], 400);
-
-    // O webhook pode já ter avisado que este PIX foi pago
-    try {
-        $stmt = db()->prepare("SELECT txid FROM pix_pagos WHERE txid = ?");
-        $stmt->execute([$txid]);
-        if ($stmt->fetch()) json_out(["status" => "CONCLUIDA"]);
-    } catch (Throwable $e) {
-        // sem banco, consulta direto no Sicredi
-    }
-
-    $token = obter_token();
-    if ($token === null) json_out(["erro" => "Falha na autenticação com o Sicredi."], 502);
-    [$codigo, $resposta] = chamar_sicredi("GET", "/api/v2/cob/" . $txid, null, $token);
-    if ($codigo >= 200 && $codigo < 300 && isset($resposta["status"])) {
-        json_out(["status" => $resposta["status"]]);
-    }
-    json_out(["erro" => "Não foi possível consultar a cobrança."], 502);
+    proteger_rota($pdo);
+    limitar_taxa($pdo, "pix_status", 500, 1800);
+    $txid = (string) ($_GET["txid"] ?? "");
+    $stmt = $pdo->prepare("SELECT compraId FROM pix_cobrancas WHERE txid = ?");
+    $stmt->execute([$txid]);
+    $compraId = $stmt->fetchColumn();
+    if (!$compraId) json_out(["status" => "ATIVA"]);
+    $stmt = $pdo->prepare("SELECT status FROM compras WHERE id = ?");
+    $stmt->execute([$compraId]);
+    $status = $stmt->fetchColumn();
+    if ($status === "aguardando_pagamento" && consultar_pix_da_compra($pdo, (string) $compraId)) $status = "paga";
+    json_out(["status" => $status === "paga" ? "CONCLUIDA" : "ATIVA"]);
 }
 
 // ── Webhook (o Sicredi chama quando um PIX é pago) ────────────────────────────
+// Só com o segredo combinado no fim do endereço (WEBHOOK_SEGREDO). E mesmo
+// assim o aviso não é aceito de olhos fechados: a compra só é confirmada
+// depois de consultar a cobrança no próprio Sicredi (consultar_pix_da_compra),
+// com o valor que o banco informar.
 if ($acao === "webhook") {
+    if (WEBHOOK_SEGREDO === "" || !hash_equals(WEBHOOK_SEGREDO, (string) ($_GET["segredo"] ?? ""))) {
+        error_log("webhook pix recusado (segredo ausente ou errado) de " . ip_cliente());
+        http_response_code(404);
+        exit;
+    }
     $corpo = corpo_json();
     try {
-        $stmt = db()->prepare("INSERT IGNORE INTO pix_pagos (txid, valor) VALUES (?, ?)");
+        $aceitos = 0;
         foreach ($corpo["pix"] ?? [] as $p) {
-            if (!empty($p["txid"])) $stmt->execute([$p["txid"], $p["valor"] ?? null]);
+            $txid = (string) ($p["txid"] ?? "");
+            if (!preg_match('/^CP[a-f0-9]{1,30}$/i', $txid)) continue;
+            $pdo->prepare("INSERT IGNORE INTO pix_pagos (txid, valor) VALUES (?, ?)")->execute([$txid, $p["valor"] ?? null]);
+            $stmt = $pdo->prepare("SELECT compraId FROM pix_cobrancas WHERE txid = ?");
+            $stmt->execute([$txid]);
+            $compraId = $stmt->fetchColumn();
+            if ($compraId) {
+                [$status, $valor] = consultar_cobranca_sicredi($txid);
+                if ($status === "CONCLUIDA" && $valor !== null) {
+                    confirmar_pagamento_compra($pdo, (string) $compraId, "pix", $txid, $valor);
+                    $aceitos++;
+                }
+            }
         }
+        registrar_auditoria($pdo, "webhook_pix", "$aceitos pagamento(s) confirmado(s)");
     } catch (Throwable $e) {
-        // não derruba o webhook por causa do banco
+        error_log("webhook pix: " . $e->getMessage());
     }
     http_response_code(200);
     exit;

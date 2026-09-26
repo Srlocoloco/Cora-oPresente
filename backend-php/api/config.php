@@ -17,14 +17,27 @@ ini_set("log_errors", "1");
 // A KingHost não deixa escolher o nome do banco: ele é criado automaticamente
 // com base no usuário do domínio (ex.: algo como "coracao1_bd1"). Veja o
 // nome completo do banco e do usuário na tela "Gerenciar Bancos MySQL".
-define("DB_HOST", "mysql.coracaopresente.com.br");
-define("DB_NAME", "coracaopresent01");
-define("DB_USER", "coracaopresent01");
+// As variáveis CP_* abaixo só existem no computador de quem está testando (ver
+// backend-php/servidor-local.php). Na hospedagem elas não existem, e valem os
+// valores fixos de sempre — nada muda em produção.
+define("DB_HOST", getenv("CP_DB_HOST") ?: "mysql.coracaopresente.com.br");
+define("DB_NAME", getenv("CP_DB_NAME") ?: "coracaopresent01");
+define("DB_USER", getenv("CP_DB_USER") ?: "coracaopresent01");
 
 // A senha de verdade mora em config.local.php (arquivo fora do git, enviado
 // direto por FTP para o servidor). Sem esse arquivo, o site não conecta —
 // isso é proposital, para nunca mais existir senha em texto puro no git.
-require_once __DIR__ . "/config.local.php";
+// Repare no "is_file" antes do require: com "require_once" puro, se o arquivo
+// faltasse o PHP abortava e a API devolvia uma tela 500 EM BRANCO, sem dizer o
+// motivo. Assim a API continua respondendo e o erro sai legível na tela
+// ("MySQL indisponível"), além de ficar registrado no log do servidor.
+$arquivoSegredos = getenv("CP_CONFIG_LOCAL") ?: __DIR__ . "/config.local.php";
+if (is_file($arquivoSegredos)) {
+    require_once $arquivoSegredos;
+} else {
+    error_log("FALTA config.local.php em " . __DIR__ . " — envie-o por FTP para /www/api/.");
+}
+
 define("DB_PASS", defined("DB_PASS_REAL") ? DB_PASS_REAL : "");
 
 // ── Sicredi (API Pix) ──
@@ -48,8 +61,40 @@ define("SICREDI_CARTAO_URL", "");
 define("SICREDI_CARTAO_CLIENT_ID", "");
 define("SICREDI_CARTAO_CLIENT_SECRET", "");
 
-// Chave PIX reserva (a principal é a das Configurações da loja, salva no banco)
-define("PIX_CHAVE_RESERVA", "44997201104");
+// Chave PIX reserva (a principal é a das Configurações da loja, salva no banco).
+// Fica em config.local.php (fora do git) porque é um dado pessoal — uma chave
+// PIX de CPF identifica uma pessoa, e este arquivo aqui é versionado.
+// Em config.local.php:  define("PIX_CHAVE_RESERVA_REAL", "sua-chave-pix");
+define("PIX_CHAVE_RESERVA", defined("PIX_CHAVE_RESERVA_REAL") ? PIX_CHAVE_RESERVA_REAL : "");
+
+// ── Anti-abuso: de quem é a requisição ───────────────────────────────────────
+// Todo o controle de robôs (limite de requisições, travamento do login,
+// tentativas de cartão) é contado POR IP. Na KingHost a requisição chega
+// direto no Apache, então o IP verdadeiro é o REMOTE_ADDR e esta lista fica
+// vazia — que é o certo: com a lista vazia, nenhum cabeçalho enviado pelo
+// visitante é levado em conta, e não há como um robô fingir um IP novo a cada
+// tentativa para escapar dos limites.
+//
+// Só preencha se um dia o site passar a ficar ATRÁS de algo (Cloudflare, um
+// balanceador, um proxy reverso). Aí coloque aqui o IP com que ESSE
+// intermediário chega ao servidor — e só ele.
+//   Ex.: define("PROXIES_CONFIAVEIS", ["10.0.0.5"]);
+define("PROXIES_CONFIAVEIS", []);
+
+// ── Segredo dos webhooks (avisos automáticos do banco) ───────────────────────
+// O banco avisa a loja que um PIX caiu chamando /api/webhook/pix. Esse aviso é
+// o que faz o pedido ser dado como pago — então quem conseguir chamar essa
+// rota consegue marcar uma compra como paga sem pagar nada.
+//
+// Por isso o endereço leva um segredo no fim:
+//   https://coracaopresente.com.br/api/webhook/pix/SEU_SEGREDO_AQUI
+// e é ESSE endereço completo que deve ser cadastrado no Sicredi. Sem o segredo
+// certo, a rota responde 404 e não faz nada.
+//
+// O valor real fica em config.local.php (fora do git). Para gerar um:
+//   php -r "echo bin2hex(random_bytes(24));"
+// e em config.local.php:  define("WEBHOOK_SEGREDO_REAL", "o-valor-gerado");
+define("WEBHOOK_SEGREDO", defined("WEBHOOK_SEGREDO_REAL") ? WEBHOOK_SEGREDO_REAL : "");
 
 // ── Login do Admin (painel) ──────────────────────────────────────────────────
 // A senha do Admin NUNCA fica no código do site (antes ficava — qualquer
@@ -58,11 +103,10 @@ define("PIX_CHAVE_RESERVA", "44997201104");
 // um hash (SALT + SHA-256) — mesmo quem tiver acesso ao banco de dados não
 // consegue "ler" a senha de volta a partir do hash.
 //
-// Senha atual (a mesma de antes — TROQUE assim que possível, já que a senha
-// antiga ficou exposta publicamente no código do site por um tempo):
-// gere um novo hash rodando no terminal (PHP >= 7):
-//   php -r "$s=bin2hex(random_bytes(16)); $p='SUA_NOVA_SENHA'; echo 'ADMIN_PASSWORD_SALT=\"'.$s.'\"'.PHP_EOL.'ADMIN_PASSWORD_HASH=\"'.hash('sha256',$s.$p).'\"'.PHP_EOL;"
-// e cole os dois valores abaixo.
+// O jeito certo de trocar a senha é rodar backend-php/gerar-config-local.php,
+// que grava o hash no formato bcrypt (lento de propósito: cada tentativa de
+// adivinhar custa ~100 ms, contra microssegundos do SHA-256 antigo).
+// Hashes antigos (SALT + SHA-256) continuam aceitos até a troca.
 define("ADMIN_PASSWORD_SALT", defined("ADMIN_PASSWORD_SALT_REAL") ? ADMIN_PASSWORD_SALT_REAL : "");
 define("ADMIN_PASSWORD_HASH", defined("ADMIN_PASSWORD_HASH_REAL") ? ADMIN_PASSWORD_HASH_REAL : "");
 
@@ -92,7 +136,7 @@ define("SMTP_SEGURANCA", "ssl");
 define("SMTP_USUARIO", "coracaopresente@coracaopresente.com.br");
 define("SMTP_SENHA", defined("SMTP_SENHA_REAL") ? SMTP_SENHA_REAL : "");
 // URL pública do site (usada para montar os links dos e-mails)
-define("URL_SITE", "https://coracaopresente.com.br");
+define("URL_SITE", getenv("CP_URL_SITE") ?: "https://coracaopresente.com.br");
 
 // E-mail da conta reservada do Admin (mesmo valor de EMAIL_ADMIN em
 // src/app/constantes.tsx) — usado para reconhecer o Admin comprando pela
@@ -133,3 +177,12 @@ define("VAPID_CHAVE_PRIVADA_PEM", __DIR__ . "/../../vapid.pem");
 // E-mail de contato exigido pelo padrão Web Push (o serviço de push usa isso
 // para falar com você se algo der errado no envio).
 define("VAPID_CONTATO", "mailto:cora@coracaopresente.com.br");
+
+// ── Repasse automático das comissões (agendador de tarefas) ─────────────────
+// O fechamento dos repasses pode rodar sozinho pelo "Agendador de Tarefas"
+// (cron) do painel da KingHost, chamando:
+//   https://coracaopresente.com.br/api/repasses/automatico/SEU_SEGREDO
+// Sem o segredo certo a rota responde 404 e não faz nada. Gere um valor com
+//   php -r "echo bin2hex(random_bytes(24));"
+// e em config.local.php:  define("REPASSE_SEGREDO_CRON_REAL", "o-valor-gerado");
+define("REPASSE_SEGREDO_CRON", defined("REPASSE_SEGREDO_CRON_REAL") ? REPASSE_SEGREDO_CRON_REAL : "");

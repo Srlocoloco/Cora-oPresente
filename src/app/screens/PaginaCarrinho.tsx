@@ -1,10 +1,17 @@
 // Tela PaginaCarrinho
 
 import { useState } from "react";
-import { ShoppingCart, X, Truck, Shield, ChevronLeft, ChevronRight, Zap, MapPin, Lock, CreditCard } from "lucide-react";
-import type { ItemCarrinho, Usuario, ConfigLoja, Cupom, DadosPagamento } from "../types";
+import { ShoppingCart, X, Truck, Shield, ChevronLeft, ChevronRight, Zap, MapPin, Lock, CreditCard, ShoppingBasket, PenLine, Gift } from "lucide-react";
+import type { ItemCarrinho, Usuario, ConfigLoja, Cupom, DadosPagamento, CaixaMontada } from "../types";
 import { MAX_PARCELAS_CARTAO } from "../constantes";
-import { formatarMoeda, precoParcela, maxParcelasDoCarrinho } from "../utils";
+import {
+  formatarMoeda,
+  precoParcela,
+  maxParcelasDoCarrinho,
+  qtdItensDaCaixa,
+  entregaNaCidade,
+  textoCidadesAtendidas,
+} from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
 import { Logo } from "../components/Logo";
 import { CampoCodigoVenda } from "../components/CampoCodigoVenda";
@@ -16,6 +23,8 @@ export function PaginaCarrinho({
   onRemove,
   aoMudarQtd,
   aoVoltar,
+  aoEditarCaixa,
+  aoMontarCaixa,
   aoFinalizarCompra,
   usuario,
   codigoVenda,
@@ -32,6 +41,10 @@ export function PaginaCarrinho({
   onRemove: (id: number, corEscolhida?: string) => void;
   aoMudarQtd: (id: number, variacao: number, corEscolhida?: string) => void;
   aoVoltar: () => void;
+  // Reabre a área "Monte sua Caixa" com esta caixa inteira, para o cliente
+  // trocar o que quiser sem montar tudo de novo
+  aoEditarCaixa?: (caixa: CaixaMontada) => void;
+  aoMontarCaixa?: () => void;
   aoFinalizarCompra: (dados: DadosPagamento) => void;
   usuario: Usuario | null;
   codigoVenda: string;
@@ -94,9 +107,19 @@ export function PaginaCarrinho({
       if (dados.erro) {
         setFreteErro("CEP não encontrado. Confira e tente novamente.");
         setFreteInfo(null);
-      } else if (dados.uf !== "PR") {
-        // Fora do Paraná: entrega não disponível
-        setFreteErro(`No momento entregamos apenas no Paraná (seu CEP é de ${dados.localidade} - ${dados.uf}).`);
+      } else if (!entregaNaCidade(dados.localidade, dados.uf, config.cidadesAtendidas)) {
+        // Fora da área de entrega. Recusar AQUI é o que segura a venda: mais
+        // abaixo, o botão "Finalizar Compra" só passa quando freteInfo existe
+        // (if (!freteInfo)), e ele fica null justamente neste caminho.
+        //
+        // Antes esta condição era só `dados.uf !== "PR"`, ou seja, a loja
+        // aceitava e cobrava um pedido de qualquer canto do Paraná mesmo
+        // entregando só na própria cidade — o cliente pagava, e sobrava
+        // cancelar e devolver.
+        setFreteErro(
+          `No momento entregamos só em ${textoCidadesAtendidas(config.cidadesAtendidas)} ` +
+            `(seu CEP é de ${dados.localidade} - ${dados.uf}).`,
+        );
         setFreteInfo(null);
       } else {
         // CEPs 80000-000 a 82999-999 = Curitiba (entrega mais rápida e barata)
@@ -165,15 +188,33 @@ export function PaginaCarrinho({
           </div>
           <h2 className="text-2xl font-black text-gray-800 mb-2">Seu carrinho está vazio</h2>
           <p className="text-gray-500 mb-6">Adicione produtos e volte aqui para finalizar sua compra.</p>
-          <button onClick={aoVoltar} className="bg-[#A8102A] text-white font-bold px-8 py-3 rounded-xl hover:bg-[#7A1220] transition-colors">
-            Explorar Produtos
-          </button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button onClick={aoVoltar} className="bg-[#A8102A] text-white font-bold px-8 py-3 rounded-xl hover:bg-[#7A1220] transition-colors w-full sm:w-auto">
+              Explorar Produtos
+            </button>
+            {aoMontarCaixa && (
+              <button
+                onClick={aoMontarCaixa}
+                className="bg-white border border-[#A8102A]/25 text-[#A8102A] font-bold px-8 py-3 rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
+              >
+                <Gift size={17} /> Montar uma caixa
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="max-w-[1440px] mx-auto px-4 pb-12">
           <div className="flex gap-6 flex-col lg:flex-row">
             {/* Items */}
-            <div className="flex-1 space-y-3">
+            {/* min-w-0: sem isso a coluna dos produtos não encolhe abaixo do
+                tamanho do nome mais comprido (é o padrão do flexbox,
+                min-width:auto). Numa tela de ~1024px — notebook comum, ou
+                janela reduzida — a soma "produtos + resumo" passava da largura
+                da página e o carrinho inteiro ganhava rolagem lateral, com o
+                botão Finalizar Compra saindo pela direita. Com min-w-0 a
+                coluna cede e os nomes longos voltam a ser cortados com "…",
+                como o resto do layout já esperava. */}
+            <div className="flex-1 min-w-0 space-y-3">
               <h2 className="text-lg font-black text-gray-900 mb-4">
                 Meu Carrinho <span className="text-gray-400 font-semibold text-base">({items.length} {items.length === 1 ? "item" : "itens"})</span>
               </h2>
@@ -203,6 +244,54 @@ export function PaginaCarrinho({
                     {item.freeShipping && (
                       <div className="flex items-center gap-1 text-green-700 text-[11px] font-bold mt-1.5">
                         <Truck size={11} /> FRETE GRÁTIS
+                      </div>
+                    )}
+
+                    {/* Caixa montada pelo cliente: uma linha só no carrinho,
+                        mas aqui ela é aberta para ele conferir (e mudar) o
+                        que colocou dentro e o que escreveu no cartão */}
+                    {item.caixa && (
+                      <div className="mt-2.5 bg-[#FBF4EA] border border-[#C79A3B]/30 rounded-xl p-3">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="flex items-center gap-1.5 text-[10px] font-black text-[#8C6B1F] uppercase tracking-wide">
+                            <ShoppingBasket size={13} className="text-[#C79A3B]" />
+                            {item.caixa.recipienteTamanho ? "Tamanho " + item.caixa.recipienteTamanho + " · " : ""}
+                            {qtdItensDaCaixa(item.caixa)} {qtdItensDaCaixa(item.caixa) === 1 ? "produto dentro" : "produtos dentro"}
+                          </span>
+                          {aoEditarCaixa && (
+                            <button
+                              onClick={() => aoEditarCaixa(item.caixa!)}
+                              className="text-[11px] font-black text-[#A8102A] hover:underline flex-shrink-0"
+                            >
+                              Editar caixa
+                            </button>
+                          )}
+                        </div>
+                        <ul className="space-y-1">
+                          {item.caixa.itens.map((dentro) => (
+                            <li key={dentro.produtoId} className="flex items-baseline gap-2 text-[11.5px] text-gray-600">
+                              <span className="font-black text-[#8C6B1F] flex-shrink-0">{dentro.qty}x</span>
+                              <span className="flex-1 min-w-0 truncate">{dentro.name}</span>
+                              <span className="text-gray-400 flex-shrink-0">{formatarMoeda(dentro.price * dentro.qty)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {(item.caixa.para || item.caixa.de || item.caixa.mensagem) && (
+                          <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#C79A3B]/40">
+                            <span className="flex items-center gap-1.5 text-[10px] font-black text-[#8C6B1F] uppercase tracking-wide mb-1">
+                              <PenLine size={11} className="text-[#C79A3B]" /> Cartão
+                            </span>
+                            {item.caixa.para && (
+                              <p className="text-[11.5px] text-gray-700"><span className="font-bold">Para:</span> {item.caixa.para}</p>
+                            )}
+                            {item.caixa.mensagem && (
+                              <p className="text-[11.5px] text-gray-600 italic mt-0.5">“{item.caixa.mensagem}”</p>
+                            )}
+                            {item.caixa.de && (
+                              <p className="text-[11.5px] text-gray-700 mt-0.5"><span className="font-bold">De:</span> {item.caixa.de}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                     <div className="flex items-center justify-between mt-3 flex-wrap gap-3">

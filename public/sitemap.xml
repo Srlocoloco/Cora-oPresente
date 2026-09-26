@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sitemap da Coração Presente.
+
+  A loja é uma página única (SPA): produtos, carrinho, "Sobre Nós" e as demais
+  telas trocam na tela sem trocar o endereço do navegador. Por isso existe um
+  único endereço real para listar aqui — a home. Não invente linhas como
+  /produtos ou /sobre: endereço que devolve 404 faz o Google desconfiar do
+  sitemap inteiro e ignorar o arquivo.
+
+  Quando cada produto ganhar endereço próprio (ex.: /produto/123), aí sim vale
+  gerar este arquivo pelo backend, com uma linha <url> por produto.
+
+  Depois de publicar, cadastre o sitemap uma vez no Google Search Console
+  (https://search.google.com/search-console) para acompanhar a indexação.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://coracaopresente.com.br/</loc>
+    <lastmod>2026-08-24</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

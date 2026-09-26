@@ -27,6 +27,9 @@ export interface Produto {
   // Variações de cor/modelo do produto (ex.: pulseiras/mostradores diferentes
   // do mesmo relógio), para o cliente escolher antes de comprar
   colors?: CorProduto[];
+  // Tamanhos P/M/G — só faz sentido nos produtos da categoria "Caixas". Caixa
+  // sem isto preenchido é de tamanho único e usa o price/stock do produto.
+  tamanhos?: TamanhoCaixa[];
   // Descrição opcional do produto, mostrada na página de detalhes
   description?: string;
   // Nome da cor escolhida na página do produto antes de "Comprar" — só
@@ -35,6 +38,19 @@ export interface Produto {
   // carrinho, com a foto e o estoque daquela cor específica.
   corEscolhida?: string;
 }
+
+// Um tamanho da mesma caixa. É o próprio recipiente em três medidas, cada
+// uma com preço, estoque e capacidade próprios — por isso não dá para
+// reaproveitar CorProduto, que não tem preço nem capacidade.
+export interface TamanhoCaixa {
+  tamanho: "P" | "M" | "G";
+  price: number;
+  estoque: number;
+  // Quantos produtos cabem dentro (soma das quantidades). É o que faz o
+  // tamanho significar algo para o cliente, e não ser só um preço maior.
+  capacidade: number;
+}
+
 
 // Uma opção de cor/modelo dentro de um produto
 export interface CorProduto {
@@ -45,9 +61,53 @@ export interface CorProduto {
 }
 
 
+// ─── Monte sua Caixa ──────────────────────────────────────────────────────────
+// Um produto escolhido pelo cliente para ir DENTRO da caixa. Guarda uma cópia
+// dos dados na hora da escolha (nome, preço, foto) para a caixa continuar
+// legível no carrinho e no pedido mesmo se o produto mudar depois.
+export interface ItemDaCaixa {
+  produtoId: number;
+  name: string;
+  price: number;
+  image: string;
+  qty: number;
+}
+
+
+// A caixa montada pelo cliente: o recipiente escolhido (um produto da
+// categoria "Caixas") + os produtos colocados dentro + o cartão de mensagem.
+// Ela viaja no carrinho como UMA linha só (ver ItemCarrinho.caixa), mas na
+// hora de dar baixa no estoque cada produto de dentro conta separado — ver
+// itensParaEstoque em utils.ts.
+export interface CaixaMontada {
+  // Identificador da montagem (não é id de produto): serve para editar a
+  // mesma caixa depois, já no carrinho
+  id: string;
+  recipienteId: number;
+  recipienteNome: string;
+  recipienteImagem: string;
+  // Preço do TAMANHO escolhido (não o do produto): é ele que entra na conta
+  recipientePreco: number;
+  // Tamanho escolhido e o teto de produtos que ele comporta. Ficam vazios nas
+  // caixas de tamanho único e nas montagens feitas antes desta funcionalidade
+  // existir — por isso todo o código trata a ausência como "sem limite".
+  recipienteTamanho?: "P" | "M" | "G";
+  recipienteCapacidade?: number;
+  itens: ItemDaCaixa[];
+  // Cartão de mensagem escrito pelo cliente (opcional)
+  para?: string;
+  de?: string;
+  mensagem?: string;
+}
+
+
 // Item do carrinho: produto + quantidade escolhida
 export interface ItemCarrinho extends Produto {
   qty: number;
+  // Preenchido só nas linhas que são uma caixa montada pelo cliente. Nesse
+  // caso o "produto" da linha é sintético (id negativo, preço somado) e o
+  // conteúdo de verdade está aqui dentro.
+  caixa?: CaixaMontada;
 }
 
 
@@ -66,6 +126,11 @@ export interface ConfigLoja {
   freteInterior: number; // frete para o interior do Paraná
   fretePadrao: number; // frete sem CEP informado
   comissaoRecrutador: number; // % do Master sobre as vendas dos vendedores (a equipe)
+  // Cidades onde a loja entrega, separadas por vírgula (ex.: "Altônia, Pérola").
+  // Vazio = todo o Paraná. O carrinho recusa CEP de fora desta lista ANTES de
+  // deixar o cliente pagar — vender o que não se entrega custa o cancelamento,
+  // a devolução e o cliente.
+  cidadesAtendidas: string;
 }
 
 
@@ -97,8 +162,8 @@ export interface Banner {
 // Cargos que o Admin, o MasterPlus e o Master podem dar a um usuário.
 // MasterPlus: acima do Master. Cadastra a própria equipe de vendedores (como
 // um Master) e também pode promover um vendedor de destaque da própria
-// equipe a Master (ver vinculosMasterPlus, em App.tsx). Ganha 10% fixo sobre
-// as próprias vendas (código pessoal, igual ao Master) mais a comissão de
+// equipe a Master (ver vinculosMasterPlus, em App.tsx). Ganha 7% fixo sobre
+// as próprias vendas (código pessoal) mais a comissão de
 // rede (equipe própria + repasse da equipe do Master que promoveu).
 // Master: painel próprio SEM a página de Produtos, cadastra vendedores (com
 // código de ativação) e dá o cargo de Vendedor a outros usuários. Pode haver
@@ -108,11 +173,24 @@ export interface Banner {
 // porque 1% vai de repasse ao MasterPlus que o promoveu.
 // Vendedor: divulga os produtos da loja com o código de venda pessoal e
 // ganha comissão pelo próprio nível.
-export type Cargo = "vendedor" | "master" | "masterplus";
+// Cargos da loja. "entregador" é o único que não vende nada: ele só enxerga as
+// entregas designadas a ele (ver PaginaEntregas) e move o pedido de "saiu para
+// entrega" até "entregue".
+export type Cargo = "vendedor" | "master" | "masterplus" | "entregador";
 
 
 // Vínculo criado quando o Master cadastra um vendedor. O código gerado é
 // entregue ao vendedor, que o usa para ativar a própria conta no perfil.
+// O que o painel recebe de volta ao cadastrar um vendedor. O servidor é quem
+// decide o caminho: conta que JÁ existe na loja entra na equipe na hora
+// (jaEraCliente), conta nova recebe um código para ativar depois.
+export interface ResultadoCadastroVendedor {
+  // Mensagem para mostrar no formulário; null quando deu certo
+  erro: string | null;
+  codigo?: string;
+  jaEraCliente?: boolean;
+}
+
 export interface Recrutamento {
   codigo: string;
   recrutador: string; // e-mail de quem cadastrou (sempre o Master)
@@ -142,6 +220,12 @@ export interface Pedido {
   codigoVenda?: string;
   // Endereço de entrega do pedido
   endereco?: string;
+  // Identificador da COMPRA: o mesmo em todas as linhas que saíram do mesmo
+  // carrinho. Uma compra de 3 produtos vira 3 linhas aqui (uma por produto,
+  // para o estoque e o acompanhamento), e é este campo que volta a juntá-las
+  // numa compra só na tela do Admin. Pedido antigo não tem — cada linha dele
+  // conta como uma compra.
+  compraId?: string;
   // Código do cupom de desconto usado nesta compra (se houve) — cada cupom só
   // pode ser usado uma vez por cliente, então isso é checado no próximo carrinho
   cupomUsado?: string;
@@ -153,6 +237,9 @@ export interface Pedido {
   // pedido própria — ver confirmarPagamento em App.tsx). Usado para buscar a
   // foto do produto nos e-mails de confirmação de compra e de entrega.
   produtoId?: number;
+  // E-mail do entregador designado pelo Admin para levar este pedido. É por
+  // ele que o painel de entregas mostra a cada entregador só o que é dele.
+  entregador?: string | null;
 }
 
 
@@ -173,7 +260,7 @@ export interface Cliente {
 }
 
 
-export type Tela = "login" | "loja" | "carrinho" | "pagamento" | "admin" | "master" | "masterplus" | "vendedor" | "sucesso" | "perfil" | "notificacoes" | "institucional";
+export type Tela = "login" | "loja" | "carrinho" | "pagamento" | "admin" | "master" | "masterplus" | "vendedor" | "entregador" | "sucesso" | "perfil" | "notificacoes" | "institucional" | "montar-caixa";
 
 
 // Dados do pagamento escolhido no carrinho (aguardando confirmação)

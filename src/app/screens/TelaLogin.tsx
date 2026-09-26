@@ -283,15 +283,25 @@ export function TelaLogin({
                 Bem-vindo de volta!
               </h1>
               <p className="text-white/65 text-base leading-relaxed mb-10">
-                Acesse sua conta e continue aproveitando as melhores ofertas com frete grátis e parcelamento sem juros.
+                Acesse sua conta para acompanhar seus pedidos, guardar seus favoritos e aproveitar os descontos no PIX.
               </p>
 
+              {/* Só promessa que a loja cumpre de verdade. As frases daqui vinham
+                  do layout original e duas eram mentira: "frete grátis em
+                  milhares de produtos" (o catálogo tem centenas, e o frete só
+                  zera acima do mínimo do carrinho ou no produto com o selo) e
+                  "parte da receita vai para projetos sociais" (não existe
+                  repasse nenhum no sistema). Promessa que o carrinho não
+                  cumpre vira reclamação no Procon e pedido cancelado.
+                  O valor do frete grátis NÃO entra aqui de propósito: quem
+                  manda nele é config.freteGratisAcima, que o Admin muda na
+                  tela de Configurações — número fixo no texto envelhece. */}
               <div className="space-y-4">
                 {[
-                  { icon: <Truck size={18} />, text: "Frete grátis em milhares de produtos" },
+                  { icon: <Truck size={18} />, text: "Frete grátis acima do valor mínimo do carrinho" },
                   { icon: <CreditCard size={18} />, text: "Parcele em até 12x sem juros" },
                   { icon: <Zap size={18} />, text: "Descontos exclusivos pagando com PIX" },
-                  { icon: <Heart size={18} />, text: "Parte da receita vai para projetos sociais" },
+                  { icon: <Heart size={18} />, text: "Monte sua caixa de presente do seu jeito" },
                 ].map((item) => (
                   <div key={item.text} className="flex items-center gap-3">
                     <span className="text-[#E8B84B]">{item.icon}</span>
@@ -303,7 +313,7 @@ export function TelaLogin({
           </div>
 
           <div className="text-white/30 text-xs">
-            © 2026 Coração Presente · Todos os direitos reservados
+            © {new Date().getFullYear()} Coração Presente · Todos os direitos reservados
           </div>
         </div>
       </div>
