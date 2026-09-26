@@ -41,10 +41,15 @@ self.addEventListener("push", (evento) => {
         body: aviso.corpo,
         icon: "/logo.png",
         badge: "/favicon.png",
-        // Uma notificação por pedido: um status novo do mesmo pedido
-        // substitui o aviso anterior em vez de empilhar.
-        tag: aviso.pedidoId || "pedido",
-        data: { url: aviso.pedidoId ? `/?pedido=${aviso.pedidoId}` : "/" },
+        // Foto do produto dentro da notificação (recomendação depois da
+        // compra). Onde o sistema não souber mostrar imagem grande, ele
+        // simplesmente ignora este campo.
+        image: aviso.foto || undefined,
+        // Uma notificação por assunto: status novo do mesmo pedido substitui o
+        // aviso anterior, e a recomendação tem a tag do próprio destino — sem
+        // isso ela empilharia com os avisos de pedido.
+        tag: aviso.pedidoId || aviso.link || "aviso",
+        data: { url: aviso.link || (aviso.pedidoId ? `/?pedido=${aviso.pedidoId}` : "/") },
       })
     ));
   })());

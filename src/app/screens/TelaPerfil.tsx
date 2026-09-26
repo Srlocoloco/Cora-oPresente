@@ -4,16 +4,17 @@ import { useState } from "react";
 import {
   X, Package, LogOut, Truck, ChevronLeft, Check, MapPin, Bell,
   LayoutDashboard, ShoppingBag, Tag, Grid3x3, LifeBuoy, TrendingUp,
-  Sparkles, Wine, Gamepad2, Dumbbell, Watch, Home as HomeIcon, LayoutGrid,
+  Sparkles, Smartphone, Gamepad2, Dumbbell, Watch, Home as HomeIcon, LayoutGrid,
 } from "lucide-react";
-import type { Usuario, Cupom, Cargo, Pedido } from "../types";
+import type { Usuario, Cupom, Cargo, Pedido, Produto } from "../types";
 import { formatarMoeda } from "../utils";
 import { SeloStatus } from "../components/SeloStatus";
+import { ProdutoDoPedido } from "../components/ProdutoDoPedido";
 import { Logo } from "../components/Logo";
 
 const ICONE_POR_CATEGORIA: Record<string, React.ElementType> = {
   "Beleza & Perfumaria": Sparkles,
-  "Adega": Wine,
+  "Eletrônicos": Smartphone,
   "Brinquedos": Gamepad2,
   "Academia": Dumbbell,
   "Acessórios": Watch,
@@ -29,10 +30,12 @@ const ICONE_POR_CATEGORIA: Record<string, React.ElementType> = {
 export function TelaPerfil({
   usuario,
   pedidos,
+  produtos,
   cupons,
   categorias,
   desde,
   aoVerCategoria,
+  aoVerProduto,
   aoVoltar,
   aoSair,
   aoAbrirNotificacoes,
@@ -44,11 +47,16 @@ export function TelaPerfil({
 }: {
   usuario: Usuario;
   pedidos: Pedido[];
+  // Catálogo, só para achar a foto do produto de cada pedido (Pedido guarda o
+  // produtoId, não a foto)
+  produtos: Produto[];
   cupons: Cupom[];
   categorias: string[];
   // "Cliente desde" — vem do cadastro no banco; sem essa informação, omite a linha
   desde?: string;
   aoVerCategoria: (c: string) => void;
+  // Abre a página do produto na loja — o "revisitar" a partir do pedido
+  aoVerProduto: (produto: Produto) => void;
   aoVoltar: () => void;
   aoSair: () => void;
   aoAbrirNotificacoes: () => void;
@@ -74,7 +82,13 @@ export function TelaPerfil({
     setCodigoAtivar("");
   };
 
+  // "Pago" é o status de todo pedido recém-comprado, e faltava aqui: o cliente
+  // acabava de comprar, abria o perfil e via "Preparando 0 · A caminho 0 ·
+  // Entregues 0 · Cancelados 0" — todos zerados, como se a compra não
+  // existisse. É o momento em que ele mais precisa de confirmação, e é onde
+  // nasce o "meu pedido sumiu" no atendimento.
   const atalhos = [
+    { status: "Pago", rotulo: "Pagos", icon: <Check size={20} /> },
     { status: "Processando", rotulo: "Preparando", icon: <Package size={20} /> },
     { status: "Em trânsito", rotulo: "A caminho", icon: <Truck size={20} /> },
     { status: "Entregue", rotulo: "Entregues", icon: <Check size={20} /> },
@@ -357,7 +371,12 @@ export function TelaPerfil({
                           <span className="font-mono text-[11px] text-[#A8102A] font-bold">{o.id}</span>
                           <SeloStatus status={o.status} />
                         </div>
-                        <div className="text-[13px] text-gray-700 font-medium truncate">{o.items}</div>
+                        <ProdutoDoPedido
+                          produto={produtos.find((p) => p.id === o.produtoId)}
+                          descricao={o.items}
+                          aoAbrir={aoVerProduto}
+                          className="text-[13px] text-gray-700 font-medium w-full"
+                        />
                         <div className="flex items-center justify-between mt-1">
                           <span className="text-[11px] text-gray-400">{o.date}{o.pagamento ? ` · ${o.pagamento}` : ""}</span>
                           <span className="font-black text-gray-900 text-[13px]">{formatarMoeda(o.total)}</span>

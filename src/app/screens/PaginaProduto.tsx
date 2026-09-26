@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ShoppingCart, Star, Package, Heart, Truck, ChevronRight, ChevronLeft, Video } from "lucide-react";
-import type { Produto, Usuario, Pedido, Avaliacao, CorProduto } from "../types";
+import type { Produto, Usuario, Pedido, Avaliacao, CorProduto, ConfigLoja } from "../types";
 import { CORES_SELO, URL_BACKEND_PIX, LIMITE_VIDEO_AVALIACAO_MB, LIMITE_VIDEO_AVALIACAO_SEGUNDOS } from "../constantes";
 import { categoriaExibida, formatarMoeda, precoParcela, pctDesconto, produtoFoiCompradoPor, mediaAvaliacoes } from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
@@ -19,6 +19,7 @@ export function PaginaProduto({
   favoritos,
   usuario,
   pedidos,
+  config,
   aoAtualizarResumoAvaliacoes,
   focarAvaliacoes = false,
 }: {
@@ -31,6 +32,9 @@ export function PaginaProduto({
   favoritos: number[];
   usuario: Usuario | null;
   pedidos: Pedido[];
+  // Regras de frete da loja — usadas para o bloco de entrega dizer o mesmo
+  // que o carrinho vai cobrar de verdade
+  config: ConfigLoja;
   aoAtualizarResumoAvaliacoes: (produtoId: number, rating: number, reviews: number) => void;
   // true quando o cliente chegou aqui pelo convite de avaliar depois da compra:
   // rola direto até a seção de avaliações em vez de abrir no topo da página
@@ -94,13 +98,17 @@ export function PaginaProduto({
     return () => { cancelado = true; };
   }, [produto.id]);
 
-  // Rola até o formulário de avaliação quando o cliente veio do convite
-  // mostrado logo depois da compra
+  // Rola até o formulário de avaliação quando o cliente veio de um convite
+  // para avaliar: o de depois da compra, ou o aviso de entrega (sino, e-mail e
+  // notificação do celular, que chegam como "?produto=X&avaliar=1").
+  //
+  // Espera as avaliações carregarem antes de rolar. Enquanto elas estão vindo
+  // a página ainda é curta — a seção fica logo abaixo da dobra e o navegador
+  // não tem para onde rolar, então a rolagem simplesmente não acontecia.
   useEffect(() => {
-    if (!focarAvaliacoes) return;
-    const alvo = document.getElementById("avaliacoes-produto");
-    if (alvo) alvo.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [focarAvaliacoes, produto.id]);
+    if (!focarAvaliacoes || carregandoAvaliacoes) return;
+    document.getElementById("avaliacoes-produto")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focarAvaliacoes, produto.id, carregandoAvaliacoes]);
 
   const jaComprou = usuario ? produtoFoiCompradoPor(usuario.email, produto, pedidos) : false;
   const minhaAvaliacao = useMemo(
@@ -389,6 +397,8 @@ export function PaginaProduto({
                     ? corSelecionada
                       ? `Esgotado na cor ${corSelecionada.nome}`
                       : "Produto esgotado"
+                    : estoqueEfetivo === 1
+                    ? `Última unidade!${corSelecionada ? ` na cor ${corSelecionada.nome}` : ""}`
                     : estoqueEfetivo < 15
                     ? `Últimas ${estoqueEfetivo} unidades!${corSelecionada ? ` na cor ${corSelecionada.nome}` : ""}`
                     : `${estoqueEfetivo} em estoque`}
@@ -413,7 +423,15 @@ export function PaginaProduto({
               </button>
             )}
 
-            {/* Delivery options */}
+            {/* Entrega.
+                Aqui estava escrito "Receba amanhã · Grátis" para TODO produto,
+                independente do que o carrinho iria cobrar depois — e o carrinho
+                entrega em 1 a 2 dias úteis em Curitiba, 2 a 4 no interior, com
+                frete pago quando o produto não tem o selo de frete grátis e o
+                carrinho não passa do valor mínimo. Prometer prazo e frete que
+                a loja não vai cumprir gera reclamação, cancelamento e devolução
+                do dinheiro — além de ser propaganda enganosa (CDC art. 37).
+                Agora o bloco repete exatamente a regra que o carrinho aplica. */}
             <div className="border border-gray-100 rounded-2xl divide-y divide-gray-100">
               <div className="flex items-center justify-between gap-2 px-4 py-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -421,11 +439,15 @@ export function PaginaProduto({
                     <Truck size={15} className="text-[#C8102E]" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-gray-800">Receba amanhã</div>
-                    <div className="text-[11px] text-gray-400">Para pagamentos confirmados hoje</div>
+                    <div className="text-[13px] font-bold text-gray-800">Entrega em todo o Paraná</div>
+                    <div className="text-[11px] text-gray-400">
+                      1 a 2 dias úteis em Curitiba · 2 a 4 dias no interior
+                    </div>
                   </div>
                 </div>
-                <span className="text-emerald-600 text-[12px] font-black flex-shrink-0">Grátis</span>
+                <span className="text-emerald-600 text-[12px] font-black flex-shrink-0">
+                  {produto.freeShipping ? "Grátis" : ""}
+                </span>
               </div>
               <div className="flex items-center justify-between gap-2 px-4 py-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -433,11 +455,18 @@ export function PaginaProduto({
                     <Package size={15} className="text-[#C8102E]" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-gray-800">Retire na loja a partir de 2 horas</div>
-                    <div className="text-[11px] text-gray-400">Após aprovação da compra</div>
+                    <div className="text-[13px] font-bold text-gray-800">
+                      {produto.freeShipping
+                        ? "Frete grátis neste produto"
+                        : `Frete grátis acima de ${formatarMoeda(config.freteGratisAcima)}`}
+                    </div>
+                    <div className="text-[11px] text-gray-400">
+                      {produto.freeShipping
+                        ? "Sem custo de entrega, qualquer que seja o valor do carrinho"
+                        : "Calcule o valor exato pelo seu CEP no carrinho"}
+                    </div>
                   </div>
                 </div>
-                <span className="text-emerald-600 text-[12px] font-black flex-shrink-0">Grátis</span>
               </div>
             </div>
           </div>

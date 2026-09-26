@@ -1,0 +1,9 @@
+# O que você deve fazer ao iniciar um novo projeto:Sempre que abrir uma pasta de projeto nova no terminal e quiser usar o Graphify nela
+ rode apenas estes dois comandos: [1] (https://github.com/Graphify-Labs/graphify/issues/1177)
+ Gere o mapa da nova pasta:powershellpython -m graphify . --code-only
+ 
+# Ative a skill do Claude Code especificamente para essa pasta
+python -m graphify install --platform claude
+
+# Para atualizar o grafo rapidamente, basta rodar o comando que você já aprendeu antes de abrir o Claude
+python -m graphify . --code-only

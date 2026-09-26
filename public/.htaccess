@@ -3,11 +3,79 @@
 # (pasta "public/" do Vite vira a raiz do site publicado) — não precisa
 # copiar manualmente, só publicar o dist/ como sempre.
 
-# Força HTTPS sempre, mesmo que alguém acesse por engano com http://
+# Endereço único: tudo cai em https://coracaopresente.com.br
+#
+# Os dois endereços (com e sem "www") respondem no mesmo IP na KingHost. Para
+# visitante dá no mesmo, mas para o Google são DOIS sites com o mesmo conteúdo:
+# a relevância se divide entre eles e nenhum dos dois ranqueia bem. Estas regras
+# elegem o endereço sem "www" — o mesmo que está no <link rel="canonical"> do
+# index.html e no VITE_BACKEND_URL. Se um dia trocar para www, troque nos três
+# lugares junto, senão o site passa a redirecionar contra o próprio canonical.
 <IfModule mod_rewrite.c>
   RewriteEngine On
+
+  # www → sem-www. Vem ANTES da regra de HTTPS e já manda para https://, então
+  # http://www.site.com.br resolve em UM salto em vez de dois (o Google desconta
+  # relevância a cada salto encadeado).
+  #   %1 = o domínio sem o "www." capturado na RewriteCond
+  #   $1 = o caminho pedido; a query string (?a=b) é reanexada automaticamente
+  RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+  RewriteRule ^(.*)$ https://%1/$1 [L,R=301]
+
+  # Força HTTPS sempre, mesmo que alguém acesse por engano com http://
   RewriteCond %{HTTPS} off
   RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# ─── Compressão ──────────────────────────────────────────────────────────────
+# O servidor estava entregando o JavaScript do site SEM compactar: 931 KB por
+# visitante, quando o mesmo arquivo compactado tem cerca de 115 KB. Era quase
+# 8x mais dado trafegando — em cada visita, de cada pessoa, e pior ainda no
+# celular com internet fraca.
+#
+# Imagem (JPEG/PNG/WebP) e vídeo ficam de fora de propósito: já são formatos
+# compactados, e passá-los por aqui só gastaria processador sem diminuir nada.
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
+  AddOutputFilterByType DEFLATE application/javascript application/x-javascript text/javascript
+  AddOutputFilterByType DEFLATE application/json application/ld+json
+  AddOutputFilterByType DEFLATE image/svg+xml application/xml application/rss+xml
+  AddOutputFilterByType DEFLATE application/manifest+json text/cache-manifest
+
+  # Navegador antigo que diz aceitar compressão mas se perde com ela.
+  BrowserMatch ^Mozilla/4 gzip-only-text/html
+  BrowserMatch \bMSIE\s7 !no-gzip !gzip-only-text/html
+  Header append Vary Accept-Encoding
+</IfModule>
+
+# ─── Cache dos arquivos do site ──────────────────────────────────────────────
+# Estava tudo com 30 minutos de validade. Passados 30 minutos, o visitante que
+# voltava baixava o site inteiro de novo — mesmo sem nada ter mudado.
+#
+# O truque é que o "npm run build" carimba o conteúdo no nome do arquivo
+# (index-D7RbOsLD.js). Publicar uma versão nova gera um nome novo, então o
+# arquivo antigo NUNCA precisa ser rebaixado: pode ficar guardado para sempre
+# no navegador. É o que "immutable" diz — nem perguntar de novo.
+#
+# O index.html é a exceção e tem que ficar de fora: é ele que aponta para os
+# nomes novos. Se ele também ficasse guardado, o visitante continuaria abrindo
+# a versão velha do site depois de você publicar.
+<IfModule mod_headers.c>
+  # Arquivos com nome carimbado pelo build: guardar por 1 ano, sem revalidar.
+  <FilesMatch "\.(js|css|woff2?|ttf|otf|eot)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # Fotos e ícones: guardar por 30 dias, mas com revalidação.
+  <FilesMatch "\.(png|jpe?g|gif|webp|avif|svg|ico|mp4|webm)$">
+    Header set Cache-Control "public, max-age=2592000"
+  </FilesMatch>
+
+  # A página em si e os arquivos que o Google/celular releem: sempre conferir
+  # se mudou. São pequenos, e é o que faz uma publicação nova chegar na hora.
+  <FilesMatch "^(index\.html|sw\.js|manifest\.webmanifest|robots\.txt|sitemap\.xml)$">
+    Header set Cache-Control "public, max-age=0, must-revalidate"
+  </FilesMatch>
 </IfModule>
 
 <IfModule mod_headers.c>

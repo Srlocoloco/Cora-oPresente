@@ -17,6 +17,11 @@ try {
     json_out(["erro" => "MySQL indisponível."], 503);
 }
 
+// Porta de entrada do anti-abuso: barra quem está de castigo por excesso de
+// tentativas e aplica o teto geral de requisições por IP (ver proteger_rota em
+// lib.php). Fica antes de qualquer leitura ou gravação.
+proteger_rota($pdo);
+
 $acao = $_GET["acao"] ?? "";
 $metodo = $_SERVER["REQUEST_METHOD"];
 
@@ -79,7 +84,7 @@ if ($acao === "pendentes") {
     if (!$inscricao) json_out(["avisos" => []]);
 
     $stmt = $pdo->prepare(
-        "SELECT id, titulo, corpo, pedidoId FROM notificacoes_cliente
+        "SELECT id, titulo, corpo, pedidoId, foto, link FROM notificacoes_cliente
          WHERE LOWER(email) = ? AND entregue = 0 ORDER BY id ASC LIMIT 5"
     );
     $stmt->execute([strtolower($inscricao["email"])]);
@@ -91,10 +96,14 @@ if ($acao === "pendentes") {
             ->execute(array_column($avisos, "id"));
     }
 
+    // Foto e link são públicos por natureza (a foto do produto e o endereço
+    // dele na loja) — nada de pessoal sai daqui, como antes.
     json_out(["avisos" => array_map(fn($a) => [
         "titulo" => $a["titulo"],
         "corpo" => $a["corpo"],
         "pedidoId" => $a["pedidoId"],
+        "foto" => $a["foto"],
+        "link" => $a["link"],
     ], $avisos)]);
 }
 

@@ -4,17 +4,40 @@ import { useState } from "react";
 import { X, Truck } from "lucide-react";
 import type { Produto, Pedido, Cliente } from "../types";
 import { categoriaExibida, formatarMoeda } from "../utils";
+import { ProdutoDoPedido } from "./ProdutoDoPedido";
 
 // Formato do código de postagem dos Correios: 2 letras + 9 dígitos + 2 letras
 const FORMATO_RASTREIO = /^[A-Z]{2}[0-9]{9}[A-Z]{2}$/;
 
 export function ModalDetalhesPedido({
   pedido,
+  itensDaCompra,
+  totalDaCompra,
+  produto,
+  produtos = [],
+  aoVerProdutoNaLoja,
+  entregadores = [],
+  aoDefinirEntregador,
   aoFechar,
   aoAtualizarStatus,
   aoSalvarCodigoRastreio,
 }: {
   pedido: Pedido;
+  // Todos os produtos que saíram no mesmo carrinho. Uma compra de 3 itens vira
+  // 3 linhas no banco (uma por produto), e é aqui que elas voltam a aparecer
+  // como a caixa única que o cliente vai receber.
+  itensDaCompra?: Pedido[];
+  totalDaCompra?: number;
+  // Catálogo, para achar a foto de cada item da compra
+  produtos?: Produto[];
+  // Produto comprado, quando ainda existe no catálogo: rende a foto e o
+  // atalho para a página dele na loja
+  produto?: Produto | null;
+  aoVerProdutoNaLoja?: (produto: Produto) => void;
+  // Contas com cargo de entregador — é entre elas que o Admin escolhe quem
+  // leva este pedido
+  entregadores?: Cliente[];
+  aoDefinirEntregador?: (email: string | null) => void;
   aoFechar: () => void;
   aoAtualizarStatus: (status: string) => void;
   aoSalvarCodigoRastreio?: (codigo: string) => void;
@@ -25,10 +48,13 @@ export function ModalDetalhesPedido({
   // Vazio é permitido: é como se apaga um código digitado errado
   const rastreioValido = rastreioNormalizado === "" || FORMATO_RASTREIO.test(rastreioNormalizado);
   const listaStatus = ["Processando", "Em trânsito", "Entregue", "Cancelado"];
+  // Os itens desta compra. Sem a lista (pedido antigo, sem compraId), é só o
+  // próprio pedido — que era o comportamento de sempre.
+  const itens = itensDaCompra && itensDaCompra.length > 0 ? itensDaCompra : [pedido];
+  const total = totalDaCompra ?? pedido.total;
   const campos = [
     { label: "Cliente", value: pedido.customer },
     { label: "E-mail", value: pedido.email },
-    { label: "Produto", value: pedido.items },
     { label: "Categoria", value: categoriaExibida(pedido.category) },
     { label: "Data da compra", value: pedido.date },
     // Endereço de entrega informado pelo cliente no carrinho
@@ -48,6 +74,9 @@ export function ModalDetalhesPedido({
           <div>
             <h3 className="font-black text-gray-900">Detalhes da Compra</h3>
             <span className="font-mono text-[12px] text-[#C8102E] font-bold">{pedido.id}</span>
+            {itens.length > 1 && (
+              <span className="ml-2 text-[11px] font-bold text-gray-400">· {itens.length} itens na mesma entrega</span>
+            )}
           </div>
           <button onClick={aoFechar} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 transition-colors">
             <X size={17} />
@@ -55,6 +84,31 @@ export function ModalDetalhesPedido({
         </div>
 
         <div className="p-6 space-y-4">
+          {/* Os produtos da compra: foto + atalho para a página na loja.
+              É a lista de separação — tudo isto vai na mesma caixa. */}
+          <div className="border border-gray-100 rounded-xl px-4 py-3">
+            <p className="text-[12px] text-gray-400 font-semibold mb-1.5">
+              {itens.length > 1 ? `Produtos (${itens.length})` : "Produto"}
+            </p>
+            <div className="space-y-2.5">
+              {itens.map((item) => (
+                <div key={item.id} className="flex items-start justify-between gap-3">
+                  <ProdutoDoPedido
+                    produto={produtos.find((p) => p.id === item.produtoId) ?? (item.id === pedido.id ? produto : undefined)}
+                    descricao={item.items}
+                    aoAbrir={aoVerProdutoNaLoja}
+                    className="text-[13px] text-gray-800 font-semibold flex-1 min-w-0"
+                  />
+                  {itens.length > 1 && (
+                    <span className="text-[12px] font-black text-gray-500 tabular-nums flex-shrink-0">
+                      {formatarMoeda(item.total)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
             {campos.map((c) => (
               <div key={c.label} className="flex items-start justify-between gap-4 px-4 py-3">
@@ -66,8 +120,42 @@ export function ModalDetalhesPedido({
 
           <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between">
             <span className="text-[13px] font-bold text-gray-600">Total da compra</span>
-            <span className="text-xl font-black text-gray-900">{formatarMoeda(pedido.total)}</span>
+            <span className="text-xl font-black text-gray-900">{formatarMoeda(total)}</span>
           </div>
+
+          {/* Entregador responsável: é o que faz o pedido aparecer no painel
+              "Minhas Entregas" daquela pessoa (e some do de qualquer outra) */}
+          {aoDefinirEntregador && (
+            <div>
+              <p className="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">
+                Entregador responsável
+              </p>
+              {entregadores.length === 0 ? (
+                <p className="text-[12px] text-gray-400 bg-gray-50 rounded-xl px-3.5 py-3">
+                  Nenhum entregador cadastrado ainda — dê o cargo a alguém na página Entregadores.
+                </p>
+              ) : (
+                <>
+                  <select
+                    value={pedido.entregador ?? ""}
+                    onChange={(e) => aoDefinirEntregador(e.target.value || null)}
+                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#C8102E] transition-colors bg-white"
+                  >
+                    <option value="">Sem entregador designado</option>
+                    {entregadores.map((e) => (
+                      <option key={e.email} value={e.email.toLowerCase()}>
+                        {e.name} · {e.email}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-gray-400 mt-2">
+                    Ele passa a ver este pedido no painel dele, com endereço e mapa, e pode marcar
+                    a saída e a entrega.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">Status do pedido</p>

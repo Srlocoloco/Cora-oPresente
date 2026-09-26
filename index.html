@@ -2,27 +2,183 @@
   <!DOCTYPE html>
   <html lang="pt-BR">
     <head>
-      
+
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+      <!-- ─── Como a loja aparece no Google ────────────────────────────────────
+           title       → o texto azul clicável no resultado (e o nome da aba)
+           description → o parágrafo cinza embaixo dele
+           Limites práticos: title até ~60 caracteres e description até ~155.
+           Passando disso o Google corta com "…" no meio da frase. A description
+           não muda a posição no ranking, mas decide se a pessoa clica — por isso
+           ela diz o que a loja vende e para onde entrega. Não promete frete
+           grátis: a regra depende do valor do carrinho e do CEP, e o Google mostra
+           esse texto por semanas — bastaria o Admin mudar o valor mínimo para a
+           promessa virar mentira na busca. -->
+      <title>Coração Presente | Caixas e Presentes Online no Paraná</title>
+      <meta name="description" content="Caixas, presentes, perfumaria, eletrônicos, brinquedos e acessórios com curadoria feita a dedo. Monte a sua caixa do seu jeito e receba em todo o Paraná." />
+
+      <!-- Libera a loja para ser indexada. ATENÇÃO: aqui estava
+           "noindex, nofollow", que proíbe o Google de mostrar o site — era o
+           motivo de a loja não aparecer em busca nenhuma. Só volte a colocar
+           noindex se quiser esconder o site de propósito (site em teste).
+             max-image-preview:large → deixa a foto grande no Google Imagens
+             max-snippet:-1          → não limita o tamanho do resumo -->
+      <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+
+      <!-- Endereço oficial da página. Evita que o Google trate
+           coracaopresente.com.br, www.coracaopresente.com.br e links com
+           ?origem=app como páginas diferentes, dividindo a relevância. -->
+      <link rel="canonical" href="https://coracaopresente.com.br/" />
+
+      <!-- Prova para o Google Search Console de que este site é nosso — é o que
+           libera ver os relatórios de busca e enviar o sitemap. Existe em dois
+           formatos, de propósito: esta tag e o arquivo
+           public/googlee5a67093bd5fc456.html. O Google revalida a propriedade
+           de vez em quando; com os dois no ar, um deploy que leve um deles
+           embora não derruba a verificação. NÃO REMOVA nenhum dos dois. -->
+      <meta name="google-site-verification" content="oLFcfwW6R7hVIFSERD59FZq-tZvzxlft3t9W28VaaLg" />
+
+      <!-- ─── Prévia ao compartilhar (Open Graph) ──────────────────────────────
+           É o cartão com imagem, título e texto que aparece quando alguém cola
+           o link no WhatsApp, Instagram, Facebook ou Telegram. Sem estas tags o
+           link vira só texto puro — o que, numa loja divulgada pela rede de
+           vendedores, é o que mais custa venda. A imagem é public/og-image.png,
+           1200x630 (proporção que o WhatsApp e o Facebook usam sem cortar). -->
+      <meta property="og:type" content="website" />
+      <meta property="og:site_name" content="Coração Presente" />
+      <meta property="og:locale" content="pt_BR" />
+      <meta property="og:url" content="https://coracaopresente.com.br/" />
+      <meta property="og:title" content="Coração Presente | Caixas e Presentes Online no Paraná" />
+      <meta property="og:description" content="Caixas, presentes, perfumaria, eletrônicos, brinquedos e acessórios com curadoria feita a dedo. Monte a sua caixa do seu jeito e receba em todo o Paraná." />
+      <meta property="og:image" content="https://coracaopresente.com.br/og-image.png" />
+      <meta property="og:image:secure_url" content="https://coracaopresente.com.br/og-image.png" />
+      <meta property="og:image:type" content="image/png" />
+      <meta property="og:image:width" content="1200" />
+      <meta property="og:image:height" content="630" />
+      <meta property="og:image:alt" content="Logo da Coração Presente: caixas e presentes com entrega em Altônia/PR" />
+
+      <!-- Mesma prévia no X/Twitter, que não lê Open Graph sozinho -->
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="Coração Presente | Caixas e Presentes Online no Paraná" />
+      <meta name="twitter:description" content="Caixas, presentes, perfumaria, eletrônicos, brinquedos e acessórios com curadoria feita a dedo. Monte a sua caixa do seu jeito e receba em todo o Paraná." />
+      <meta name="twitter:image" content="https://coracaopresente.com.br/og-image.png" />
+      <meta name="twitter:image:alt" content="Logo da Coração Presente: caixas e presentes com entrega em Altônia/PR" />
+
+      <!-- Loja física em Altônia/PR: ajuda a aparecer em busca da região
+           ("presentes em Altônia") e no Google Maps. -->
+      <meta name="author" content="Coração Presente LTDA" />
+      <meta name="geo.region" content="BR-PR" />
+      <meta name="geo.placename" content="Altônia, Paraná" />
+      <meta name="ICBM" content="-23.8781, -53.8931" />
+
       <link rel="icon" type="image/png" href="/favicon.png" />
       <!-- Instalável no celular (PWA): ícone na tela inicial + notificações -->
       <link rel="manifest" href="/manifest.webmanifest" />
       <meta name="theme-color" content="#C8102E" />
       <link rel="apple-touch-icon" href="/logo.png" />
+      <meta name="mobile-web-app-capable" content="yes" />
       <meta name="apple-mobile-web-app-capable" content="yes" />
       <meta name="apple-mobile-web-app-title" content="Coração Presente" />
-      <title>Coração Presente</title>
-      <meta name="description" content="Offers an e-commerce platform styled like Magazine Luiza Brazil with an admin system to manage products, orders, and customer interactions efficiently." />
-      <meta name="robots" content="noindex, nofollow" />
+      <meta name="application-name" content="Coração Presente" />
+      <meta name="format-detection" content="telephone=no" />
+
+      <!-- ─── Ficha da loja para o Google (dados estruturados) ─────────────────
+           Isto não é JavaScript que roda: é uma ficha em JSON que o Google lê
+           para saber que o site é uma loja, com que nome, telefone, e-mail,
+           cidade e horário. É o que alimenta o painel da empresa ao lado do
+           resultado de busca. Ao mudar telefone ou e-mail no site, mude aqui
+           também — informação divergente o Google simplesmente ignora.
+           Confira depois em: https://search.google.com/test/rich-results -->
+      <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "OnlineStore",
+            "@id": "https://coracaopresente.com.br/#loja",
+            "name": "Coração Presente",
+            "alternateName": [
+              "Coracao Presente",
+              "Loja Coração Presente",
+              "Coração Presente Altônia"
+            ],
+            "legalName": "Coração Presente LTDA",
+            "taxID": "68.076.424/0001-73",
+            "url": "https://coracaopresente.com.br/",
+            "logo": "https://coracaopresente.com.br/logo.png",
+            "image": "https://coracaopresente.com.br/og-image.png",
+            "description": "Loja online de caixas, presentes, perfumaria, eletrônicos, brinquedos e acessórios, com curadoria feita a dedo e entrega em todo o Paraná.",
+            "email": "contato@coracaopresente.com.br",
+            "telephone": "+55-44-99921-8154",
+            "priceRange": "R$",
+            "currenciesAccepted": "BRL",
+            "paymentAccepted": "PIX, Cartão de Crédito",
+            "knowsLanguage": "pt-BR",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "Altônia",
+              "postalCode": "87551-068",
+              "addressRegion": "PR",
+              "addressCountry": "BR"
+            },
+            "areaServed": {
+              "@type": "State",
+              "name": "Paraná"
+            },
+            "contactPoint": {
+              "@type": "ContactPoint",
+              "contactType": "atendimento ao cliente",
+              "telephone": "+55-44-99921-8154",
+              "email": "contato@coracaopresente.com.br",
+              "availableLanguage": "pt-BR"
+            },
+            "openingHoursSpecification": {
+              "@type": "OpeningHoursSpecification",
+              "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+              "opens": "09:00",
+              "closes": "18:00"
+            }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://coracaopresente.com.br/#site",
+            "url": "https://coracaopresente.com.br/",
+            "name": "Coração Presente",
+            "alternateName": "Coracao Presente",
+            "inLanguage": "pt-BR",
+            "publisher": { "@id": "https://coracaopresente.com.br/#loja" }
+          }
+        ]
+      }
+      </script>
+
       <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
     </head>
 
     <body>
-      
+
       <div id="root"></div>
+
+      <!-- Texto de reserva para quem chega sem JavaScript: buscadores menores e
+           robôs de link (WhatsApp, Telegram) que não executam React e, sem isto,
+           veriam uma página em branco. Mantenha em sintonia com a description. -->
+      <noscript>
+        <h1>Coração Presente — caixas e presentes online</h1>
+        <p>
+          Loja online de caixas, presentes, perfumaria, eletrônicos, brinquedos, academia,
+          acessórios e casa &amp; decoração. Curadoria feita a dedo e entrega em todo
+          o Paraná, de Altônia/PR.
+        </p>
+        <p>
+          Fale com a gente pelo WhatsApp (44) 99921-8154 ou por
+          <a href="mailto:contato@coracaopresente.com.br">contato@coracaopresente.com.br</a>.
+        </p>
+        <p>Para navegar pela loja e comprar, ative o JavaScript no seu navegador.</p>
+      </noscript>
+
       <script type="module" src="/src/main.tsx"></script>
-      
+
     </body>
   </html>
-  

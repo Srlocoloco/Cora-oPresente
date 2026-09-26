@@ -1,6 +1,6 @@
 // Tela TelaPix
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Plus, RotateCcw, ChevronLeft, Zap, Lock } from "lucide-react";
 import { VALIDADE_PIX_MS, URL_BACKEND_PIX } from "../constantes";
 import { formatarMoeda } from "../utils";
@@ -56,16 +56,33 @@ export function TelaPix({
     return () => { cancelado = true; };
   }, [txid, total]);
 
-  // Com a cobrança oficial: verifica a cada 5s se o PIX caiu e confirma sozinho
+  // Com a cobrança oficial: verifica a cada 5s se o PIX caiu e confirma sozinho.
+  //
+  // Duas travas aqui, e as duas evitam cobrar/entregar em dobro:
+  //  • "consultando" impede uma consulta nova antes de a anterior responder —
+  //    numa rede lenta, as respostas se empilhavam e voltavam todas juntas;
+  //  • "confirmado" garante que aoConfirmar() só aconteça UMA vez, mesmo que
+  //    duas respostas "CONCLUIDA" cheguem no mesmo instante.
+  const consultando = useRef(false);
+  const confirmado = useRef(false);
   useEffect(() => {
     if (!txidBackend) return;
     const t = setInterval(() => {
+      if (consultando.current || confirmado.current) return;
+      consultando.current = true;
       fetch(`${URL_BACKEND_PIX}/api/pix/cobranca/${txidBackend}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((dados) => {
-          if (dados?.status === "CONCLUIDA") aoConfirmar();
+          if (dados?.status === "CONCLUIDA" && !confirmado.current) {
+            confirmado.current = true;
+            clearInterval(t);
+            aoConfirmar();
+          }
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          consultando.current = false;
+        });
     }, 5000);
     return () => clearInterval(t);
   }, [txidBackend]);

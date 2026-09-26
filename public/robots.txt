@@ -1,0 +1,24 @@
+# robots.txt da Coração Presente — https://coracaopresente.com.br
+#
+# É o primeiro arquivo que o Google pede ao chegar no site. Sem ele o robô
+# assume que pode tudo; com ele a gente diz o que vale a pena rastrear e,
+# principalmente, indica onde está o sitemap.
+#
+# O "npm run build" copia esta pasta (public/) para dentro de dist/, que é o
+# que vai publicado — não precisa subir este arquivo à mão.
+
+User-agent: *
+Allow: /
+
+# Endereços que não são página de loja e não devem entrar na busca:
+# a API (dados do banco) e os links com token pessoal enviados por e-mail.
+Disallow: /api/
+Disallow: /*?verificar-email=
+Disallow: /*?redefinir-senha=
+Disallow: /*?pedido=
+
+# ?origem=app é o atalho do app instalado no celular (PWA): abre a mesma home,
+# então fica fora do índice para não virar página duplicada.
+Disallow: /*?origem=app
+
+Sitemap: https://coracaopresente.com.br/sitemap.xml

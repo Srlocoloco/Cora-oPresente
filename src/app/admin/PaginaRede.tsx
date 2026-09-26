@@ -107,7 +107,7 @@ export function PaginaRede({
       email: meuEmail,
       papel: "masterplus",
       vendas: vendasProprias,
-      // Comissão própria (10% fixo) sobre as vendas com o próprio código
+      // Comissão própria (7% fixo) sobre as vendas com o próprio código
       comissaoParaVoce: vendasProprias * COMISSAO_MASTERPLUS_PROPRIA,
       filhos: [...equipePropria, ...mastersPromovidos],
     };

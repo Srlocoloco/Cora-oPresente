@@ -2,6 +2,7 @@
 
 import { Award } from "lucide-react";
 import type { Cargo, Cliente } from "../types";
+import { COMISSAO_MASTER_PROPRIA } from "../constantes";
 
 // ─── Página Masters (somente Admin, somente leitura) ──────────────────────────
 
@@ -40,7 +41,8 @@ export function PaginaMastersAdmin({
 
       <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-[12.5px] text-purple-700 leading-relaxed">
         Todo Master é promovido pelo próprio MasterPlus, a partir de um vendedor de destaque da
-        equipe dele (página "Promover a Master"). O Master ganha 10% sobre as vendas próprias e{" "}
+        equipe dele (página "Promover a Master"). O Master ganha{" "}
+        {(COMISSAO_MASTER_PROPRIA * 100).toFixed(0)}% sobre as vendas próprias e{" "}
         {comissaoEquipePct}% sobre as vendas da sua equipe — se o MasterPlus que o promoveu perder
         o cargo, o Master perde o cargo junto.
       </div>

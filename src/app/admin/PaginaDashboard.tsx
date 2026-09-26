@@ -4,7 +4,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { ShoppingBag, Users, TrendingUp, Tag } from "lucide-react";
 import type { Produto, Pedido, Cliente } from "../types";
 import { NOMES_MESES, CORES_CATEGORIA, EMAIL_ADMIN } from "../constantes";
-import { categoriaExibida, formatarMoeda } from "../utils";
+import { categoriaExibida, formatarMoeda, pedidoNoMes } from "../utils";
 import { SeloStatus } from "../components/SeloStatus";
 
 // ─── Dashboard Page ───────────────────────────────────────────────────────────
@@ -19,7 +19,9 @@ export function PaginaDashboard({
   pedidos: Pedido[];
   clientes: Cliente[];
   titulo?: string;
-  aoVerTodosPedidos: () => void;
+  // Sem esta função o atalho "Ver todos" não aparece — é o caso do painel
+  // MasterPlus, que não tem a página de Pedidos para onde ir.
+  aoVerTodosPedidos?: () => void;
   // O ranking "Quem mais vende" mistura Masters, MasterPlus e Vendedores de
   // toda a loja — faz sentido para quem vende (ver como está se saindo vs.
   // os colegas), mas não para o Admin, que não participa desse ranking e só
@@ -29,7 +31,10 @@ export function PaginaDashboard({
   const agora = new Date();
   const mesAtual = NOMES_MESES[agora.getMonth()];
   const pedidosValidos = pedidos.filter((o) => o.status !== "Cancelado");
-  const pedidosDoMes = pedidosValidos.filter((o) => o.month === mesAtual);
+  const anoAtual = agora.getFullYear();
+  // Mês E ano — ver pedidoNoMes em utils.ts. Comparar só "Set" somaria
+  // setembro de todos os anos no faturamento deste mês.
+  const pedidosDoMes = pedidosValidos.filter((o) => pedidoNoMes(o, agora.getMonth(), anoAtual, mesAtual));
   const vendasDoMes = pedidosDoMes.reduce((acum, o) => acum + o.total, 0);
   const ticketMedio = pedidosDoMes.length > 0 ? vendasDoMes / pedidosDoMes.length : 0;
 
@@ -44,10 +49,14 @@ export function PaginaDashboard({
     (c) => c.criadoEm && new Date(c.criadoEm + "T12:00:00") >= inicioSemana
   ).length;
 
-  // Gráfico acompanha as vendas reais, mês a mês
-  const dadosVendas = NOMES_MESES.slice(0, agora.getMonth() + 1).map((m) => ({
+  // Gráfico acompanha as vendas reais, mês a mês — do ano corrente só. O
+  // título da caixa já diz o ano ("Desempenho da Empresa — 2026"), então
+  // somar aí dentro as vendas de setembro do ano passado seria mentira.
+  const dadosVendas = NOMES_MESES.slice(0, agora.getMonth() + 1).map((m, indiceMes) => ({
     month: m,
-    vendas: pedidosValidos.filter((o) => o.month === m).reduce((acum, o) => acum + o.total, 0),
+    vendas: pedidosValidos
+      .filter((o) => pedidoNoMes(o, indiceMes, anoAtual, m))
+      .reduce((acum, o) => acum + o.total, 0),
   }));
 
   // Participação por categoria a partir das vendas reais (pedidos antigos com
@@ -249,12 +258,14 @@ export function PaginaDashboard({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-black text-gray-800">Pedidos Recentes</h3>
-          <button
-            onClick={aoVerTodosPedidos}
-            className="text-[12px] text-[#C8102E] font-bold hover:underline"
-          >
-            Ver todos →
-          </button>
+          {aoVerTodosPedidos && (
+            <button
+              onClick={aoVerTodosPedidos}
+              className="text-[12px] text-[#C8102E] font-bold hover:underline"
+            >
+              Ver todos →
+            </button>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">

@@ -80,11 +80,21 @@ function montar_linha_item_email(?int $produtoId, string $itemTexto, float $tota
 // Casca comum dos e-mails transacionais: cabeçalho vermelho + cartão branco.
 // $detalheHtml entra entre a mensagem e o botão — é onde os itens (quando
 // houver) aparecem.
-function montar_email_html(string $nome, string $titulo, string $corpo, ?string $detalheHtml, string $pedidoId): string {
+function montar_email_html(string $nome, string $titulo, string $corpo, ?string $detalheHtml, string $pedidoId, ?string $linkAvaliar = null): string {
     $link = URL_SITE . "/?pedido=" . urlencode($pedidoId);
     $primeiroNome = trim(explode(" ", trim($nome))[0] ?? "");
     $ola = $primeiroNome !== "" ? "Olá, " . htmlspecialchars($primeiroNome) . "!" : "Olá!";
     $blocoDetalhe = $detalheHtml ? "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-top:14px\">$detalheHtml</table>" : "";
+
+    // Estilos dos botões escritos à mão (e-mail não aceita folha de estilo).
+    // Com link de avaliação, ELE vira o botão principal: no e-mail de entrega
+    // "acompanhar o pedido" já não tem muito o que mostrar.
+    $estiloCheio = "background:#C8102E;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold;display:inline-block";
+    $estiloVazado = "background:#fff;color:#C8102E;text-decoration:none;padding:10px 18px;border:2px solid #C8102E;border-radius:10px;font-weight:bold;display:inline-block";
+    $blocoBotoes = $linkAvaliar
+        ? "<a href=\"$linkAvaliar\" style=\"$estiloCheio\">Avaliar minha compra</a>
+           <a href=\"$link\" style=\"$estiloVazado;margin-left:8px\">Ver o pedido</a>"
+        : "<a href=\"$link\" style=\"$estiloCheio\">Acompanhar meu pedido</a>";
 
     return "<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto\">
        <div style=\"background:#C8102E;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0\">
@@ -95,18 +105,14 @@ function montar_email_html(string $nome, string $titulo, string $corpo, ?string 
          <h2 style=\"font-size:17px;color:#111;margin:14px 0 6px\">" . htmlspecialchars($titulo) . "</h2>
          <p style=\"color:#444;line-height:1.5\">" . htmlspecialchars($corpo) . "</p>
          $blocoDetalhe
-         <p style=\"margin:22px 0\">
-           <a href=\"$link\" style=\"background:#C8102E;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold;display:inline-block\">
-             Acompanhar meu pedido
-           </a>
-         </p>
+         <p style=\"margin:22px 0\">$blocoBotoes</p>
          <p style=\"color:#999;font-size:12px\">Você recebeu este e-mail porque fez uma compra na Coração Presente.</p>
        </div>
      </div>";
 }
 
-function enviar_email_status(string $email, string $nome, string $titulo, string $corpo, string $pedidoId, ?string $detalheHtml = null): void {
-    enviar_email($email, $titulo . " — Coração Presente", montar_email_html($nome, $titulo, $corpo, $detalheHtml, $pedidoId));
+function enviar_email_status(string $email, string $nome, string $titulo, string $corpo, string $pedidoId, ?string $detalheHtml = null, ?string $linkAvaliar = null): void {
+    enviar_email($email, $titulo . " — Coração Presente", montar_email_html($nome, $titulo, $corpo, $detalheHtml, $pedidoId, $linkAvaliar));
 }
 
 // ─── Confirmação de compra (dispara no checkout, não numa mudança de status) ──
@@ -235,12 +241,32 @@ function enviar_push(string $endpoint): bool {
     return true;
 }
 
+// Cutuca TODOS os aparelhos autorizados desta conta. Inscrição morta (o cliente
+// desinstalou o site ou limpou os dados do navegador) é apagada na hora.
+function cutucar_push(PDO $pdo, string $email): void {
+    if (!push_configurado()) return;
+    $inscricoes = $pdo->prepare("SELECT id, endpoint FROM push_inscricoes WHERE LOWER(email) = ?");
+    $inscricoes->execute([strtolower($email)]);
+    foreach ($inscricoes->fetchAll() as $inscricao) {
+        if (!enviar_push($inscricao["endpoint"])) {
+            $pdo->prepare("DELETE FROM push_inscricoes WHERE id = ?")->execute([$inscricao["id"]]);
+        }
+    }
+}
+
 // ─── O aviso completo: grava, manda e-mail e cutuca o celular ────────────────
 
 function avisar_cliente_status(PDO $pdo, string $pedidoId, string $status): void {
     try {
+        // A foto do produto entra junto (o MD5/CHAR_LENGTH montam o endereço
+        // público sem trazer o base64, igual ao que o /api/dados faz)
         $stmt = $pdo->prepare(
-            "SELECT customer, email, codigoRastreio, items, total, produtoId FROM pedidos WHERE id = ?"
+            "SELECT ped.customer, ped.email, ped.codigoRastreio, ped.items, ped.total, ped.produtoId,
+                    CHAR_LENGTH(COALESCE(pro.image, '')) AS capaTam,
+                    LEFT(MD5(COALESCE(pro.image, '')), 8) AS capaVersao
+               FROM pedidos ped
+          LEFT JOIN produtos pro ON pro.id = ped.produtoId
+              WHERE ped.id = ?"
         );
         $stmt->execute([$pedidoId]);
         $pedido = $stmt->fetch();
@@ -249,11 +275,28 @@ function avisar_cliente_status(PDO $pdo, string $pedidoId, string $status): void
         [$titulo, $corpo] = texto_aviso_status($status, $pedidoId, $pedido["codigoRastreio"] ?? null);
         $email = $pedido["email"];
 
+        // Pedido entregue: quem comprou já pode avaliar (ver avaliacoes.php,
+        // que aceita pedido "Pago" ou "Entregue"), então o aviso leva o caminho
+        // pronto — foto para reconhecer o produto e link que abre a loja já na
+        // área de avaliação ("&avaliar=1", tratado no App.tsx). Sem isso o
+        // "conte pra gente o que achou" do texto não tinha onde clicar.
+        // Em pedido antigo, sem produtoId, tudo continua como era.
+        $foto = null;
+        $linkAvaliar = null;
+        if ($status === "Entregue" && $pedido["produtoId"] !== null) {
+            $produtoId = (int) $pedido["produtoId"];
+            if ((int) ($pedido["capaTam"] ?? 0) > 0) {
+                $foto = url_foto("produto", $produtoId, ["v" => $pedido["capaVersao"]]);
+            }
+            $linkAvaliar = rtrim(URL_SITE, "/") . "/?produto=$produtoId&avaliar=1";
+        }
+
         // Fica gravado mesmo sem push: é o que o service worker busca depois e
         // também o histórico que o cliente vê no sininho da loja.
         $pdo->prepare(
-            "INSERT INTO notificacoes_cliente (email, titulo, corpo, pedidoId, criadoEm) VALUES (?, ?, ?, ?, NOW())"
-        )->execute([$email, $titulo, $corpo, $pedidoId]);
+            "INSERT INTO notificacoes_cliente (email, titulo, corpo, pedidoId, foto, link, criadoEm)
+             VALUES (?, ?, ?, ?, ?, ?, NOW())"
+        )->execute([$email, $titulo, $corpo, $pedidoId, $foto, $linkAvaliar]);
 
         // Detalhamento do item (foto + descrição + valor) — não mostra num
         // pedido cancelado, onde "o que foi comprado" já perdeu o sentido.
@@ -265,19 +308,99 @@ function avisar_cliente_status(PDO $pdo, string $pedidoId, string $status): void
               )
             : null;
 
-        enviar_email_status($email, (string) $pedido["customer"], $titulo, $corpo, $pedidoId, $detalheHtml);
+        enviar_email_status($email, (string) $pedido["customer"], $titulo, $corpo, $pedidoId, $detalheHtml, $linkAvaliar);
 
-        if (!push_configurado()) return;
-        $inscricoes = $pdo->prepare("SELECT id, endpoint FROM push_inscricoes WHERE LOWER(email) = ?");
-        $inscricoes->execute([strtolower($email)]);
-        foreach ($inscricoes->fetchAll() as $inscricao) {
-            if (!enviar_push($inscricao["endpoint"])) {
-                $pdo->prepare("DELETE FROM push_inscricoes WHERE id = ?")->execute([$inscricao["id"]]);
-            }
-        }
+        cutucar_push($pdo, $email);
     } catch (Throwable $e) {
         // Avisar o cliente NUNCA pode derrubar a ação do Admin: se o e-mail ou
         // o push falharem, o status já foi salvo e é isso que importa.
         error_log("Aviso ao cliente falhou ($pedidoId): " . $e->getMessage());
+    }
+}
+
+// ─── 3. Recomendação depois da compra ────────────────────────────────────────
+//
+// O único aviso que a loja manda por conta própria (os outros são o andamento
+// do pedido). Sai UMA vez, logo depois da compra: enquanto a pessoa ainda está
+// no clima do presente, é quando a sugestão ajuda em vez de incomodar.
+//
+// A escolha segue a mesma ideia do site (ver recomendacoes.ts, no front): outro
+// produto da mesma prateleira do que foi comprado, em estoque, preferindo quem
+// está com desconto de verdade e bem avaliado. A foto vai junto — é ela que faz
+// a pessoa reconhecer o produto sem precisar ler.
+
+// Categoria dos recipientes do "Monte sua Caixa" (e o nome antigo dela). Não
+// entra em recomendação: caixa vazia não é presente, é a base de um.
+const CATEGORIAS_RECIPIENTE = ["Caixas", "Cestas"];
+
+function produto_para_recomendar(PDO $pdo, array $idsComprados, array $categorias): ?array {
+    $buscar = function (bool $mesmaCategoria) use ($pdo, $idsComprados, $categorias): ?array {
+        $marcasRecipiente = implode(",", array_fill(0, count(CATEGORIAS_RECIPIENTE), "?"));
+        $condicoes = ["stock > 0", "category NOT IN ($marcasRecipiente)"];
+        $valores = CATEGORIAS_RECIPIENTE;
+
+        if ($idsComprados) {
+            $condicoes[] = "id NOT IN (" . implode(",", array_fill(0, count($idsComprados), "?")) . ")";
+            $valores = array_merge($valores, $idsComprados);
+        }
+        if ($mesmaCategoria) {
+            if (!$categorias) return null;
+            $condicoes[] = "category IN (" . implode(",", array_fill(0, count($categorias), "?")) . ")";
+            $valores = array_merge($valores, $categorias);
+        }
+
+        // A foto NÃO vem na consulta (é base64, pesa megabytes) — só o tamanho
+        // e o resumo dela, o bastante para montar o endereço público, igual ao
+        // que o /api/dados faz.
+        $stmt = $pdo->prepare(
+            "SELECT id, name, price, originalPrice, freeShipping,
+                    CHAR_LENGTH(COALESCE(image, '')) AS capaTam,
+                    LEFT(MD5(COALESCE(image, '')), 8) AS capaVersao
+               FROM produtos
+              WHERE " . implode(" AND ", $condicoes) . "
+           ORDER BY (originalPrice IS NOT NULL AND originalPrice > price) DESC,
+                    rating DESC, reviews DESC, id DESC
+              LIMIT 1"
+        );
+        $stmt->execute($valores);
+        return $stmt->fetch() ?: null;
+    };
+
+    // Primeiro na mesma prateleira; se ela estiver vazia, a melhor oferta da loja
+    return $buscar(true) ?? $buscar(false);
+}
+
+function avisar_cliente_recomendacao(PDO $pdo, string $email, array $idsComprados, array $categorias): void {
+    try {
+        $produto = produto_para_recomendar($pdo, $idsComprados, $categorias);
+        if (!$produto) return;
+
+        $preco = (float) $produto["price"];
+        $original = $produto["originalPrice"] !== null ? (float) $produto["originalPrice"] : null;
+        $desconto = ($original !== null && $original > $preco)
+            ? (int) round((1 - $preco / $original) * 100)
+            : 0;
+
+        $titulo = $desconto >= 5
+            ? "$desconto% de desconto esperando por você"
+            : "Combina com o que você comprou";
+        $corpo = $produto["name"] . " — " . formatar_moeda_brl($preco);
+        if ((int) $produto["freeShipping"] === 1) $corpo .= " · frete grátis";
+
+        $foto = (int) $produto["capaTam"] > 0
+            ? url_foto("produto", (int) $produto["id"], ["v" => $produto["capaVersao"]])
+            : null;
+        // O site abre direto na página do produto (ver ?produto= em App.tsx)
+        $link = rtrim(URL_SITE, "/") . "/?produto=" . (int) $produto["id"];
+
+        $pdo->prepare(
+            "INSERT INTO notificacoes_cliente (email, titulo, corpo, pedidoId, foto, link, criadoEm)
+             VALUES (?, ?, ?, NULL, ?, ?, NOW())"
+        )->execute([$email, $titulo, mb_substr($corpo, 0, 255), $foto, $link]);
+
+        cutucar_push($pdo, $email);
+    } catch (Throwable $e) {
+        // Recomendação nunca pode atrapalhar a compra: ela já foi gravada
+        error_log("Recomendação pós-compra falhou ($email): " . $e->getMessage());
     }
 }

@@ -37,7 +37,11 @@ export function PaginaAvaliacoesAdmin({
   const carregar = () => {
     setCarregando(true);
     setErro("");
-    fetch(`${URL_BACKEND_PIX}/api/avaliacoes?todas=1`)
+    // Manda o token: a lista completa (com o e-mail de cada cliente) agora é
+    // exclusiva do Admin no servidor. Antes ela vinha sem identificação
+    // nenhuma — e qualquer pessoa que soubesse o endereço baixava a lista de
+    // e-mails dos clientes da loja.
+    fetch(`${URL_BACKEND_PIX}/api/avaliacoes?todas=1`, { headers: cabecalhosAdmin() })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((lista) => setAvaliacoes(Array.isArray(lista) ? lista : []))
       .catch(() => setErro("Não foi possível carregar as avaliações."))

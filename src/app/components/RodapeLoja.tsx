@@ -26,8 +26,8 @@ export function RodapeLoja({ aoAbrirPagina }: { aoAbrirPagina?: (p: PaginaInstit
           <div>
             <Logo small claro />
             <p className="text-white/50 text-xs leading-relaxed mt-4">
-              © 2026 Coração Presente LTDA.<br />
-              CNPJ: 12.345.678/0001-90
+              © {new Date().getFullYear()} Coração Presente LTDA.<br />
+              CNPJ: 68.076.424/0001-73
             </p>
           </div>
           {[
@@ -61,7 +61,7 @@ export function RodapeLoja({ aoAbrirPagina }: { aoAbrirPagina?: (p: PaginaInstit
           ))}
         </div>
         <div className="border-t border-white/10 mt-8 pt-6 text-center text-[11px] text-white/30">
-          Coração Presente · Todos os direitos reservados · 2026
+          Coração Presente · Todos os direitos reservados · {new Date().getFullYear()}
         </div>
       </div>
     </footer>

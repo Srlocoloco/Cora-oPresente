@@ -25,15 +25,16 @@ export function SecaoAvaliacoesClientes() {
 
   useEffect(() => {
     let vivo = true;
-    fetch(`${URL_BACKEND_PIX}/api/avaliacoes?todas=1`)
+    // Modo vitrine: o servidor devolve só o punhado de depoimentos que esta
+    // seção mostra — sem o e-mail de ninguém e sem os vídeos. Antes daqui saía
+    // um pedido pela lista COMPLETA de avaliações da loja (?todas=1), que vinha
+    // com o e-mail de cada cliente e todos os vídeos em base64: dado pessoal
+    // exposto na home e uma resposta enorme só para mostrar seis cartõezinhos.
+    fetch(`${URL_BACKEND_PIX}/api/avaliacoes?vitrine=1`)
       .then((r) => (r.ok ? r.json() : []))
       .then((lista: AvaliacaoPublica[]) => {
         if (!vivo || !Array.isArray(lista)) return;
-        setAvaliacoes(
-          lista
-            .filter((a) => a.nota >= 4 && a.comentario && a.comentario.trim().length > 0)
-            .slice(0, 6)
-        );
+        setAvaliacoes(lista.slice(0, 6));
       })
       .catch(() => {});
     return () => { vivo = false; };

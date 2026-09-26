@@ -155,7 +155,20 @@ function Pergunta({ p, r }: { p: string; r: string }) {
 
 // ─── Rastreamento: acha o pedido do cliente pelo número ───────────────────────
 
-const ETAPAS = ["Processando", "Em trânsito", "Entregue"];
+// "Pago" é o primeiro estado de todo pedido (ver confirmarPagamento em
+// App.tsx). Sem ele nesta lista, indexOf devolvia -1 e o rastreamento de quem
+// tinha acabado de pagar aparecia com TODAS as etapas apagadas — a leitura
+// natural é "pagaram e não fizeram nada com o meu pedido", justo na hora de
+// maior ansiedade da compra.
+const ETAPAS = ["Pago", "Processando", "Em trânsito", "Entregue"];
+
+// Texto de cada etapa, na mesma ordem de ETAPAS
+const DESCRICAO_ETAPA = [
+  "Pagamento confirmado. Recebemos seu pedido.",
+  "Pedido em separação para envio.",
+  "Pedido despachado e a caminho do endereço de entrega.",
+  "Pedido entregue ao destinatário.",
+];
 
 // Um evento do rastreamento dos Correios, como o backend entrega
 type EventoRastreio = {
@@ -305,11 +318,7 @@ function Rastreamento({
                     </span>
                     <div>
                       <p className={`text-[13px] font-semibold ${feito ? "text-gray-800" : "text-gray-400"}`}>{etapa}</p>
-                      <p className="text-[11.5px] text-gray-400">
-                        {i === 0 && "Pagamento confirmado e pedido em separação."}
-                        {i === 1 && "Pedido despachado e a caminho do endereço de entrega."}
-                        {i === 2 && "Pedido entregue ao destinatário."}
-                      </p>
+                      <p className="text-[11.5px] text-gray-400">{DESCRICAO_ETAPA[i]}</p>
                     </div>
                   </li>
                 );
@@ -401,9 +410,15 @@ function Conteudo({
         <>
           <Secao titulo="Presentes que dizem o que a gente sente">
             <p>
+              {/* Dizia "entrega para todo o Brasil", mas o carrinho recusa
+                  qualquer CEP fora do Paraná ("No momento entregamos apenas no
+                  Paraná"). Quem vinha de outro estado montava a compra inteira
+                  e só descobria na hora de fechar — cliente irritado, venda
+                  perdida e propaganda enganosa de brinde. O texto agora diz o
+                  que o site realmente faz. */}
               A Coração Presente é uma loja online de presentes e acessórios tocada de Altônia, no
-              noroeste do Paraná, e entrega para todo o Brasil. A ideia é simples: escolher um presente
-              devia ser tão bom quanto recebê‑lo.
+              noroeste do Paraná, e entrega em todo o estado do Paraná. A ideia é simples: escolher um
+              presente devia ser tão bom quanto recebê‑lo.
             </p>
             <p>
               Trabalhamos com uma vitrine enxuta e escolhida a dedo, em vez de um catálogo gigante que
@@ -505,7 +520,7 @@ function Conteudo({
               Altônia/PR — CEP 87551-068
             </p>
             <p className="text-[12px] text-gray-400">
-              Coração Presente LTDA · CNPJ 12.345.678/0001-90. Loja 100% online, sem atendimento presencial.
+              Coração Presente LTDA · CNPJ 68.076.424/0001-73. Loja 100% online, sem atendimento presencial.
             </p>
           </Secao>
           <Secao titulo="Antes de escrever">

@@ -22,12 +22,20 @@ try {
     json_out(["erro" => "MySQL indisponível — confira os dados em config.php."], 503);
 }
 
+// Porta de entrada do anti-abuso: barra quem está de castigo por excesso de
+// tentativas e aplica o teto geral de requisições por IP (ver proteger_rota em
+// lib.php). Fica antes de qualquer leitura ou gravação.
+proteger_rota($pdo);
+
 $acao = $_GET["acao"] ?? "";
 $metodo = $_SERVER["REQUEST_METHOD"];
 
 // ── Verificação de e-mail (link clicado no e-mail) ──────────────────────────
 if ($acao === "verificar-email") {
     if ($metodo !== "GET") json_out(["erro" => "Método não permitido."], 405);
+    // O link de confirmação carrega um token secreto. Sem limite, dá para
+    // ficar chutando token até acertar o de alguém.
+    limitar_taxa($pdo, "verificar_email", 30, 600);
     $token = $_GET["token"] ?? "";
     if ($token === "") json_out(["erro" => "Token ausente."], 400);
 
@@ -91,6 +99,11 @@ if ($acao === "cadastro") {
 // código de 6 dígitos por e-mail (ver "verificar-2fa" abaixo), e só com ele
 // a sessão é criada.
 if ($acao === "login") {
+    // Força bruta de senha: esta rota NÃO tinha limite nenhum — um robô
+    // podia testar milhares de senhas por minuto contra cada e-mail de
+    // cliente. 10 tentativas a cada 5 minutos por IP, e quem insiste entra
+    // no bloqueio progressivo (ver registrar_falta em lib.php).
+    limitar_taxa($pdo, "clientes_login", 10, 300);
     $email = strtolower(trim((string) ($corpo["email"] ?? "")));
     $senha = (string) ($corpo["senha"] ?? "");
     if ($email === "" || $senha === "") json_out(["erro" => "Informe e-mail e senha."], 400);
@@ -107,6 +120,15 @@ if ($acao === "login") {
 
     if (!verificar_login_cliente($pdo, $email, $senha, $cliente["senha_salt"], $cliente["senha_hash"])) {
         json_out(["erro" => "E-mail ou senha incorretos."], 401);
+    }
+
+    // Senha certa + hash no formato antigo (SHA-256): troca agora pelo bcrypt.
+    // É o único momento em que a senha original está em mãos — assim cada
+    // conta migra sozinha, sem ninguém precisar redefinir a senha.
+    if (senha_precisa_novo_hash($cliente["senha_hash"])) {
+        [$saltNovo, $hashNovo] = hash_senha_cliente($senha);
+        $pdo->prepare("UPDATE clientes SET senha_hash = ?, senha_salt = ? WHERE email = ?")
+            ->execute([$hashNovo, $saltNovo, $email]);
     }
 
     $codigo = criar_codigo_2fa_cliente($pdo, $email);
@@ -136,6 +158,9 @@ if ($acao === "verificar-2fa") {
 
 // ── Login com Google (id_token conferido com a própria Google) ─────────────
 if ($acao === "login-google") {
+    // Cada tentativa aqui vira uma chamada ao Google para conferir o token.
+    // Sem limite, é um jeito de fazer o servidor da loja trabalhar de graça.
+    limitar_taxa($pdo, "clientes_login_google", 20, 300);
     $idToken = (string) ($corpo["idToken"] ?? "");
     if ($idToken === "") json_out(["erro" => "Token do Google ausente."], 400);
 
@@ -179,9 +204,9 @@ if ($acao === "login-google") {
 
 // ── Logout ──────────────────────────────────────────────────────────────────
 if ($acao === "logout") {
-    $cabecalho = $_SERVER["HTTP_AUTHORIZATION"] ?? "";
-    if (preg_match('/^Bearer\s+(.+)$/i', $cabecalho, $m)) {
-        $pdo->prepare("DELETE FROM clientes_sessoes WHERE token = ?")->execute([trim($m[1])]);
+    $token = token_do_cabecalho();
+    if ($token !== "") {
+        $pdo->prepare("DELETE FROM clientes_sessoes WHERE token = ?")->execute([$token]);
     }
     json_out(["ok" => true]);
 }
@@ -219,6 +244,9 @@ if ($acao === "esqueci-senha") {
 
 // ── Redefinir senha (a partir do link do e-mail) ────────────────────────────
 if ($acao === "redefinir-senha") {
+    // Mesma ideia do verificar-email: o token do link é o que autoriza
+    // trocar a senha de uma conta. Chutar token tem que custar caro.
+    limitar_taxa($pdo, "redefinir_senha", 20, 600);
     $token = (string) ($corpo["token"] ?? "");
     $novaSenha = (string) ($corpo["novaSenha"] ?? "");
     if ($token === "" || $novaSenha === "") json_out(["erro" => "Dados incompletos."], 400);
