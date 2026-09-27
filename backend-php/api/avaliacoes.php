@@ -194,7 +194,7 @@ if ($metodo === "POST") {
         // Só quem comprou (pedido Pago ou Entregue) pode avaliar. Pedidos não
         // guardam o id do produto, só o nome (ver App.tsx) — compara por nome.
         $stmt = $pdo->prepare(
-            "SELECT id FROM pedidos WHERE email = ? AND status IN ('Pago','Entregue')
+            "SELECT id FROM pedidos WHERE email = ? AND status IN ('Pago','Processando','Em trânsito','Entregue')
              AND (items = ? OR items LIKE ?) LIMIT 1"
         );
         $stmt->execute([$clienteEmail, $produto["name"], $produto["name"] . " (%"]);

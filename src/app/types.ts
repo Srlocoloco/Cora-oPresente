@@ -2,9 +2,13 @@
 
 export interface Produto {
   id: number;
-  // Código sequencial por categoria (ex.: "BEL-001"), gerado automaticamente
-  // ao cadastrar o produto — fica fixo mesmo se a categoria mudar depois
+  // Código sequencial por categoria (ex.: "BEL-001"), dado pelo SERVIDOR ao
+  // cadastrar — fica gravado e não muda nunca (nem se outro produto for apagado)
   codigo?: string;
+  // Número da edição que o painel leu. O servidor recusa salvar em cima de uma
+  // versão mais velha — é o que impede duas pessoas de apagarem a edição uma
+  // da outra.
+  versao?: number;
   name: string;
   brand: string;
   price: number;
@@ -131,6 +135,35 @@ export interface ConfigLoja {
   // deixar o cliente pagar — vender o que não se entrega custa o cancelamento,
   // a devolução e o cliente.
   cidadesAtendidas: string;
+
+  // ── Comissões (em %) ── ver comissoes.ts
+  comMasterPropria: number; // Master: sobre as próprias vendas
+  comMasterRede: number; // Master: sobre as vendas da rede dele
+  comMasterPlusPropria: number; // MasterPlus: sobre as próprias vendas
+  comMasterPlusEquipe: number; // MasterPlus: sobre a equipe direta
+  comMasterPlusRepasse: number; // MasterPlus: sobre a rede dos Masters que promoveu
+
+  // ── Repasses ──
+  repasseDiasLiberacao: number; // dias depois da entrega para liberar a comissão
+  repasseValorMinimo: number; // saldo mínimo para entrar num repasse
+  repasseAutomatico?: boolean; // fecha os repasses sozinho (agendador)
+
+  // Estoque: abaixo disto aparece "Últimas unidades" e o aviso no painel
+  estoqueBaixo: number;
+
+  // Formas de pagamento que estão funcionando agora (vêm do servidor)
+  pagamentoPix?: boolean;
+  pixAutomatico?: boolean; // true = API do Sicredi; false = Admin confirma o PIX
+  pagamentoCartao?: boolean;
+  pixManual?: boolean;
+
+  // Conta da empresa no Sicredi (arquivo de remessa) — só o Admin recebe
+  empresaCnpj?: string;
+  empresaNome?: string;
+  empresaConvenio?: string;
+  empresaAgencia?: string;
+  empresaConta?: string;
+  empresaContaDigito?: string;
 }
 
 
@@ -160,19 +193,15 @@ export interface Banner {
 
 
 // Cargos que o Admin, o MasterPlus e o Master podem dar a um usuário.
-// MasterPlus: acima do Master. Cadastra a própria equipe de vendedores (como
-// um Master) e também pode promover um vendedor de destaque da própria
-// equipe a Master (ver vinculosMasterPlus, em App.tsx). Ganha 7% fixo sobre
-// as próprias vendas (código pessoal) mais a comissão de
-// rede (equipe própria + repasse da equipe do Master que promoveu).
+// (Percentuais de cada cargo: ver comissoes.ts — são editáveis no painel.)
+// MasterPlus: acima do Master. Cadastra a própria equipe de vendedores e pode
+// promover um vendedor de destaque da própria equipe a Master (ver
+// vinculosMasterPlus, em App.tsx). Ganha sobre as próprias vendas, sobre a
+// equipe direta e um repasse sobre a rede de cada Master que promoveu.
 // Master: painel próprio SEM a página de Produtos, cadastra vendedores (com
-// código de ativação) e dá o cargo de Vendedor a outros usuários. Pode haver
-// vários Masters, cada um com a própria equipe de vendedores. Um Master pode
-// ter sido promovido por um MasterPlus (ver vinculosMasterPlus) — nesse caso
-// a comissão dele sobre a própria equipe é menor (1% em vez do padrão),
-// porque 1% vai de repasse ao MasterPlus que o promoveu.
+// código de ativação). Ganha sobre as próprias vendas e sobre a rede dele.
 // Vendedor: divulga os produtos da loja com o código de venda pessoal e
-// ganha comissão pelo próprio nível.
+// ganha comissão pela faixa de vendas.
 // Cargos da loja. "entregador" é o único que não vende nada: ele só enxerga as
 // entregas designadas a ele (ver PaginaEntregas) e move o pedido de "saiu para
 // entrega" até "entregue".
@@ -260,17 +289,51 @@ export interface Cliente {
 }
 
 
-export type Tela = "login" | "loja" | "carrinho" | "pagamento" | "admin" | "master" | "masterplus" | "vendedor" | "entregador" | "sucesso" | "perfil" | "notificacoes" | "institucional" | "montar-caixa";
+export type Tela = "login" | "loja" | "carrinho" | "checkout" | "pagamento" | "admin" | "master" | "masterplus" | "vendedor" | "entregador" | "sucesso" | "perfil" | "notificacoes" | "institucional" | "montar-caixa";
 
 
-// Dados do pagamento escolhido no carrinho (aguardando confirmação)
+// Endereço de entrega, campo a campo (o servidor confere o CEP de novo)
+export interface EnderecoEntrega {
+  cep: string;
+  rua: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+}
+
+// O que o cliente escolheu no checkout. O VALOR não vai junto de propósito:
+// quem calcula quanto se paga é o servidor (ver backend-php/api/lib_compras.php).
 export interface DadosPagamento {
   metodo: "pix" | "cartao";
-  total: number;
   // Parcelas escolhidas no cartão (PIX é sempre 1)
   parcelas: number;
-  // Endereço de entrega montado no carrinho (via CEP + número informado)
+  endereco: EnderecoEntrega;
+  cupom?: string;
+  codigoVenda?: string;
+}
+
+// Uma compra criada no servidor (o carrinho inteiro), com o valor a pagar.
+export interface Compra {
+  id: string;
+  status: "aguardando_pagamento" | "paga" | "cancelada" | "expirada";
+  metodo: "pix" | "cartao";
+  parcelas: number;
+  maxParcelas: number;
+  subtotal: number;
+  frete: number;
+  descontoPix: number;
+  descontoCupom: number;
+  cupom: string | null;
+  total: number;
   endereco: string;
+  criadoEm: string;
+  expiraEm: string;
+  pagoEm: string | null;
+  segundosParaPagar: number;
+  pedidos: { id: string; items: string; total: number; status: string; produtoId: number | null; category: string }[];
+  pix?: { txid: string; modo: "api" | "manual"; pixCopiaECola: string; expiraEm: string } | null;
 }
 
 

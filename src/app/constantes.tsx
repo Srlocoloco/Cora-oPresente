@@ -1,6 +1,6 @@
 // Constantes e valores fixos da loja (config do programa, nao e banco de dados)
 
-import { X, Package, Truck, Check } from "lucide-react";
+import { X, Package, Truck, Check, Clock } from "lucide-react";
 import type { ConfigLoja, Banner, Tela } from "./types";
 
 export const CONFIG_PADRAO: ConfigLoja = {
@@ -18,6 +18,17 @@ export const CONFIG_PADRAO: ConfigLoja = {
   // basta acrescentá-las em Admin → Configurações (separadas por vírgula) —
   // deixar em branco volta a aceitar todo o Paraná.
   cidadesAtendidas: "Altônia",
+  // Regra da rede (editável em Configurações → Comissões):
+  //   MasterPlus 7% nas próprias vendas + 2% da equipe + 1% da rede dos Masters
+  //   Master 2% nas próprias vendas + 1% da rede dele
+  comMasterPropria: 2,
+  comMasterRede: 1,
+  comMasterPlusPropria: 7,
+  comMasterPlusEquipe: 2,
+  comMasterPlusRepasse: 1,
+  repasseDiasLiberacao: 7,
+  repasseValorMinimo: 10,
+  estoqueBaixo: 5,
 };
 
 
@@ -45,28 +56,55 @@ export const NIVEIS_VENDEDOR = [
 ];
 
 
-// A conta Master não sobe de faixa como o vendedor comum: a comissão dela
-// sobre as próprias vendas (com o código pessoal) é fixa em 7%, à parte da
-// tabela acima, que continua valendo só para o vendedor.
-export const COMISSAO_MASTER_PROPRIA = 0.07;
+// Master e MasterPlus não sobem de faixa: têm percentuais fixos, editáveis em
+// Admin → Configurações → Comissões. A conta de cada venda está em
+// comissoes.ts (e, no servidor, em backend-php/api/lib_comissoes.php).
 
 
-// ─── MasterPlus ─────────────────────────────────────────────────────────────
-// Cargo acima do Master. Ganha comissão em três partes:
-//  • 7% sobre as próprias vendas, com o próprio código pessoal (percentual
-//    fixo, o mesmo percentual que o Master ganha nas vendas dele)
-//  • 2% sobre as vendas da própria equipe (vendedores que ele mesmo cadastrou)
-//  • 1% de repasse sobre as vendas da equipe do Master que ele promoveu
-//    (não conta a venda pessoal do Master, só a equipe dele)
-export const COMISSAO_MASTERPLUS_PROPRIA = 0.07;
-export const COMISSAO_MASTERPLUS_EQUIPE = 0.02;
-export const COMISSAO_MASTERPLUS_OVERRIDE = 0.01;
+// ─── Status do pedido, em linguagem de gente ─────────────────────────────────
+// Um lugar só para o texto e a cor de cada status. O cliente, o vendedor e o
+// Admin leem a mesma explicação — antes cada tela escrevia a sua.
+export const STATUS_PEDIDO: Record<string, { rotulo: string; explicacao: string; cor: string; passo: number }> = {
+  "Aguardando pagamento": {
+    rotulo: "Aguardando pagamento",
+    explicacao: "A compra foi registrada e o produto está reservado. Falta o pagamento ser confirmado.",
+    cor: "bg-amber-50 text-amber-700 border-amber-200",
+    passo: 0,
+  },
+  Pago: {
+    rotulo: "Pagamento aprovado",
+    explicacao: "Recebemos o pagamento. A loja já vai separar o pedido.",
+    cor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    passo: 1,
+  },
+  Processando: {
+    rotulo: "Preparando",
+    explicacao: "O pedido está sendo separado e embalado.",
+    cor: "bg-sky-50 text-sky-700 border-sky-200",
+    passo: 2,
+  },
+  "Em trânsito": {
+    rotulo: "A caminho",
+    explicacao: "O pedido saiu para entrega.",
+    cor: "bg-blue-50 text-blue-700 border-blue-200",
+    passo: 3,
+  },
+  Entregue: {
+    rotulo: "Entregue",
+    explicacao: "O pedido chegou ao destino.",
+    cor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    passo: 4,
+  },
+  Cancelado: {
+    rotulo: "Cancelado",
+    explicacao: "Este pedido foi cancelado. Se você pagou, a loja devolve o valor.",
+    cor: "bg-red-50 text-red-600 border-red-200",
+    passo: -1,
+  },
+};
 
-// Comissão do Master sobre a própria equipe QUANDO ele foi promovido por um
-// MasterPlus (ver vinculosMasterPlus, em App.tsx) — menor que o padrão
-// configurável (config.comissaoRecrutador) porque 1% vai de repasse ao
-// MasterPlus que o promoveu.
-export const COMISSAO_MASTER_PROMOVIDO_EQUIPE = 0.01;
+// Os passos da linha do tempo do pedido (como no Mercado Livre)
+export const PASSOS_PEDIDO = ["Compra feita", "Pagamento aprovado", "Preparando", "A caminho", "Entregue"];
 
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -217,6 +255,16 @@ export const CORES_SELO: Record<string, string> = {
 // Avisos sobre o andamento dos pedidos do cliente (substitui "Categorias" no
 // menu inferior do celular)
 export const NOTIFICACAO_POR_STATUS: Record<string, { icon: React.ReactNode; texto: (id: string) => string; cor: string }> = {
+  "Aguardando pagamento": {
+    icon: <Clock size={18} className="text-amber-500" />,
+    texto: (id) => `Seu pedido ${id} está esperando o pagamento.`,
+    cor: "bg-amber-50",
+  },
+  Pago: {
+    icon: <Check size={18} className="text-emerald-600" />,
+    texto: (id) => `Pagamento do pedido ${id} aprovado!`,
+    cor: "bg-emerald-50",
+  },
   Processando: {
     icon: <Package size={18} className="text-amber-500" />,
     texto: (id) => `Seu pedido ${id} está sendo preparado.`,

@@ -20,7 +20,7 @@ export function PaginaSupervisaoAdmin({
 }) {
   const nomeDe = (email: string) => clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email;
 
-  const vendasValidas = pedidos.filter((o) => o.status !== "Cancelado");
+  const vendasValidas = pedidos.filter((o) => o.status !== "Cancelado" && o.status !== "Aguardando pagamento");
 
   const vendedores = Object.keys(cargos).filter((e) => cargos[e] === "vendedor");
 
@@ -52,20 +52,20 @@ export function PaginaSupervisaoAdmin({
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {cartoes.map((c) => (
-          <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+          <div key={c.label} className="painel p-4 flex items-center gap-3">
             <span className="flex-shrink-0">{c.icone}</span>
             <div className="min-w-0">
-              <div className="text-lg font-black text-gray-900 truncate">{c.valor}</div>
-              <div className="text-[11px] text-gray-400 font-semibold">{c.label}</div>
+              <div className="text-lg font-bold text-gray-900 truncate">{c.valor}</div>
+              <div className="text-[12.5px] text-gray-400 font-semibold">{c.label}</div>
             </div>
           </div>
         ))}
       </div>
 
       {/* Vendedores */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Vendedores</h3>
+          <h3 className="font-bold text-gray-900 text-[15px]">Vendedores</h3>
           <p className="text-[12px] text-gray-400 mt-0.5">Vendas e comissão de cada vendedor, pela faixa em que ele está.</p>
         </div>
         {dadosVendedores.length === 0 ? (
@@ -75,7 +75,7 @@ export function PaginaSupervisaoAdmin({
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
-              <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
+              <thead className="bg-gray-50 text-[12.5px] text-gray-500">
                 <tr>
                   <th className="text-left px-5 py-3.5 font-semibold">Vendedor</th>
                   <th className="text-left px-5 py-3.5 font-semibold hidden md:table-cell">Código</th>
@@ -89,19 +89,19 @@ export function PaginaSupervisaoAdmin({
                   <tr key={v.email} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[11px] font-black flex items-center justify-center flex-shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[12.5px] font-bold flex items-center justify-center flex-shrink-0">
                           {v.nome[0].toUpperCase()}
                         </div>
                         <div className="min-w-0">
                           <div className="font-semibold text-gray-800 truncate">{v.nome}</div>
-                          <div className="text-[11px] text-gray-400 truncate">{v.email}</div>
+                          <div className="text-[12.5px] text-gray-400 truncate">{v.email}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-5 py-4 font-mono text-[12px] text-[#C8102E] font-bold hidden md:table-cell">{v.codigo}</td>
                     <td className="px-5 py-4 font-semibold text-gray-800">{v.qtdVendas}</td>
-                    <td className="px-5 py-4 font-black text-gray-900">{formatarMoeda(v.totalVendido)}</td>
-                    <td className="px-5 py-4 font-black text-emerald-600">{formatarMoeda(v.comissao)}</td>
+                    <td className="px-5 py-4 font-bold text-gray-900">{formatarMoeda(v.totalVendido)}</td>
+                    <td className="px-5 py-4 font-bold text-emerald-600">{formatarMoeda(v.comissao)}</td>
                   </tr>
                 ))}
               </tbody>

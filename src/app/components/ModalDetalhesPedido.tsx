@@ -47,7 +47,7 @@ export function ModalDetalhesPedido({
   const rastreioNormalizado = rastreio.toUpperCase().trim();
   // Vazio é permitido: é como se apaga um código digitado errado
   const rastreioValido = rastreioNormalizado === "" || FORMATO_RASTREIO.test(rastreioNormalizado);
-  const listaStatus = ["Processando", "Em trânsito", "Entregue", "Cancelado"];
+  const listaStatus = ["Pago", "Processando", "Em trânsito", "Entregue", "Cancelado"];
   // Os itens desta compra. Sem a lista (pedido antigo, sem compraId), é só o
   // próprio pedido — que era o comportamento de sempre.
   const itens = itensDaCompra && itensDaCompra.length > 0 ? itensDaCompra : [pedido];
@@ -72,10 +72,10 @@ export function ModalDetalhesPedido({
       >
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <div>
-            <h3 className="font-black text-gray-900">Detalhes da Compra</h3>
+            <h3 className="font-bold text-gray-900">Detalhes da Compra</h3>
             <span className="font-mono text-[12px] text-[#C8102E] font-bold">{pedido.id}</span>
             {itens.length > 1 && (
-              <span className="ml-2 text-[11px] font-bold text-gray-400">· {itens.length} itens na mesma entrega</span>
+              <span className="ml-2 text-[12.5px] font-bold text-gray-400">· {itens.length} itens na mesma entrega</span>
             )}
           </div>
           <button onClick={aoFechar} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 transition-colors">
@@ -100,7 +100,7 @@ export function ModalDetalhesPedido({
                     className="text-[13px] text-gray-800 font-semibold flex-1 min-w-0"
                   />
                   {itens.length > 1 && (
-                    <span className="text-[12px] font-black text-gray-500 tabular-nums flex-shrink-0">
+                    <span className="text-[12px] font-bold text-gray-500 tabular-nums flex-shrink-0">
                       {formatarMoeda(item.total)}
                     </span>
                   )}
@@ -120,14 +120,14 @@ export function ModalDetalhesPedido({
 
           <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between">
             <span className="text-[13px] font-bold text-gray-600">Total da compra</span>
-            <span className="text-xl font-black text-gray-900">{formatarMoeda(total)}</span>
+            <span className="text-xl font-bold text-gray-900">{formatarMoeda(total)}</span>
           </div>
 
           {/* Entregador responsável: é o que faz o pedido aparecer no painel
               "Minhas Entregas" daquela pessoa (e some do de qualquer outra) */}
           {aoDefinirEntregador && (
             <div>
-              <p className="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">
+              <p className="text-[12px] font-bold text-gray-500 mb-2">
                 Entregador responsável
               </p>
               {entregadores.length === 0 ? (
@@ -148,7 +148,7 @@ export function ModalDetalhesPedido({
                       </option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-gray-400 mt-2">
+                  <p className="text-[12.5px] text-gray-400 mt-2">
                     Ele passa a ver este pedido no painel dele, com endereço e mapa, e pode marcar
                     a saída e a entrega.
                   </p>
@@ -157,33 +157,76 @@ export function ModalDetalhesPedido({
             </div>
           )}
 
-          <div>
-            <p className="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">Status do pedido</p>
-            <div className="grid grid-cols-2 gap-2">
-              {listaStatus.map((s) => (
+          {pedido.status === "Aguardando pagamento" ? (
+            // Compra ainda não paga: o único passo possível é conferir o PIX na
+            // conta e confirmar (ou cancelar, devolvendo os produtos à loja).
+            <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
+              <p className="text-[13px] font-bold text-amber-900">Aguardando pagamento</p>
+              <p className="text-[12px] text-amber-800 mt-1 leading-relaxed">
+                Confira no extrato do banco se entrou um PIX de <strong>{formatarMoeda(total)}</strong>
+                {pedido.compraId ? <> com a identificação <span className="font-mono">{pedido.compraId}</span></> : null}.
+                Ao confirmar, o pedido vira "Pago", o cliente é avisado e as comissões são lançadas.
+              </p>
+              <div className="grid grid-cols-2 gap-2 mt-3">
                 <button
-                  key={s}
-                  onClick={() => aoAtualizarStatus(s)}
-                  className={`py-2.5 rounded-xl text-[12px] font-bold border-2 transition-all ${
-                    pedido.status === s
-                      ? "border-[#C8102E] bg-red-50 text-[#C8102E]"
-                      : "border-gray-200 text-gray-500 hover:border-gray-300"
-                  }`}
+                  onClick={() => {
+                    if (window.confirm(`Confirmar que o PIX de ${formatarMoeda(total)} caiu na conta da loja?`)) aoAtualizarStatus("Pago");
+                  }}
+                  className="py-2.5 rounded-xl text-[12.5px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
-                  {s}
+                  Confirmar pagamento
                 </button>
-              ))}
+                <button
+                  onClick={() => {
+                    if (window.confirm("Cancelar esta compra? Os produtos voltam para o estoque.")) aoAtualizarStatus("Cancelado");
+                  }}
+                  className="py-2.5 rounded-xl text-[12.5px] font-bold border-2 border-gray-200 text-gray-600 hover:border-red-300 hover:text-red-600 bg-white"
+                >
+                  Cancelar compra
+                </button>
+              </div>
             </div>
-            <p className="text-[11px] text-gray-400 mt-2">
-              Pedidos cancelados não contam no faturamento nem no gráfico de vendas.
-            </p>
-          </div>
+          ) : (
+            <div>
+              <p className="text-[12px] font-bold text-gray-500 mb-2">Andamento do pedido</p>
+              <div className="grid grid-cols-2 gap-2">
+                {listaStatus.map((s) => (
+                  <button
+                    key={s}
+                    disabled={pedido.status === "Cancelado"}
+                    onClick={() => {
+                      if (s === pedido.status) return;
+                      if (
+                        s === "Cancelado" &&
+                        !window.confirm(
+                          "Cancelar este pedido já pago? Os produtos voltam para o estoque e as comissões da venda são canceladas. A devolução do dinheiro ao cliente você faz pelo banco."
+                        )
+                      ) return;
+                      aoAtualizarStatus(s);
+                    }}
+                    className={`py-2.5 rounded-xl text-[12px] font-bold border-2 transition-all disabled:opacity-50 ${
+                      pedido.status === s
+                        ? "border-[#C8102E] bg-red-50 text-[#C8102E]"
+                        : "border-gray-200 text-gray-500 hover:border-gray-300"
+                    }`}
+                  >
+                    {s === "Pago" ? "Pago (a separar)" : s}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[12.5px] text-gray-400 mt-2 leading-relaxed">
+                {pedido.status === "Cancelado"
+                  ? "Pedido cancelado não pode ser reaberto — se o cliente ainda quiser, ele faz um pedido novo."
+                  : "Marque \"Entregue\" quando o cliente receber: é a partir daí que a comissão da rede começa a ser liberada."}
+              </p>
+            </div>
+          )}
 
           {/* Código de postagem dos Correios: é o que faz a página "Rastrear
               Pedido" mostrar o caminho real da encomenda para o cliente. */}
           {aoSalvarCodigoRastreio && (
             <div>
-              <p className="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">
+              <p className="text-[12px] font-bold text-gray-500 mb-2">
                 Código de rastreio (Correios)
               </p>
               <div className="flex gap-2">
@@ -191,7 +234,7 @@ export function ModalDetalhesPedido({
                   value={rastreio}
                   onChange={(e) => { setRastreio(e.target.value); setSalvo(false); }}
                   placeholder="AA123456789BR"
-                  className={`flex-1 border-2 rounded-xl px-3 py-2.5 text-[13px] font-mono uppercase outline-none transition-colors ${
+                  className={`flex-1 border-2 rounded-xl px-3 py-2.5 text-[13px] font-mono outline-none transition-colors ${
                     rastreioValido ? "border-gray-200 focus:border-[#C8102E]" : "border-red-300"
                   }`}
                 />
@@ -203,7 +246,7 @@ export function ModalDetalhesPedido({
                   Salvar
                 </button>
               </div>
-              <p className={`text-[11px] mt-2 flex items-center gap-1.5 ${rastreioValido ? "text-gray-400" : "text-red-500"}`}>
+              <p className={`text-[12.5px] mt-2 flex items-center gap-1.5 ${rastreioValido ? "text-gray-400" : "text-red-500"}`}>
                 <Truck size={13} className="flex-shrink-0" />
                 {!rastreioValido
                   ? "Formato inválido — são 2 letras, 9 números e 2 letras (BR)."
@@ -216,7 +259,7 @@ export function ModalDetalhesPedido({
 
           <button
             onClick={aoFechar}
-            className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-3 rounded-xl transition-colors text-[14px]"
+            className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold py-3 rounded-xl transition-colors text-[14px]"
           >
             Fechar
           </button>

@@ -37,8 +37,8 @@ export function PaginaCuponsAdmin({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="font-black text-gray-900 text-[15px] mb-1">Criar cupom</h3>
+      <div className="painel p-5">
+        <h3 className="font-bold text-gray-900 text-[15px] mb-1">Criar cupom</h3>
         <p className="text-[12px] text-gray-400 mb-4">O cliente digita o código no carrinho e ganha o desconto sobre o subtotal.</p>
         <div className="flex gap-2 flex-col md:flex-row">
           <input
@@ -64,7 +64,7 @@ export function PaginaCuponsAdmin({
           />
           <button
             onClick={criar}
-            className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-black px-6 py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
+            className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold px-6 py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
           >
             <Plus size={15} />
             Criar
@@ -77,9 +77,9 @@ export function PaginaCuponsAdmin({
         )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Cupons ({cupons.length})</h3>
+          <h3 className="font-bold text-gray-900 text-[15px]">Cupons ({cupons.length})</h3>
         </div>
         {cupons.length === 0 ? (
           <div className="px-5 py-12 text-center text-gray-400 text-[13px]">
@@ -93,10 +93,10 @@ export function PaginaCuponsAdmin({
                 <div key={c.codigo} className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-[13px] font-black text-[#C8102E]">{c.codigo}</span>
+                      <span className="font-mono text-[13px] font-bold text-[#C8102E]">{c.codigo}</span>
                       <span className="text-[13px] font-bold text-gray-800">{c.percentual}% off</span>
                       <span
-                        className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        className={`text-[12px] font-bold px-2 py-0.5 rounded-sm ${
                           expirado
                             ? "bg-gray-100 text-gray-500"
                             : c.ativo
@@ -107,7 +107,7 @@ export function PaginaCuponsAdmin({
                         {expirado ? "EXPIRADO" : c.ativo ? "ATIVO" : "PAUSADO"}
                       </span>
                     </div>
-                    <div className="text-[11px] text-gray-400 mt-0.5">
+                    <div className="text-[12.5px] text-gray-400 mt-0.5">
                       Válido até {new Date(c.validade + "T12:00:00").toLocaleDateString("pt-BR")} · {c.usos} {c.usos === 1 ? "uso" : "usos"}
                     </div>
                   </div>
@@ -115,7 +115,7 @@ export function PaginaCuponsAdmin({
                     {!expirado && (
                       <button
                         onClick={() => aoSalvar({ ...c, ativo: !c.ativo })}
-                        className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border-2 transition-colors ${
+                        className={`text-[12.5px] font-bold px-3 py-1.5 rounded-lg border-2 transition-colors ${
                           c.ativo
                             ? "border-gray-200 text-gray-500 hover:border-gray-300"
                             : "border-emerald-500 text-emerald-600 hover:bg-emerald-50"

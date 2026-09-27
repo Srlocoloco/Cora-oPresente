@@ -76,17 +76,17 @@ export function PaginaAvaliacoesAdmin({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="font-black text-gray-900 text-[15px] mb-1">Avaliações dos clientes</h3>
+      <div className="painel p-5">
+        <h3 className="font-bold text-gray-900 text-[15px] mb-1">Avaliações dos clientes</h3>
         <p className="text-[12px] text-gray-400">
           Publicação é imediata (sem aprovação) — só clientes que compraram o produto podem avaliar.
           Use o excluir para remover algo impróprio.
         </p>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">
+          <h3 className="font-bold text-gray-900 text-[15px]">
             {carregando ? "Carregando..." : `Avaliações recebidas (${avaliacoes.length})`}
           </h3>
         </div>
@@ -108,7 +108,7 @@ export function PaginaAvaliacoesAdmin({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[13px] font-bold text-gray-800">{a.clienteNome}</span>
-                    <span className="text-[11px] text-gray-400">{a.clienteEmail}</span>
+                    <span className="text-[12.5px] text-gray-400">{a.clienteEmail}</span>
                     <div className="flex">
                       {[...Array(5)].map((_, i) => (
                         <Star key={i} size={12} className={i < a.nota ? "fill-[#E8B84B] text-[#E8B84B]" : "fill-gray-200 text-gray-200"} />
@@ -116,7 +116,7 @@ export function PaginaAvaliacoesAdmin({
                     </div>
                     {a.video && <Video size={13} className="text-gray-400" />}
                   </div>
-                  <div className="text-[11px] text-gray-400 mt-0.5">
+                  <div className="text-[12.5px] text-gray-400 mt-0.5">
                     Produto: {a.produtoNome ?? `#${a.produtoId}`} · {a.date}
                   </div>
                   {a.comentario && <p className="text-[13px] text-gray-700 mt-2 whitespace-pre-line">{a.comentario}</p>}
@@ -130,13 +130,13 @@ export function PaginaAvaliacoesAdmin({
                       <button
                         onClick={() => excluir(a)}
                         disabled={excluindo === a.id}
-                        className="text-[11px] font-black text-white bg-red-500 hover:bg-red-600 disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors"
+                        className="text-[12.5px] font-bold text-white bg-red-500 hover:bg-red-600 disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors"
                       >
                         {excluindo === a.id ? "Excluindo..." : "Confirmar"}
                       </button>
                       <button
                         onClick={() => setConfirmando(null)}
-                        className="text-[11px] font-bold text-gray-500 hover:text-gray-700 px-2"
+                        className="text-[12.5px] font-bold text-gray-500 hover:text-gray-700 px-2"
                       >
                         Cancelar
                       </button>

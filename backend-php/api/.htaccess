@@ -48,6 +48,9 @@ RewriteRule ^admin/verificar-2fa$ admin.php?acao=verificar-2fa [L,QSA]
 RewriteRule ^admin/logout$ admin.php?acao=logout [L,QSA]
 RewriteRule ^admin/auditoria$ admin.php?acao=auditoria [L,QSA]
 
+# Sinais da vitrine: mais vendidos e "quem comprou também comprou" (só números)
+RewriteRule ^vitrine$ vitrine.php [L,QSA]
+
 # Finalização de compra (grava só o que a compra mudou, não a tabela inteira)
 RewriteRule ^checkout$ checkout.php [L,QSA]
 
@@ -74,6 +77,15 @@ RewriteRule ^produtos/([0-9]+)/estoque$ produtos.php?id=$1&acao=estoque [L,QSA]
 RewriteRule ^compras$ compras.php [L,QSA]
 RewriteRule ^compras/([A-Za-z0-9]+)$ compras.php?id=$1 [L,QSA]
 RewriteRule ^compras/([A-Za-z0-9]+)/(cancelar|confirmar)$ compras.php?id=$1&acao=$2 [L,QSA]
+
+# Ganhos e repasses dos associados (comissão por venda → conta de cada um)
+RewriteRule ^recebimento$ repasses.php?acao=recebimento [L,QSA]
+RewriteRule ^ganhos$ repasses.php?acao=ganhos [L,QSA]
+RewriteRule ^repasses$ repasses.php [L,QSA]
+RewriteRule ^repasses/(gerar|remessa|retorno)$ repasses.php?acao=$1 [L,QSA]
+RewriteRule ^repasses/remessa/([0-9]+)$ repasses.php?acao=remessa&id=$1 [L,QSA]
+RewriteRule ^repasses/([0-9]+)/(pagar|cancelar)$ repasses.php?id=$1&acao=$2 [L,QSA]
+RewriteRule ^repasses/automatico/([A-Za-z0-9_-]+)$ repasses.php?acao=automatico&segredo=$1 [L,QSA]
 
 # Cargo de uma conta, dado pelo Admin (uma por vez)
 RewriteRule ^admin/cargo$ recrutamentos.php?acao=cargo-admin [L,QSA]

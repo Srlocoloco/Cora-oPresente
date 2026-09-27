@@ -82,11 +82,11 @@ export function PaginaEntregas({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         {cartoes.map((c) => (
-          <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+          <div key={c.label} className="painel p-4 flex items-center gap-3">
             <span className="flex-shrink-0">{c.icone}</span>
             <div className="min-w-0">
-              <div className="text-xl font-black text-gray-900">{c.valor}</div>
-              <div className="text-[11px] text-gray-400 font-semibold truncate">{c.label}</div>
+              <div className="text-xl font-bold text-gray-900">{c.valor}</div>
+              <div className="text-[12.5px] text-gray-400 font-semibold truncate">{c.label}</div>
             </div>
           </div>
         ))}
@@ -98,7 +98,7 @@ export function PaginaEntregas({
           href={linkDaRota(enderecosPendentes)}
           target="_blank"
           rel="noopener noreferrer"
-          className="w-full bg-[#4A1218] hover:bg-[#2E0B0F] text-white font-black py-3.5 rounded-2xl transition-colors text-[14px] flex items-center justify-center gap-2"
+          className="w-full bg-[#4A1218] hover:bg-[#2E0B0F] text-white font-bold py-3.5 rounded-2xl transition-colors text-[14px] flex items-center justify-center gap-2"
         >
           <Route size={17} />
           Abrir rota com {Math.min(enderecosPendentes.length, MAX_PARADAS_NA_ROTA)} paradas
@@ -125,7 +125,7 @@ export function PaginaEntregas({
       </div>
 
       {visiveis.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-14 text-center">
+        <div className="painel px-5 py-14 text-center">
           <Truck size={34} strokeWidth={1.25} className="text-gray-300 mx-auto mb-3" />
           <p className="text-[13px] text-gray-500 font-medium">
             {aba === "pendentes"
@@ -143,11 +143,11 @@ export function PaginaEntregas({
           {visiveis.map((o) => {
             const saiuParaEntrega = o.status === "Em trânsito";
             return (
-              <div key={o.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div key={o.id} className="painel overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
                   <span className="font-mono text-[12px] text-[#C8102E] font-bold">{o.id}</span>
                   <span
-                    className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                    className={`text-[12px] font-bold px-2.5 py-1 rounded-sm ${
                       o.status === "Entregue"
                         ? "bg-emerald-50 text-emerald-600"
                         : saiuParaEntrega
@@ -168,13 +168,13 @@ export function PaginaEntregas({
                   />
 
                   <div className="text-[13px] text-gray-700">
-                    <span className="text-gray-400 text-[11px] font-semibold block">Entregar para</span>
+                    <span className="text-gray-400 text-[12.5px] font-semibold block">Entregar para</span>
                     {o.customer}
                   </div>
 
                   {o.endereco ? (
                     <div>
-                      <span className="text-gray-400 text-[11px] font-semibold flex items-center gap-1">
+                      <span className="text-gray-400 text-[12.5px] font-semibold flex items-center gap-1">
                         <MapPin size={11} /> Endereço
                       </span>
                       <p className="text-[13px] text-gray-700 leading-snug">{o.endereco}</p>
@@ -208,12 +208,12 @@ export function PaginaEntregas({
                       caro da entrega, que é cobrar de novo na porta. */}
                   <div className="flex items-center justify-between gap-3 bg-gray-50 rounded-xl px-3.5 py-2.5">
                     <div className="min-w-0">
-                      <span className="text-gray-400 text-[11px] font-semibold block">
+                      <span className="text-gray-400 text-[12.5px] font-semibold block">
                         {o.pagamento ? `Pago no site · ${o.pagamento}` : "Pago no site"}
                       </span>
-                      <span className="text-[11px] text-gray-500">Não cobrar na entrega</span>
+                      <span className="text-[12.5px] text-gray-500">Não cobrar na entrega</span>
                     </div>
-                    <span className="text-[15px] font-black text-gray-900 flex-shrink-0">
+                    <span className="text-[15px] font-bold text-gray-900 flex-shrink-0">
                       {formatarMoeda(o.total)}
                     </span>
                   </div>
@@ -223,7 +223,7 @@ export function PaginaEntregas({
                       {!saiuParaEntrega && (
                         <button
                           onClick={() => aoAtualizarStatus(o.id, { status: "Em trânsito" })}
-                          className="flex-1 border-2 border-[#C8102E] text-[#C8102E] hover:bg-red-50 font-black py-3 rounded-xl transition-colors text-[13px] flex items-center justify-center gap-2"
+                          className="flex-1 border-2 border-[#C8102E] text-[#C8102E] hover:bg-red-50 font-bold py-3 rounded-xl transition-colors text-[13px] flex items-center justify-center gap-2"
                         >
                           <Truck size={15} />
                           Saí para entrega
@@ -231,7 +231,7 @@ export function PaginaEntregas({
                       )}
                       <button
                         onClick={() => aoAtualizarStatus(o.id, { status: "Entregue" })}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-xl transition-colors text-[13px] flex items-center justify-center gap-2"
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-colors text-[13px] flex items-center justify-center gap-2"
                       >
                         <Check size={15} />
                         Confirmar entrega
@@ -239,7 +239,7 @@ export function PaginaEntregas({
                     </div>
                   )}
                   {o.status !== "Entregue" && (
-                    <p className="text-[11px] text-gray-400 text-center">
+                    <p className="text-[12.5px] text-gray-400 text-center">
                       O cliente é avisado por e-mail e no celular a cada um destes toques.
                     </p>
                   )}

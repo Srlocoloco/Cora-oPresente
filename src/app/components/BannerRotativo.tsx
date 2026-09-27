@@ -33,7 +33,7 @@ export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[];
     if (pausado || banners.length <= 1) return;
     const timer = setInterval(() => {
       setBannerAtivo((anterior) => (anterior + 1) % banners.length);
-    }, 3000);
+    }, 5000);
     return () => clearInterval(timer);
   }, [pausado, banners.length]);
 
@@ -50,95 +50,80 @@ export function BannerRotativo({ banners, aoClicarBanner }: { banners: Banner[];
   const imagemParaTela = (b: Banner) => (ehMobile && b.mobileImage ? b.mobileImage : b.image);
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 pt-5">
-      <div
-        className="relative overflow-hidden bg-[#A8102A] rounded-none sm:rounded-2xl md:rounded-3xl shadow-sm h-[120px] sm:h-[170px] md:h-[315px]"
-        onMouseEnter={() => setPausado(true)}
-        onMouseLeave={() => setPausado(false)}
-      >
-        {banners.map((b, i) => (
-          <div
-            key={b.id}
-            className={`absolute inset-0 transition-opacity duration-700 ${i === ativo ? "opacity-100" : "opacity-0"}`}
-          >
-            <img
-              src={imagemParaTela(b)}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover object-center"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            />
-          </div>
-        ))}
+    <div
+      className="relative overflow-hidden bg-[#7A1220] h-[150px] sm:h-[200px] md:h-[340px] group"
+      onMouseEnter={() => setPausado(true)}
+      onMouseLeave={() => setPausado(false)}
+    >
+      {banners.map((b, i) => (
+        <div
+          key={b.id}
+          aria-hidden={i !== ativo}
+          className={`absolute inset-0 transition-opacity duration-700 ${i === ativo ? "opacity-100" : "opacity-0"}`}
+        >
+          <img
+            src={imagemParaTela(b)}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover object-center"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+          />
+        </div>
+      ))}
+      {/* A foto "some" no cinza da página, sem a borda dura de um quadro */}
+      <div className="absolute inset-x-0 bottom-0 h-16 md:h-24 bg-gradient-to-t from-[#EDEDED] to-transparent z-[5]" />
 
-        <div className="relative z-10 h-full flex flex-col justify-center pl-5 sm:pl-11 pr-5 md:px-14 text-white">
-          <span className="bg-[#E8B84B] text-[#4A1218] text-[7px] md:text-[10px] font-black px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-full w-fit mb-0.5 md:mb-3 tracking-wider">
+      <div className="relative z-10 h-full max-w-[1200px] mx-auto px-5 md:px-4 flex flex-col justify-center pb-6 md:pb-10 text-white">
+        {banners[ativo].tag && (
+          <span className="text-[11px] md:text-[13px] font-semibold tracking-wide uppercase mb-1 md:mb-2 [text-shadow:0_1px_3px_rgba(0,0,0,0.6)]">
             {banners[ativo].tag}
           </span>
-          <h1 className="text-[9px] sm:text-base md:text-4xl font-black leading-tight mb-0.5 md:mb-2 max-w-[120px] sm:max-w-[220px] md:max-w-md line-clamp-2 [text-shadow:0_1px_3px_rgba(0,0,0,0.6),0_2px_10px_rgba(0,0,0,0.4)]">
-            {banners[ativo].title}
-          </h1>
-          <p className="hidden sm:block text-[11px] md:text-base text-white mb-2 md:mb-5 max-w-[220px] md:max-w-xs line-clamp-1 md:line-clamp-none [text-shadow:0_1px_3px_rgba(0,0,0,0.6),0_2px_8px_rgba(0,0,0,0.4)]">
-            {banners[ativo].subtitle}
-          </p>
+        )}
+        <h1 className="text-[18px] sm:text-[24px] md:text-[40px] font-semibold leading-[1.1] max-w-[60%] md:max-w-[520px] line-clamp-2 [text-shadow:0_1px_3px_rgba(0,0,0,0.6),0_2px_12px_rgba(0,0,0,0.35)]">
+          {banners[ativo].title}
+        </h1>
+        <p className="hidden sm:block text-[14px] md:text-[17px] mt-1.5 md:mt-2 max-w-[60%] md:max-w-[440px] line-clamp-2 [text-shadow:0_1px_3px_rgba(0,0,0,0.6)]">
+          {banners[ativo].subtitle}
+        </p>
+        {banners[ativo].cta && (
           <button
             onClick={() => aoClicarBanner(banners[ativo].category)}
-            className="mt-1 sm:mt-0 bg-[#E8B84B] text-[#4A1218] font-black text-[8px] md:text-sm px-2 py-1 md:px-7 md:py-2.5 rounded-md md:rounded-xl w-fit hover:bg-[#F0C767] hover:scale-105 active:scale-95 transition-all shadow-lg"
+            className="mt-3 md:mt-5 bg-white text-gray-900 hover:bg-gray-100 text-[12.5px] md:text-[15px] font-semibold px-3.5 py-1.5 md:px-6 md:py-2.5 rounded-md w-fit shadow-sm"
           >
             {banners[ativo].cta}
           </button>
-        </div>
-
-        {/* Arrows */}
-        {banners.length > 1 && (
-        <button
-          onClick={anterior}
-          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 bg-white/5 hover:bg-white/20 text-white rounded-full p-2 transition-colors drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]"
-        >
-          <ChevronLeft size={18} />
-        </button>
-        )}
-        {banners.length > 1 && (
-        <button
-          onClick={proximoBanner}
-          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 bg-white/5 hover:bg-white/20 text-white rounded-full p-2 transition-colors drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]"
-        >
-          <ChevronRight size={18} />
-        </button>
-        )}
-
-        {/* Dots */}
-        {banners.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
-          {banners.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => { setBannerAtivo(i); setPausado(true); }}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
-                ativo === i ? "bg-[#E8B84B] w-7" : "bg-white/40 w-1.5 hover:bg-white/70"
-              }`}
-            />
-          ))}
-        </div>
-        )}
-
-        {/* Auto-play progress bar */}
-        {!pausado && banners.length > 1 && (
-          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/20 z-10">
-            <div
-              key={ativo}
-              className="h-full bg-[#E8B84B]"
-              style={{ animation: "progressBar 3s linear forwards" }}
-            />
-          </div>
         )}
       </div>
 
-      <style>{`
-        @keyframes progressBar {
-          from { width: 0% }
-          to { width: 100% }
-        }
-      `}</style>
+      {/* Setas: aparecem ao passar o mouse, como abas presas nas laterais */}
+      {banners.length > 1 && (
+        <>
+          <button
+            onClick={anterior}
+            aria-label="Banner anterior"
+            className="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 z-20 w-11 h-16 bg-white rounded-r-full shadow-md items-center justify-start pl-2 text-[#C8102E] opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <ChevronLeft size={22} />
+          </button>
+          <button
+            onClick={proximoBanner}
+            aria-label="Próximo banner"
+            className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 z-20 w-11 h-16 bg-white rounded-l-full shadow-md items-center justify-end pr-2 text-[#C8102E] opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <ChevronRight size={22} />
+          </button>
+          <div className="absolute bottom-7 md:bottom-10 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+            {banners.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => { setBannerAtivo(i); setPausado(true); }}
+                aria-label={`Banner ${i + 1}`}
+                aria-current={ativo === i ? "true" : undefined}
+                className={`w-2 h-2 rounded-full transition-colors ${ativo === i ? "bg-white" : "bg-white/45 hover:bg-white/70"}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

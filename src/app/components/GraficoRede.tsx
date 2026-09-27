@@ -41,17 +41,17 @@ const ESTILO_PAPEL: Record<NoRede["papel"], string> = {
 function CartaoNo({ no }: { no: NoRede }) {
   return (
     <div className={`rounded-xl px-2.5 py-2 shadow-sm w-[132px] flex-shrink-0 ${ESTILO_PAPEL[no.papel]}`}>
-      <div className="flex items-center gap-1 text-[7.5px] font-black uppercase tracking-wide opacity-75">
+      <div className="flex items-center gap-1 text-[7.5px] font-bold opacity-75">
         {ICONE_PAPEL[no.papel]}
         {ROTULO_PAPEL[no.papel]}
         {no.destaque && <Star size={9} className="fill-[#E8B84B] text-[#E8B84B] ml-auto flex-shrink-0" />}
       </div>
-      <div className="text-[10.5px] font-bold leading-tight truncate mt-1">{no.nome}</div>
+      <div className="text-[12px] font-bold leading-tight truncate mt-1">{no.nome}</div>
       <div className="text-[8.5px] opacity-60 truncate">{no.email}</div>
-      <div className="text-[11px] font-black mt-1.5">{formatarMoeda(no.vendas)}</div>
+      <div className="text-[12.5px] font-bold mt-1.5">{formatarMoeda(no.vendas)}</div>
       <div className="text-[7.5px] opacity-60 -mt-0.5">vendas próprias</div>
       {no.comissaoParaVoce !== undefined && no.comissaoParaVoce > 0 && (
-        <div className="mt-1.5 text-[9px] font-black text-emerald-500 bg-white/15 rounded-md px-1.5 py-0.5 inline-block">
+        <div className="mt-1.5 text-[12.5px] font-bold text-emerald-500 bg-white/15 rounded-md px-1.5 py-0.5 inline-block">
           +{formatarMoeda(no.comissaoParaVoce)} p/ você
         </div>
       )}
@@ -199,10 +199,10 @@ export function GraficoRede({ raiz }: { raiz: NoRede }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+    <div className="painel p-5">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h3 className="font-black text-gray-900 text-[15px]">Sua rede</h3>
+          <h3 className="font-bold text-gray-900 text-[15px]">Sua rede</h3>
           <p className="text-[12px] text-gray-400 mt-0.5">
             {pessoas} pessoa{pessoas !== 1 ? "s" : ""} na rede · {formatarMoeda(vendasRede)} vendidos no total
             {comissaoTotal > 0 && ` · ${formatarMoeda(comissaoTotal)} de comissão de rede`}
@@ -210,7 +210,7 @@ export function GraficoRede({ raiz }: { raiz: NoRede }) {
         </div>
         {pessoas > 0 && (
           <div className="flex items-center gap-3">
-            <span className="text-[10.5px] text-gray-400 font-medium hidden sm:inline">
+            <span className="text-[12px] text-gray-400 font-medium hidden sm:inline">
               Arraste para navegar
             </span>
             <div className="flex items-center gap-0.5 bg-gray-50 border border-gray-200 rounded-xl p-1">
@@ -222,7 +222,7 @@ export function GraficoRede({ raiz }: { raiz: NoRede }) {
               >
                 <ZoomOut size={14} />
               </button>
-              <span className="text-[11px] font-bold text-gray-600 w-9 text-center tabular-nums">
+              <span className="text-[12.5px] font-bold text-gray-600 w-9 text-center tabular-nums">
                 {Math.round(zoom * 100)}%
               </span>
               <button

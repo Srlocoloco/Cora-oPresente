@@ -47,7 +47,7 @@ export function PaginaPedidosAdmin({
   // App.tsx): é o pedido que já foi pago e ainda não foi separado. Ele estava
   // faltando nesta lista — ou seja, justamente a fila de trabalho do dia não
   // tinha filtro, e a soma dos números dos botões não fechava com o total.
-  const listaStatus = ["Todos", "Pago", "Processando", "Em trânsito", "Entregue", "Cancelado"];
+  const listaStatus = ["Todos", "Aguardando pagamento", "Pago", "Processando", "Em trânsito", "Entregue", "Cancelado"];
 
   // ─── Uma linha por COMPRA, não por produto ──────────────────────────────────
   //
@@ -74,7 +74,7 @@ export function PaginaPedidosAdmin({
       // Status da compra: se as linhas divergirem (só acontece se alguém mexeu
       // linha a linha no banco), mostra a etapa MENOS avançada — é a que ainda
       // precisa de trabalho, e é o que o Admin precisa ver.
-      const ordem = ["Cancelado", "Pago", "Processando", "Em trânsito", "Entregue"];
+      const ordem = ["Cancelado", "Aguardando pagamento", "Pago", "Processando", "Em trânsito", "Entregue"];
       const status = linhas
         .map((l) => l.status)
         .sort((a, b) => ordem.indexOf(a) - ordem.indexOf(b))[0];
@@ -112,17 +112,17 @@ export function PaginaPedidosAdmin({
             }`}
           >
             {s}
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${filtroStatus === s ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>
+            <span className={`text-[12px] px-1.5 py-0.5 rounded-sm font-bold ${filtroStatus === s ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>
               {contagens[s]}
             </span>
           </button>
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
-            <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
+            <thead className="bg-gray-50 text-[12.5px] text-gray-500">
               <tr>
                 <th className="text-left px-5 py-3.5 font-semibold">Pedido</th>
                 <th className="text-left px-5 py-3.5 font-semibold">Cliente</th>
@@ -150,14 +150,14 @@ export function PaginaPedidosAdmin({
                     <td className="px-5 py-4 font-mono text-[12px] text-[#C8102E] font-bold whitespace-nowrap">
                       {o.id}
                       {varios && (
-                        <div className="font-sans text-[10px] font-black text-gray-400 mt-0.5">
+                        <div className="font-sans text-[12px] font-bold text-gray-400 mt-0.5">
                           +{c.linhas.length - 1} {c.linhas.length - 1 === 1 ? "item" : "itens"}
                         </div>
                       )}
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[11px] font-black flex items-center justify-center flex-shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[12.5px] font-bold flex items-center justify-center flex-shrink-0">
                           {o.customer[0]}
                         </div>
                         <span className="font-semibold text-gray-800">{o.customer}</span>
@@ -165,8 +165,8 @@ export function PaginaPedidosAdmin({
                     </td>
                     {/* Todos os produtos da compra, um embaixo do outro: é o
                         que vai junto na mesma caixa, para o mesmo endereço. */}
-                    <td className="px-5 py-4 text-[12px] text-gray-500 hidden md:table-cell max-w-[280px]">
-                      <div className="space-y-2">
+                    <td className="px-5 py-4 text-[12.5px] text-gray-600 hidden md:table-cell">
+                      <div className="space-y-2 max-w-[280px]">
                         {c.linhas.map((l) => (
                           <ProdutoDoPedido
                             key={l.id}
@@ -178,20 +178,30 @@ export function PaginaPedidosAdmin({
                         ))}
                       </div>
                     </td>
-                    <td className="px-5 py-4 font-black text-gray-900 whitespace-nowrap">
+                    <td className="px-5 py-4 font-bold text-gray-900 whitespace-nowrap">
                       {formatarMoeda(c.total)}
                       {varios && (
-                        <div className="text-[10px] font-semibold text-gray-400">
+                        <div className="text-[12px] font-semibold text-gray-400">
                           {c.linhas.length} itens
                         </div>
                       )}
                     </td>
                     <td className="px-5 py-4 text-[12px] text-gray-400 hidden lg:table-cell whitespace-nowrap">{o.date}</td>
                     {ehAdmin && (
-                      <td className="px-5 py-4"><SeloStatus status={c.status} /></td>
+                      <td className="px-5 py-4">
+                        <SeloStatus status={c.status} />
+                        {c.status === "Aguardando pagamento" && (
+                          <button
+                            onClick={() => setPedidoSelecionado(o)}
+                            className="block mt-1.5 text-[12.5px] font-bold text-emerald-700 hover:underline whitespace-nowrap"
+                          >
+                            Conferir e confirmar
+                          </button>
+                        )}
+                      </td>
                     )}
                     {mostrarComissao && (
-                      <td className="px-5 py-4 font-black text-emerald-600 whitespace-nowrap">
+                      <td className="px-5 py-4 font-bold text-emerald-600 whitespace-nowrap">
                         {c.comissao > 0 ? `+${formatarMoeda(c.comissao)}` : "—"}
                       </td>
                     )}

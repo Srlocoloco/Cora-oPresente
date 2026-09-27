@@ -15,11 +15,6 @@ type AvaliacaoPublica = {
   date: string;
 };
 
-function iniciais(nome: string): string {
-  const partes = nome.trim().split(/\s+/);
-  return ((partes[0]?.[0] ?? "") + (partes[1]?.[0] ?? "")).toUpperCase();
-}
-
 export function SecaoAvaliacoesClientes() {
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoPublica[]>([]);
 
@@ -45,33 +40,27 @@ export function SecaoAvaliacoesClientes() {
   const media = avaliacoes.reduce((acum, a) => acum + a.nota, 0) / avaliacoes.length;
 
   return (
-    <section className="max-w-[1440px] mx-auto px-4 pt-8">
-      <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-[20px] md:text-2xl font-bold text-gray-900">O que dizem nossos clientes</h2>
-        <div className="flex items-center gap-1 bg-white border border-gray-100 rounded-full px-3 py-1">
-          <Star size={14} className="fill-[#C79A3B] text-[#C79A3B]" />
-          <span className="text-[13px] font-bold text-gray-800">{media.toFixed(1)}</span>
-        </div>
+    <section className="max-w-[1200px] mx-auto px-4 pt-10">
+      <div className="flex items-baseline gap-3 mb-4">
+        <h2 className="text-[22px] text-gray-800">Quem comprou, recomenda</h2>
+        <span className="text-[14px] text-gray-500 flex items-center gap-1">
+          <Star size={13} className="fill-[#C8102E] text-[#C8102E]" /> {media.toFixed(1)} de média
+        </span>
       </div>
-      <div className="grid md:grid-cols-3 gap-3 md:gap-5">
+      <div className="grid md:grid-cols-3 gap-3 md:gap-4">
         {avaliacoes.map((a, i) => (
-          <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4">
-            <div className="flex items-center gap-2.5 mb-2">
-              <div className="w-9 h-9 rounded-full bg-[#FBF4EA] text-[#A8102A] font-bold text-[12px] flex items-center justify-center flex-shrink-0">
-                {iniciais(a.clienteNome)}
-              </div>
-              <div className="min-w-0">
-                <p className="text-[13px] font-bold text-gray-800 truncate">{a.clienteNome}</p>
-                {a.produtoNome && <p className="text-[11px] text-gray-400 truncate">{a.produtoNome}</p>}
-              </div>
-            </div>
-            <div className="flex gap-0.5 mb-1.5" role="img" aria-label={`Avaliação ${a.nota} de 5`}>
+          <figure key={i} className="painel p-5">
+            <div className="flex gap-0.5" role="img" aria-label={`Avaliação ${a.nota} de 5`}>
               {[...Array(5)].map((_, j) => (
-                <Star key={j} size={12} className={j < a.nota ? "fill-[#C79A3B] text-[#C79A3B]" : "fill-gray-200 text-gray-200"} />
+                <Star key={j} size={13} className={j < a.nota ? "fill-[#C8102E] text-[#C8102E]" : "fill-gray-200 text-gray-200"} />
               ))}
             </div>
-            <p className="text-[13px] text-gray-600 leading-relaxed line-clamp-4">{a.comentario}</p>
-          </div>
+            <blockquote className="text-[14px] text-gray-700 leading-relaxed line-clamp-4 mt-2.5">{a.comentario}</blockquote>
+            <figcaption className="mt-3 text-[12.5px] text-gray-500">
+              <span className="text-gray-700">{a.clienteNome}</span>
+              {a.produtoNome && <> · {a.produtoNome}</>}
+            </figcaption>
+          </figure>
         ))}
       </div>
     </section>

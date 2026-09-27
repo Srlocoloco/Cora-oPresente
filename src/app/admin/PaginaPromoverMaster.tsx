@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Star, Award, ArrowUpCircle } from "lucide-react";
 import type { Cargo, Recrutamento, Cliente, Pedido } from "../types";
-import { COMISSAO_MASTERPLUS_OVERRIDE } from "../constantes";
+import { type RegrasComissao, pct } from "../comissoes";
 import { totalVendidoPor, formatarMoeda } from "../utils";
 
 // ─── Página Promover a Master (MasterPlus) ────────────────────────────────────
@@ -19,6 +19,7 @@ export function PaginaPromoverMaster({
   pedidos,
   vinculosMasterPlus,
   aoPromover,
+  regras,
 }: {
   emailMasterPlus: string;
   recrutamentos: Recrutamento[];
@@ -27,6 +28,7 @@ export function PaginaPromoverMaster({
   pedidos: Pedido[];
   vinculosMasterPlus: Record<string, string>;
   aoPromover: (vendedorEmail: string) => string | null;
+  regras: RegrasComissao;
 }) {
   const meuEmail = emailMasterPlus.toLowerCase();
   const [erro, setErro] = useState("");
@@ -50,7 +52,7 @@ export function PaginaPromoverMaster({
   };
 
   // Masters já promovidos por este MasterPlus, com o total da equipe deles
-  // (o repasse de 1% incide só sobre a equipe, não sobre a venda pessoal)
+  // (o repasse incide só sobre a rede dele, não sobre a venda pessoal)
   const mastersPromovidos = Object.keys(vinculosMasterPlus)
     .filter((email) => vinculosMasterPlus[email] === meuEmail && cargos[email] === "master")
     .map((email) => {
@@ -61,21 +63,21 @@ export function PaginaPromoverMaster({
         nome: nomeDe(email),
         tamanhoEquipe: equipe.length,
         vendasEquipe,
-        repasse: vendasEquipe * COMISSAO_MASTERPLUS_OVERRIDE,
+        repasse: vendasEquipe * regras.masterPlusRepasse,
       };
     });
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="font-black text-gray-900 text-[15px] mb-1">Promover a Master</h3>
+      <div className="painel p-5">
+        <h3 className="font-bold text-gray-900 text-[15px] mb-1">Promover a Master</h3>
         <p className="text-[12px] text-gray-400 mb-4">
           Você só pode promover alguém da sua própria equipe de vendedores. Escolha de preferência
-          quem mais vende — o vendedor promovido vira Master, ganha {" "}
-          <span className="font-semibold text-gray-600">1% sobre a própria equipe</span> (em vez do
-          padrão) e você passa a ganhar mais{" "}
-          <span className="font-semibold text-gray-600">{(COMISSAO_MASTERPLUS_OVERRIDE * 100).toFixed(0)}% de repasse</span>{" "}
-          sobre as vendas da equipe dele.
+          quem mais vende — o vendedor promovido vira Master e passa a ganhar{" "}
+          <span className="font-semibold text-gray-600">{pct(regras.masterPropria)} nas vendas dele e {pct(regras.masterRede)} sobre a rede</span>{" "}
+          que montar; você passa a ganhar{" "}
+          <span className="font-semibold text-gray-600">{pct(regras.masterPlusRepasse)} de repasse</span>{" "}
+          sobre as vendas da rede dele.
         </p>
 
         {erro && (
@@ -98,24 +100,24 @@ export function PaginaPromoverMaster({
             {meusVendedores.map((v, i) => (
               <div key={v.codigo} className="py-3.5 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-black flex items-center justify-center flex-shrink-0">
+                  <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-bold flex items-center justify-center flex-shrink-0">
                     {v.nome[0]}
                   </div>
                   <div className="min-w-0">
                     <div className="text-[13px] font-bold text-gray-800 truncate flex items-center gap-1.5">
                       {v.nome}
                       {i < 3 && v.vendas > 0 && (
-                        <span title="Vendedor de destaque" className="inline-flex items-center gap-0.5 text-[10px] font-black text-[#E8B84B] bg-amber-50 px-1.5 py-0.5 rounded-full">
+                        <span title="Vendedor de destaque" className="inline-flex items-center gap-0.5 text-[12px] font-bold text-[#E8B84B] bg-amber-50 px-1.5 py-0.5 rounded-sm">
                           <Star size={10} className="fill-[#E8B84B] text-[#E8B84B]" /> Destaque
                         </span>
                       )}
                     </div>
-                    <div className="text-[11px] text-gray-400 truncate">{v.email} · vendeu {formatarMoeda(v.vendas)}</div>
+                    <div className="text-[12.5px] text-gray-400 truncate">{v.email} · vendeu {formatarMoeda(v.vendas)}</div>
                   </div>
                 </div>
                 <button
                   onClick={() => promover(v.emailBaixo)}
-                  className="flex items-center gap-1.5 bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold text-[11px] px-3.5 py-2 rounded-lg transition-colors flex-shrink-0"
+                  className="flex items-center gap-1.5 bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold text-[12.5px] px-3.5 py-2 rounded-lg transition-colors flex-shrink-0"
                 >
                   <ArrowUpCircle size={14} />
                   Promover a Master
@@ -126,9 +128,9 @@ export function PaginaPromoverMaster({
         )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Masters promovidos por você</h3>
+          <h3 className="font-bold text-gray-900 text-[15px]">Masters promovidos por você</h3>
         </div>
         {mastersPromovidos.length === 0 ? (
           <div className="px-5 py-10 text-center text-gray-400 text-[13px]">
@@ -144,12 +146,12 @@ export function PaginaPromoverMaster({
                   </div>
                   <div className="min-w-0">
                     <div className="text-[13px] font-bold text-gray-800 truncate">{m.nome}</div>
-                    <div className="text-[11px] text-gray-400 truncate">
+                    <div className="text-[12.5px] text-gray-400 truncate">
                       {m.email} · {m.tamanhoEquipe} vendedor(es) · equipe vendeu {formatarMoeda(m.vendasEquipe)}
                     </div>
                   </div>
                 </div>
-                <span className="font-black text-emerald-600 text-[14px] flex-shrink-0">
+                <span className="font-bold text-emerald-600 text-[14px] flex-shrink-0">
                   +{formatarMoeda(m.repasse)}
                 </span>
               </div>

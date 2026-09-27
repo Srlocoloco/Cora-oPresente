@@ -29,10 +29,10 @@ export function BarraFiltros({
   filtrosAtivos: boolean;
 }) {
   const classeSelect =
-    "border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-semibold text-gray-700 bg-white focus-visible:outline-2 focus-visible:outline-[#A8102A] focus-visible:outline-offset-1";
+    "border border-black/15 rounded-md pl-3 pr-2 py-1.5 text-[13.5px] text-gray-700 bg-white hover:border-black/30 focus-visible:outline-2 focus-visible:outline-[#C8102E] focus-visible:outline-offset-1";
 
   return (
-    <div className="flex flex-wrap items-center gap-2 mb-5" role="group" aria-label="Filtrar e ordenar produtos">
+    <div className="flex flex-wrap items-center gap-2 mb-4" role="group" aria-label="Filtrar e ordenar produtos">
       <select
         value={faixaPreco}
         onChange={(e) => aoMudarFaixaPreco(e.target.value as FaixaPreco)}
@@ -69,19 +69,19 @@ export function BarraFiltros({
         </select>
       )}
 
-      <label className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer bg-white">
+      <label className="flex items-center gap-2 px-1 py-1.5 text-[13.5px] text-gray-700 cursor-pointer">
         <input
           type="checkbox"
           checked={apenasEstoque}
           onChange={(e) => aoMudarApenasEstoque(e.target.checked)}
-          className="w-4 h-4 accent-[#A8102A]"
+          className="w-4 h-4 accent-[#C8102E]"
         />
         Só em estoque
       </label>
 
       <div className="ml-auto flex items-center gap-2">
         {filtrosAtivos && (
-          <button onClick={aoLimpar} className="text-[13px] font-bold text-[#A8102A] hover:underline">
+          <button onClick={aoLimpar} className="text-[13.5px] text-[#C8102E] hover:underline">
             Limpar filtros
           </button>
         )}

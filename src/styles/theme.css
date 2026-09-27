@@ -2,13 +2,13 @@
 
 :root {
   --font-size: 16px;
-  --background: #F0F4F8;
-  --foreground: #1A2332;
+  --background: #EDEDED;
+  --foreground: #333333;
   --card: #ffffff;
-  --card-foreground: #1A2332;
+  --card-foreground: #333333;
   --popover: #ffffff;
-  --popover-foreground: #1A2332;
-  --primary: #1069BE;
+  --popover-foreground: #333333;
+  --primary: #C8102E;
   --primary-foreground: #ffffff;
   --secondary: #FFE600;
   --secondary-foreground: #0A2540;
@@ -24,21 +24,21 @@
   --switch-background: #CBD5E1;
   --font-weight-medium: 600;
   --font-weight-normal: 400;
-  --ring: #1069BE;
-  --chart-1: #1069BE;
+  --ring: #C8102E;
+  --chart-1: #C8102E;
   --chart-2: #FFE600;
   --chart-3: #10B981;
   --chart-4: #F59E0B;
   --chart-5: #6366F1;
-  --radius: 0.75rem;
+  --radius: 6px;
   --sidebar: #0A2540;
   --sidebar-foreground: #ffffff;
-  --sidebar-primary: #1069BE;
+  --sidebar-primary: #C8102E;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: rgba(255,255,255,0.08);
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: rgba(255,255,255,0.08);
-  --sidebar-ring: #1069BE;
+  --sidebar-ring: #C8102E;
 }
 
 .dark {
@@ -105,10 +105,18 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  /* Cantos discretos, como numa loja de verdade: nada de "bolha". O
+     rounded-xl/2xl que já está espalhado pelo site passa a ser 6–8 px. */
+  --radius-sm: 3px;
+  --radius-md: 4px;
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: var(--radius);
+  --radius-2xl: 8px;
+  --radius-3xl: 10px;
+  --font-sans: "Nunito Sans", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.12);
+  --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.12);
+  --shadow-md: 0 1px 2px 0 rgb(0 0 0 / 0.1), 0 4px 10px -2px rgb(0 0 0 / 0.1);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -126,7 +134,8 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
   }
 
   .scrollbar-hide {
@@ -148,13 +157,13 @@
 
   h1 {
     font-size: var(--text-2xl);
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
 
   h2 {
     font-size: var(--text-xl);
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
 
@@ -176,15 +185,79 @@
     line-height: 1.5;
   }
 
+  /* Botão herda o texto de onde está: um link-botão dentro de uma lista de
+     13 px fica com 13 px, em vez de saltar para 16 px em negrito */
   button {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
   }
 
   input {
     font-size: var(--text-base);
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
+  }
+}
+
+/* ─── Peças da loja ──────────────────────────────────────────────────────────
+   Superfícies brancas quase planas sobre o cinza, botões de canto discreto,
+   campos com borda fina. Um lugar só, para as telas não saírem cada uma com
+   um jeito. */
+@utility painel {
+  background-color: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.12);
+}
+
+@utility btn-primario {
+  background-color: #C8102E;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 6px;
+  transition: background-color 0.15s;
+  &:hover:not(:disabled) {
+    background-color: #A50E26;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@utility btn-secundario {
+  background-color: rgb(200 16 46 / 0.09);
+  color: #B00E28;
+  font-weight: 600;
+  border-radius: 6px;
+  transition: background-color 0.15s;
+  &:hover:not(:disabled) {
+    background-color: rgb(200 16 46 / 0.15);
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@utility campo {
+  width: 100%;
+  background-color: #fff;
+  border: 1px solid rgb(0 0 0 / 0.25);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 15px;
+  color: #333;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  &:hover {
+    border-color: rgb(0 0 0 / 0.4);
+  }
+  &:focus {
+    border-color: #C8102E;
+    box-shadow: 0 0 0 1px #C8102E;
+  }
+  &::placeholder {
+    color: rgb(0 0 0 / 0.35);
   }
 }

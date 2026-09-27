@@ -1,10 +1,11 @@
 // Pagina Admin: PainelAdmin
 
 import { useState } from "react";
-import { ShoppingCart, Package, LayoutDashboard, ShoppingBag, Users, TrendingUp, Bell, LogOut, Plus, Tag, Menu, Settings, Award, Crown, Share2, Image as ImageIcon, Star, Truck, Wallet } from "lucide-react";
+import { ShoppingCart, Package, LayoutDashboard, ShoppingBag, Users, TrendingUp, Bell, LogOut, Tag, Menu, Settings, Award, Crown, Share2, Image as ImageIcon, Star, Truck, Wallet, Boxes } from "lucide-react";
 import type { Produto, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, ResultadoCadastroVendedor, Pedido, Cliente } from "../types";
-import { COMISSAO_MASTER_PROPRIA, COMISSAO_MASTERPLUS_PROPRIA, COMISSAO_MASTERPLUS_EQUIPE, COMISSAO_MASTERPLUS_OVERRIDE, NOMES_MESES } from "../constantes";
-import { comissaoFracaoPorNivel, totalVendidoPor, lerArmazenamento, formatarMoeda, pedidoNoMes } from "../utils";
+import { NOMES_MESES } from "../constantes";
+import { lerArmazenamento, formatarMoeda, pedidoNoMes } from "../utils";
+import { regrasDaConfig, comissaoDoPedidoPara, pedidoGeraComissao } from "../comissoes";
 import { Logo } from "../components/Logo";
 import { AvisoBancoDesconectado } from "../components/AvisoBancoDesconectado";
 import { CartaoNivelVendedor } from "../components/CartaoNivelVendedor";
@@ -25,8 +26,10 @@ import { PaginaPedidosAdmin } from "./PaginaPedidosAdmin";
 import { PaginaAvaliacoesAdmin } from "./PaginaAvaliacoesAdmin";
 import { PaginaEntregas } from "./PaginaEntregas";
 import { PaginaEntregadoresAdmin } from "./PaginaEntregadoresAdmin";
-import { PaginaMeusPagamentos } from "./PaginaMeusPagamentos";
-import { PaginaPagamentosAdmin } from "./PaginaPagamentosAdmin";
+import { PaginaMeusGanhos } from "./PaginaMeusGanhos";
+import { PaginaRepassesAdmin } from "./PaginaRepassesAdmin";
+
+type ModoPainel = "admin" | "master" | "masterplus" | "vendedor" | "entregador";
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
@@ -43,6 +46,7 @@ export function PainelAdmin({
   produtos,
   aoSalvarProduto,
   aoExcluirProduto,
+  aoAjustarEstoque,
   aoVerProdutoNaLoja,
   aoDefinirEntregador,
   aoAtualizarStatusPedido,
@@ -52,7 +56,6 @@ export function PainelAdmin({
   recrutamentos = [],
   aoCadastrarVendedor,
   codigoVenda,
-  comissaoPct = 0.02,
   vinculosMasterPlus = {},
   aoPromoverMaster,
   cupons = [],
@@ -65,8 +68,9 @@ export function PainelAdmin({
   aoSalvarConfig,
   bancoOffline = false,
   aoAtualizarResumoAvaliacoes,
+  aoSair,
 }: {
-  modo?: "admin" | "master" | "masterplus" | "vendedor" | "entregador";
+  modo?: ModoPainel;
   pagina: string;
   setPagina: (p: any) => void;
   setTela: (v: any) => void;
@@ -76,8 +80,11 @@ export function PainelAdmin({
   pedidos: Pedido[];
   clientes: Cliente[];
   produtos: Produto[];
-  aoSalvarProduto: (p: Produto) => void;
+  // Salva UM produto no servidor; devolve a mensagem de erro (null = salvou)
+  aoSalvarProduto: (p: Produto & { estoqueBase?: number }) => Promise<string | null> | void;
   aoExcluirProduto: (id: number) => void;
+  // Ajuste rápido de estoque (tela Estoque)
+  aoAjustarEstoque?: (id: number, ajuste: { delta?: number; definir?: number; cor?: string; tamanho?: string }) => Promise<string | null>;
   // Abre a página do produto na loja (a partir da foto de um pedido)
   aoVerProdutoNaLoja?: (produto: Produto) => void;
   // Admin designa (ou tira) o entregador responsável por um pedido
@@ -90,10 +97,6 @@ export function PainelAdmin({
   aoCadastrarVendedor?: (nome: string, email: string) => Promise<ResultadoCadastroVendedor>;
   // Código de venda pessoal da conta logada (mostrado no topo do painel)
   codigoVenda?: string;
-  // Comissão do Master sobre a própria equipe, em fração (ex.: 0.02 = 2%, ou
-  // 0.01 se foi promovido por um MasterPlus). Nas vendas com o próprio
-  // código, o Master ganha COMISSAO_MASTER_PROPRIA (fixo, 7%).
-  comissaoPct?: number;
   // E-mail do Master (minúsculo) → e-mail do MasterPlus que o promoveu
   vinculosMasterPlus?: Record<string, string>;
   // MasterPlus promove um vendedor da própria equipe a Master
@@ -104,17 +107,20 @@ export function PainelAdmin({
   banners?: Banner[];
   aoSalvarBanner?: (b: Banner) => void;
   aoExcluirBanner?: (id: number) => void;
+  // Configuração da loja — inclusive os percentuais de comissão, que todos
+  // os painéis usam para mostrar quanto cada um ganha
   config?: ConfigLoja;
-  aoSalvarConfig?: (c: ConfigLoja) => void;
-  // true = banco de dados (XAMPP) fora do ar — mostra o aviso no painel
+  aoSalvarConfig?: (c: ConfigLoja) => Promise<string | null> | void;
+  // true = banco de dados fora do ar — mostra o aviso no painel
   bancoOffline?: boolean;
-  // Atualiza na hora o resumo (estrelas + quantidade) de um produto depois
-  // que o Admin exclui uma avaliação imprópria na página Avaliações
   aoAtualizarResumoAvaliacoes?: (produtoId: number, rating: number, reviews: number) => void;
+  // Encerra a sessão de verdade (servidor + navegador)
+  aoSair?: () => void;
 }) {
   const [codigoCopiado, setCodigoCopiado] = useState(false);
   const [notifAberta, setNotifAberta] = useState(false);
   const [notifVistas, setNotifVistas] = useState<number>(() => lerArmazenamento<number>("cp_notif_seen", 0));
+  const regras = regrasDaConfig(config);
 
   // As notificações do Admin (pedidos da loja inteira e alertas de estoque) são
   // só dele. Master e MasterPlus recebem o painel com todos os pedidos para as
@@ -125,7 +131,16 @@ export function PainelAdmin({
       : usuario
         ? pedidos.filter((o) => o.vendedor?.toLowerCase() === usuario.email.toLowerCase())
         : [];
+  const aguardandoConfirmacao = modo === "admin" ? pedidos.filter((o) => o.status === "Aguardando pagamento") : [];
   const notificacoes = [
+    ...(aguardandoConfirmacao.length > 0
+      ? [{
+          icon: <Wallet size={18} className="text-amber-500" />,
+          title: `${aguardandoConfirmacao.length} pedido(s) aguardando pagamento`,
+          desc: "Confira os PIX recebidos e confirme em Pedidos",
+          date: "",
+        }]
+      : []),
     ...(modo === "admin"
       ? alertasEstoque.slice(0, 5).map((a) => ({
           icon: <Package size={18} className="text-red-500" />,
@@ -136,110 +151,136 @@ export function PainelAdmin({
       : []),
     ...pedidosNotificacao.slice(0, 8).map((o) => ({
       icon: <ShoppingCart size={18} className="text-[#C8102E]" />,
-      title: `Novo pedido ${o.id}`,
-      desc: `${o.customer} · ${formatarMoeda(o.total)}`,
+      title: `Pedido ${o.id}`,
+      desc: `${o.customer} · ${formatarMoeda(o.total)} · ${o.status}`,
       date: o.date,
     })),
   ];
   const totalEventos = pedidosNotificacao.length + (modo === "admin" ? alertasEstoque.length : 0);
-  const naoLidas = Math.max(0, totalEventos - notifVistas);
+  const naoLidas = Math.max(0, totalEventos - notifVistas) + aguardandoConfirmacao.length;
 
   const alternarNotificacoes = () => {
     setNotifAberta((v) => !v);
     setNotifVistas(totalEventos);
-    localStorage.setItem("cp_notif_seen", JSON.stringify(totalEventos));
+    try {
+      localStorage.setItem("cp_notif_seen", JSON.stringify(totalEventos));
+    } catch {
+      // modo privado: só não lembra o que já foi visto
+    }
   };
-  // Menu lateral muda conforme o modo do painel:
-  // Admin: tudo · MasterPlus: equipe própria + Promover a Master + Rede ·
-  // Master: SEM Produtos, COM Meus Vendedores (a equipe inteira: cadastro,
-  // cargos e códigos) e Minha Rede ·
-  // Vendedor: só divulga os produtos da loja (não tem catálogo próprio) e
-  // acompanha as vendas creditadas ao código dele
-  const menusPorModo: Record<string, { id: string; label: string; icon: React.ReactNode }[]> = {
+
+  // Menu lateral muda conforme o modo do painel. O do Admin vem em grupos —
+  // são 14 páginas, e sem grupo vira uma lista comprida sem começo nem fim.
+  type ItemMenu = { id: string; label: string; icon: React.ReactNode };
+  const gruposPorModo: Record<ModoPainel, { grupo?: string; itens: ItemMenu[] }[]> = {
     admin: [
-      { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} /> },
-      { id: "produtos", label: "Produtos", icon: <Package size={17} /> },
-      { id: "avaliacoes", label: "Avaliações", icon: <Star size={17} /> },
-      { id: "pedidos", label: "Pedidos", icon: <ShoppingBag size={17} /> },
-      { id: "financeiro", label: "Financeiro", icon: <TrendingUp size={17} /> },
-      // Pagamentos: a fila semanal de quem precisa receber, com o botão que
-      // confirma o pagamento e aparece na hora no painel do vendedor.
-      { id: "pagamentos", label: "Pagamentos", icon: <Wallet size={17} /> },
-      { id: "estoque", label: "Estoque", icon: <Package size={17} /> },
-      { id: "cupons", label: "Cupons", icon: <Tag size={17} /> },
-      { id: "banners", label: "Banners", icon: <ImageIcon size={17} /> },
-      // Supervisão: só o Admin enxerga todos os vendedores
-      { id: "supervisao", label: "Supervisão", icon: <Users size={17} /> },
-      // Entregadores: quem leva os pedidos até o cliente
-      { id: "entregadores", label: "Entregadores", icon: <Truck size={17} /> },
-      // Masters: só o Admin dá (ou remove) o cargo de Master — pode haver vários
-      { id: "masters", label: "Masters", icon: <Users size={17} /> },
-      // MasterPlus: cargo acima do Master, também só o Admin dá ou remove
-      { id: "masterplus", label: "MasterPlus", icon: <Crown size={17} /> },
-      { id: "config", label: "Configurações", icon: <Settings size={17} /> },
+      {
+        grupo: "Vendas",
+        itens: [
+          { id: "dashboard", label: "Resumo", icon: <LayoutDashboard size={18} /> },
+          { id: "pedidos", label: "Pedidos", icon: <ShoppingBag size={18} /> },
+          { id: "avaliacoes", label: "Opiniões", icon: <Star size={18} /> },
+        ],
+      },
+      {
+        grupo: "Catálogo",
+        itens: [
+          { id: "produtos", label: "Produtos", icon: <Package size={18} /> },
+          { id: "estoque", label: "Estoque", icon: <Boxes size={18} /> },
+          { id: "cupons", label: "Cupons", icon: <Tag size={18} /> },
+          { id: "banners", label: "Banners", icon: <ImageIcon size={18} /> },
+        ],
+      },
+      {
+        grupo: "Equipe",
+        itens: [
+          { id: "supervisao", label: "Vendedores", icon: <Users size={18} /> },
+          { id: "masters", label: "Masters", icon: <Award size={18} /> },
+          { id: "masterplus", label: "MasterPlus", icon: <Crown size={18} /> },
+          { id: "entregadores", label: "Entregadores", icon: <Truck size={18} /> },
+        ],
+      },
+      {
+        grupo: "Dinheiro",
+        itens: [
+          { id: "financeiro", label: "Financeiro", icon: <TrendingUp size={18} /> },
+          // Repasses: comissões liberadas → arquivo do banco → conta de cada associado
+          { id: "pagamentos", label: "Repasses", icon: <Wallet size={18} /> },
+        ],
+      },
+      { grupo: "Loja", itens: [{ id: "config", label: "Configurações", icon: <Settings size={18} /> }] },
     ],
     master: [
-      { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} /> },
-      { id: "pedidos", label: "Pedidos", icon: <ShoppingBag size={17} /> },
-      { id: "pagamentos", label: "Meus Pagamentos", icon: <Wallet size={17} /> },
-      { id: "vendedores", label: "Meus Vendedores", icon: <Users size={17} /> },
-      { id: "rede", label: "Minha Rede", icon: <Share2 size={17} /> },
+      {
+        itens: [
+          { id: "dashboard", label: "Resumo", icon: <LayoutDashboard size={18} /> },
+          { id: "pagamentos", label: "Meus ganhos", icon: <Wallet size={18} /> },
+          { id: "pedidos", label: "Vendas", icon: <ShoppingBag size={18} /> },
+          { id: "vendedores", label: "Meus vendedores", icon: <Users size={18} /> },
+          { id: "rede", label: "Minha rede", icon: <Share2 size={18} /> },
+        ],
+      },
     ],
     masterplus: [
-      { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} /> },
-      // MasterPlus NÃO tem a categoria Pedidos: ele acompanha o resultado da
-      // rede pelo Dashboard e pelas páginas de equipe, não pedido por pedido.
-      { id: "pagamentos", label: "Meus Pagamentos", icon: <Wallet size={17} /> },
-      { id: "vendedores", label: "Meus Vendedores", icon: <Users size={17} /> },
-      { id: "promover", label: "Promover a Master", icon: <Award size={17} /> },
-      { id: "rede", label: "Minha Rede", icon: <Share2 size={17} /> },
+      {
+        itens: [
+          { id: "dashboard", label: "Resumo", icon: <LayoutDashboard size={18} /> },
+          { id: "pagamentos", label: "Meus ganhos", icon: <Wallet size={18} /> },
+          { id: "vendedores", label: "Meus vendedores", icon: <Users size={18} /> },
+          { id: "promover", label: "Promover a Master", icon: <Award size={18} /> },
+          { id: "rede", label: "Minha rede", icon: <Share2 size={18} /> },
+        ],
+      },
     ],
     vendedor: [
-      { id: "pedidos", label: "Minhas Vendas", icon: <ShoppingBag size={17} /> },
-      // O que ele tem a receber nesta semana e o recibo de cada semana já
-      // fechada, com o aviso de pago quando a loja confirma.
-      { id: "pagamentos", label: "Meus Pagamentos", icon: <Wallet size={17} /> },
+      {
+        itens: [
+          { id: "pagamentos", label: "Meus ganhos", icon: <Wallet size={18} /> },
+          { id: "pedidos", label: "Minhas vendas", icon: <ShoppingBag size={18} /> },
+        ],
+      },
     ],
     // Entregador tem uma página só, e ela basta: as entregas designadas a ele
-    entregador: [
-      { id: "entregas", label: "Minhas Entregas", icon: <Truck size={17} /> },
-    ],
+    entregador: [{ itens: [{ id: "entregas", label: "Minhas entregas", icon: <Truck size={18} /> }] }],
   };
+  const menusPorModo = Object.fromEntries(
+    Object.entries(gruposPorModo).map(([m, grupos]) => [m, grupos.flatMap((g) => g.itens)])
+  ) as Record<ModoPainel, ItemMenu[]>;
   const itensMenu = menusPorModo[modo];
+  // Página que não existe neste painel (ex.: link antigo) cai na primeira do menu
+  const paginaAtual = itensMenu.some((i) => i.id === pagina) ? pagina : itensMenu[0].id;
 
   // Contas com cargo de entregador: usadas na página Entregadores e na hora de
   // designar quem leva cada pedido (nos detalhes da compra)
   const entregadores = clientes.filter((c) => cargos?.[c.email.toLowerCase()] === "entregador");
 
-  const rotulosPainel: Record<string, string> = {
-    admin: "Admin Panel",
-    master: "Master Panel",
-    masterplus: "MasterPlus Panel",
-    vendedor: "Painel do Vendedor",
-    entregador: "Painel do Entregador",
+  const rotulosPainel: Record<ModoPainel, string> = {
+    admin: "Painel da loja",
+    master: "Painel do Master",
+    masterplus: "Painel do MasterPlus",
+    vendedor: "Painel do vendedor",
+    entregador: "Painel do entregador",
   };
 
   const titulosPaginas: Record<string, string> = {
-    dashboard: "Dashboard",
-    produtos: "Gestão de Produtos",
-    avaliacoes: "Avaliações",
-    pedidos: modo === "vendedor" ? "Minhas Vendas" : "Pedidos",
-    vendedores: "Meus Vendedores",
-    supervisao: "Supervisão de Vendedores",
+    dashboard: "Resumo",
+    produtos: "Produtos",
+    avaliacoes: "Opiniões dos clientes",
+    pedidos: modo === "vendedor" ? "Minhas vendas" : modo === "admin" ? "Pedidos" : "Vendas",
+    vendedores: "Meus vendedores",
+    supervisao: "Vendedores",
     entregadores: "Entregadores",
-    entregas: "Minhas Entregas",
+    entregas: "Minhas entregas",
     masters: "Masters",
     masterplus: "MasterPlus",
     promover: "Promover a Master",
-    rede: "Minha Rede",
+    rede: "Minha rede",
     financeiro: "Financeiro",
-    // Só o Admin vê a fila de todo mundo. Vendedor, Master e MasterPlus veem
-    // o que ELES têm a receber — o título precisa dizer isso.
-    pagamentos: modo === "admin" ? "Pagamentos da Equipe" : "Meus Pagamentos",
-    estoque: "Controle de Estoque",
-    cupons: "Cupons de Desconto",
-    banners: "Banners da Vitrine",
-    config: "Configurações da Loja",
+    pagamentos: modo === "admin" ? "Repasses das comissões" : "Meus ganhos",
+    estoque: "Estoque",
+    cupons: "Cupons de desconto",
+    banners: "Banners da vitrine",
+    config: "Configurações da loja",
   };
 
   // Vendas do mês e vendas totais do vendedor — entram no cartão de comissão,
@@ -251,90 +292,69 @@ export function PainelAdmin({
   let vendasTotaisNivel = 0;
   if (modo === "vendedor") {
     // O painel do vendedor já recebe apenas os pedidos dele
-    const validosVendedor = pedidos.filter((o) => o.status !== "Cancelado");
-    // Mês E ano (ver pedidoNoMes em utils.ts): o pedido guarda só "Set", e
-    // comparar por esse campo faria o vendedor ver, nas vendas deste mês, o
-    // que ele vendeu no mesmo mês dos anos anteriores.
+    const validosVendedor = pedidos.filter(pedidoGeraComissao);
     vendasDoMesNivel = validosVendedor
       .filter((o) => pedidoNoMes(o, agoraNivel.getMonth(), agoraNivel.getFullYear(), mesAtualNivel))
       .reduce((acum, o) => acum + o.total, 0);
     vendasTotaisNivel = validosVendedor.reduce((acum, o) => acum + o.total, 0);
   }
 
-  // Dashboard: só o Admin enxerga o desempenho geral (todos os vendedores e
-  // vendas diretas). Master e MasterPlus têm o gráfico das próprias vendas
-  // (creditadas ao código de venda deles), como qualquer outra conta — a
-  // visão da rede completa (equipe, repasses) fica na página Minha Rede.
+  // Dashboard: só o Admin enxerga o desempenho geral. Master e MasterPlus têm
+  // o gráfico das próprias vendas; a rede completa fica em Minha Rede.
   const pedidosDashboard =
     (modo === "master" || modo === "masterplus") && usuario
       ? pedidos.filter((o) => o.vendedor?.toLowerCase() === usuario.email.toLowerCase())
       : pedidos;
-  const tituloDashboard = modo === "admin" ? "Desempenho da Empresa" : "Minhas Vendas";
+  const tituloDashboard = modo === "admin" ? "Desempenho da loja" : "Minhas vendas";
 
-  // O aviso de bônus de nível do Master saiu junto com o sistema de bônus: o
-  // Master ganha os 7% fixos sobre as próprias vendas e a comissão sobre a
-  // equipe, e nada além disso.
+  // Quanto a conta logada ganha em cada venda — a mesma regra do servidor
+  // (comissoes.ts), com os percentuais das Configurações.
+  const comissaoPorPedido =
+    modo !== "admin" && usuario && cargos
+      ? (o: Pedido) => comissaoDoPedidoPara(o, usuario.email, { cargos, recrutamentos, vinculosMasterPlus, pedidos, regras })
+      : undefined;
+
+  const sair = () => {
+    if (aoSair) aoSair();
+    else setTela("loja");
+  };
+
+  const itemMenu = (item: ItemMenu) => {
+    const ativo = paginaAtual === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => { setPagina(item.id); setMenuMobileAberto(false); }}
+        aria-current={ativo ? "page" : undefined}
+        className={`relative w-full flex items-center gap-3 pl-5 pr-3 py-2 text-[14px] text-left transition-colors ${
+          ativo ? "bg-[#C8102E]/[0.07] text-[#A8102A] font-semibold" : "text-gray-700 hover:bg-black/[0.03]"
+        }`}
+      >
+        {ativo && <span className="absolute left-0 top-1 bottom-1 w-[3px] rounded-r bg-[#C8102E]" />}
+        <span className={ativo ? "text-[#C8102E]" : "text-gray-400"}>{item.icon}</span>
+        {item.label}
+        {item.id === "pedidos" && aguardandoConfirmacao.length > 0 && (
+          <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-sm bg-amber-100 text-amber-800 text-[12px] font-semibold flex items-center justify-center">
+            {aguardandoConfirmacao.length}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
-    <div className="flex h-screen bg-[#FBF4EA] overflow-hidden" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      <aside className={`fixed md:static inset-y-0 left-0 z-50 w-56 bg-[#4A1218] text-white flex flex-col transition-transform duration-300 ${menuMobileAberto ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
-        <div className="p-4 border-b border-white/8">
-          <Logo small claro />
-          <div className="text-[9px] text-white/40 mt-2 font-semibold tracking-widest uppercase">{rotulosPainel[modo]}</div>
-        </div>
-        <nav className="flex-1 p-3 space-y-0.5">
-          {itensMenu.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => { setPagina(item.id); setMenuMobileAberto(false); }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
-                pagina === item.id ? "bg-[#C8102E] text-white shadow-sm" : "text-white/55 hover:bg-white/8 hover:text-white/90"
-              }`}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <div className="p-3 border-t border-white/8 space-y-0.5">
-          <button
-            onClick={() => setTela("loja")}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold text-white/55 hover:bg-white/8 hover:text-white/90 transition-colors"
-          >
-            <ShoppingCart size={17} />
-            Ver Loja
+    <div className="flex flex-col h-screen bg-[#EDEDED] overflow-hidden">
+      {/* ── Barra de cima ── */}
+      <header className="bg-[#A8102A] text-white flex-shrink-0 z-30">
+        <div className="h-[52px] px-3 md:px-5 flex items-center gap-3">
+          <button className="md:hidden p-2 -ml-1" onClick={() => setMenuMobileAberto(true)} aria-label="Abrir menu">
+            <Menu size={20} />
           </button>
-          <button
-            onClick={() => setTela("login")}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold text-white/55 hover:bg-white/8 hover:text-white/90 transition-colors"
-          >
-            <LogOut size={17} />
-            Sair
-          </button>
-        </div>
-      </aside>
+          <Logo claro />
+          <span className="hidden sm:block h-6 w-px bg-white/25 mx-1" />
+          <span className="hidden sm:block text-[14px] text-white/90">{rotulosPainel[modo]}</span>
 
-      {menuMobileAberto && (
-        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMenuMobileAberto(false)} />
-      )}
-
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <button className="md:hidden p-1.5 hover:bg-gray-100 rounded-lg transition-colors" onClick={() => setMenuMobileAberto(true)}>
-              <Menu size={19} />
-            </button>
-            <div>
-              <h1 className="font-black text-gray-900 text-base">{titulosPaginas[pagina]}</h1>
-              {/* A data era um texto fixo ("6 de julho de 2026") que sobrou do
-                  desenho da tela: o painel mostrava sempre o mesmo dia, o que
-                  tira a confiança de quem olha um relatório de vendas. */}
-              <p className="text-[11px] text-gray-400 font-medium">
-                Coração Presente Admin · {new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" })}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1 md:gap-3">
             {/* Código de venda pessoal: cliente informa na compra e a venda é creditada a esta conta */}
             {codigoVenda && (
               <button
@@ -343,18 +363,18 @@ export function PainelAdmin({
                   setCodigoCopiado(true);
                   setTimeout(() => setCodigoCopiado(false), 2000);
                 }}
-                title="Seu código de venda — clique para copiar"
-                className="flex items-center gap-1.5 font-mono text-[12px] font-bold text-[#C8102E] bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors"
+                title="Seu código de venda: clique para copiar e mandar para o cliente"
+                className="flex items-center gap-2 text-[13px] bg-white/12 hover:bg-white/20 px-2.5 py-1.5 rounded"
               >
-                <Tag size={12} />
-                {codigoCopiado ? "Copiado!" : codigoVenda}
+                <span className="hidden md:inline text-white/80">Seu código</span>
+                <span className="font-mono font-semibold">{codigoCopiado ? "Copiado" : codigoVenda}</span>
               </button>
             )}
             <div className="relative">
-              <button onClick={alternarNotificacoes} className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <Bell size={18} className="text-gray-500" />
+              <button onClick={alternarNotificacoes} className="relative p-2 text-white/90 hover:text-white" aria-label="Notificações">
+                <Bell size={19} />
                 {naoLidas > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center ring-2 ring-white">
+                  <span className="absolute top-0.5 right-0.5 min-w-[17px] h-[17px] px-1 bg-white text-[#A8102A] text-[11px] font-bold rounded-full flex items-center justify-center">
                     {naoLidas > 9 ? "9+" : naoLidas}
                   </span>
                 )}
@@ -363,24 +383,24 @@ export function PainelAdmin({
               {notifAberta && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setNotifAberta(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-[380px] max-w-[92vw] md:w-[460px] bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                      <span className="font-black text-gray-900 text-[13px]">Notificações</span>
-                      <span className="text-[11px] text-gray-400 font-medium">{notificacoes.length} recentes</span>
+                  <div className="absolute right-0 top-full mt-2 w-[380px] max-w-[92vw] md:w-[440px] painel shadow-[0_6px_24px_rgba(0,0,0,0.18)] z-50 text-gray-800">
+                    <div className="px-4 py-3 border-b border-black/[0.08] flex items-center justify-between">
+                      <span className="text-[15px] text-gray-900">Notificações</span>
+                      <span className="text-[12.5px] text-gray-500">{notificacoes.length} recentes</span>
                     </div>
-                    <div className="max-h-[70vh] overflow-y-auto">
+                    <div className="max-h-[70vh] overflow-y-auto divide-y divide-black/[0.06]">
                       {notificacoes.length === 0 ? (
-                        <div className="px-4 py-10 text-center text-gray-400 text-[12px]">
-                          Nenhuma notificação ainda.<br />As compras dos clientes aparecerão aqui.
+                        <div className="px-4 py-10 text-center text-gray-500 text-[13.5px]">
+                          Nenhuma notificação ainda. As compras dos clientes aparecem aqui.
                         </div>
                       ) : (
                         notificacoes.map((n, i) => (
-                          <div key={i} className="px-4 py-3 flex items-start gap-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0">
+                          <div key={i} className="px-4 py-3 flex items-start gap-3">
                             <span className="flex-shrink-0 mt-0.5">{n.icon}</span>
                             <div className="min-w-0">
-                              <div className="text-[12px] font-bold text-gray-800">{n.title}</div>
-                              <div className="text-[11px] text-gray-500 truncate">{n.desc}</div>
-                              <div className="text-[10px] text-gray-300 mt-0.5">{n.date}</div>
+                              <div className="text-[13.5px] text-gray-900">{n.title}</div>
+                              <div className="text-[12.5px] text-gray-500 truncate">{n.desc}</div>
+                              {n.date && <div className="text-[12px] text-gray-400 mt-0.5">{n.date}</div>}
                             </div>
                           </div>
                         ))
@@ -390,29 +410,57 @@ export function PainelAdmin({
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2 pl-2">
-              <div className="w-8 h-8 rounded-full bg-[#C8102E] flex items-center justify-center text-white text-sm font-black">
-                {usuario ? usuario.name[0].toUpperCase() : "A"}
-              </div>
-              <span className="hidden md:block text-[13px] font-semibold text-gray-700">
-                {usuario?.name || "Admin"}
-              </span>
-            </div>
+            <span className="hidden md:block text-[14px] text-white/90 max-w-[160px] truncate">{usuario?.name || "Admin"}</span>
           </div>
-        </header>
+        </div>
+      </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
-          {/* Comissão do vendedor: quanto ele ganha por venda e o que já vendeu.
-              Fica fora da página "Meus Pagamentos", que já mostra o percentual
-              e o total vendido no próprio cartão da semana — repetir os mesmos
-              números dois blocos acima só confunde. */}
-          {modo === "vendedor" && pagina !== "pagamentos" && (
+      <div className="flex flex-1 min-h-0">
+        {/* ── Menu lateral ── */}
+        <aside
+          className={`fixed md:static inset-y-0 left-0 z-50 w-[232px] bg-white border-r border-black/10 flex flex-col transition-transform duration-200 ${
+            menuMobileAberto ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+          }`}
+        >
+          <div className="md:hidden h-[52px] px-5 flex items-center border-b border-black/10 text-[15px] text-gray-900">
+            {rotulosPainel[modo]}
+          </div>
+          <nav className="flex-1 py-3 overflow-y-auto" aria-label="Menu do painel">
+            {gruposPorModo[modo].map((g, i) => (
+              <div key={g.grupo ?? i} className={i > 0 ? "mt-4" : ""}>
+                {g.grupo && <p className="px-5 pb-1 text-[12.5px] text-gray-400">{g.grupo}</p>}
+                {g.itens.map(itemMenu)}
+              </div>
+            ))}
+          </nav>
+          <div className="py-2 border-t border-black/10">
+            <button onClick={() => setTela("loja")} className="w-full flex items-center gap-3 px-5 py-2 text-[14px] text-gray-700 hover:bg-black/[0.03]">
+              <ShoppingCart size={18} className="text-gray-400" />
+              Ver a loja
+            </button>
+            <button onClick={sair} className="w-full flex items-center gap-3 px-5 py-2 text-[14px] text-gray-700 hover:bg-black/[0.03]">
+              <LogOut size={18} className="text-gray-400" />
+              Sair da conta
+            </button>
+          </div>
+        </aside>
+
+        {menuMobileAberto && (
+          <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setMenuMobileAberto(false)} />
+        )}
+
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="flex-1 overflow-y-auto">
+         <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-5 md:py-6">
+          <h1 className="text-[22px] md:text-[24px] text-gray-900 mb-4 md:mb-5">{titulosPaginas[paginaAtual]}</h1>
+          {/* Comissão do vendedor: quanto ele ganha por venda e o que já vendeu */}
+          {modo === "vendedor" && paginaAtual === "pedidos" && (
             <div className="mb-5">
               <CartaoNivelVendedor vendasDoMes={vendasDoMesNivel} vendasTotais={vendasTotaisNivel} />
             </div>
           )}
 
-          {pagina === "dashboard" && (
+          {paginaAtual === "dashboard" && modo !== "entregador" && (
             <PaginaDashboard
               pedidos={pedidosDashboard}
               clientes={clientes}
@@ -421,13 +469,13 @@ export function PainelAdmin({
               modo={modo}
             />
           )}
-          {pagina === "produtos" && modo === "admin" && (
+          {paginaAtual === "produtos" && modo === "admin" && (
             <PaginaProdutosAdmin produtos={produtos} aoSalvar={aoSalvarProduto} aoExcluir={aoExcluirProduto} />
           )}
-          {pagina === "avaliacoes" && modo === "admin" && aoAtualizarResumoAvaliacoes && (
+          {paginaAtual === "avaliacoes" && modo === "admin" && aoAtualizarResumoAvaliacoes && (
             <PaginaAvaliacoesAdmin aoAtualizarResumoAvaliacoes={aoAtualizarResumoAvaliacoes} />
           )}
-          {pagina === "pedidos" && modo !== "masterplus" && (
+          {paginaAtual === "pedidos" && (modo === "admin" || modo === "master" || modo === "vendedor") && (
             <PaginaPedidosAdmin
               pedidos={pedidos}
               produtos={produtos}
@@ -435,52 +483,11 @@ export function PainelAdmin({
               entregadores={entregadores}
               aoDefinirEntregador={aoDefinirEntregador}
               aoAtualizarStatus={aoAtualizarStatusPedido}
-              comissaoPorPedido={
-                modo === "vendedor"
-                  ? (o) => o.total * comissaoFracaoPorNivel(vendasTotaisNivel)
-                  : modo === "master" && usuario
-                  ? (o) => {
-                      const vend = o.vendedor?.toLowerCase();
-                      const meuEmail = usuario.email.toLowerCase();
-                      if (vend === meuEmail) return o.total * COMISSAO_MASTER_PROPRIA;
-                      // Só conta comissão de equipe sobre vendedores que ESTE
-                      // Master convidou (cada Master tem a própria equipe)
-                      const daMinhaEquipe =
-                        vend &&
-                        cargos?.[vend] === "vendedor" &&
-                        recrutamentos.some((r) => r.email.toLowerCase() === vend && r.recrutador === meuEmail);
-                      return daMinhaEquipe ? o.total * comissaoPct : 0;
-                    }
-                  : modo === "masterplus" && usuario
-                  ? (o) => {
-                      const vend = o.vendedor?.toLowerCase();
-                      if (!vend) return 0;
-                      const meuEmail = usuario.email.toLowerCase();
-                      // Venda com o próprio código do MasterPlus: comissão
-                      // própria, 7% fixo
-                      if (vend === meuEmail) return o.total * COMISSAO_MASTERPLUS_PROPRIA;
-                      // Venda de um vendedor da própria equipe do MasterPlus: 2%
-                      const daMinhaEquipe =
-                        cargos?.[vend] === "vendedor" &&
-                        recrutamentos.some((r) => r.email.toLowerCase() === vend && r.recrutador === meuEmail);
-                      if (daMinhaEquipe) return o.total * COMISSAO_MASTERPLUS_EQUIPE;
-                      // Venda de um vendedor da equipe de um Master que ESTE
-                      // MasterPlus promoveu: 1% de repasse
-                      const recrutadorDoVendedor = recrutamentos.find(
-                        (r) => r.email.toLowerCase() === vend && r.ativado
-                      )?.recrutador;
-                      const masterDoVendedorEhMeu =
-                        recrutadorDoVendedor &&
-                        cargos?.[recrutadorDoVendedor] === "master" &&
-                        vinculosMasterPlus[recrutadorDoVendedor] === meuEmail;
-                      return masterDoVendedorEhMeu ? o.total * COMISSAO_MASTERPLUS_OVERRIDE : 0;
-                    }
-                  : undefined
-              }
+              comissaoPorPedido={comissaoPorPedido}
               modo={modo}
             />
           )}
-          {pagina === "vendedores" && (modo === "master" || modo === "masterplus") && usuario && aoCadastrarVendedor && cargos && aoDefinirCargo && (
+          {paginaAtual === "vendedores" && (modo === "master" || modo === "masterplus") && usuario && aoCadastrarVendedor && cargos && aoDefinirCargo && (
             <PaginaMeusVendedores
               emailMaster={usuario.email}
               recrutamentos={recrutamentos}
@@ -490,7 +497,7 @@ export function PainelAdmin({
               aoDefinirCargo={aoDefinirCargo}
             />
           )}
-          {pagina === "promover" && modo === "masterplus" && usuario && cargos && aoPromoverMaster && (
+          {paginaAtual === "promover" && modo === "masterplus" && usuario && cargos && aoPromoverMaster && (
             <PaginaPromoverMaster
               emailMasterPlus={usuario.email}
               recrutamentos={recrutamentos}
@@ -499,9 +506,10 @@ export function PainelAdmin({
               pedidos={pedidos}
               vinculosMasterPlus={vinculosMasterPlus}
               aoPromover={aoPromoverMaster}
+              regras={regras}
             />
           )}
-          {pagina === "rede" && (modo === "master" || modo === "masterplus") && usuario && cargos && (
+          {paginaAtual === "rede" && (modo === "master" || modo === "masterplus") && usuario && cargos && (
             <PaginaRede
               modo={modo}
               usuario={usuario}
@@ -510,82 +518,75 @@ export function PainelAdmin({
               clientes={clientes}
               pedidos={pedidos}
               vinculosMasterPlus={vinculosMasterPlus}
-              comissaoEquipePct={comissaoPct}
+              regras={regras}
             />
           )}
-          {pagina === "supervisao" && modo === "admin" && cargos && (
-            <PaginaSupervisaoAdmin
-              pedidos={pedidos}
-              clientes={clientes}
-              cargos={cargos}
-            />
+          {paginaAtual === "supervisao" && modo === "admin" && cargos && (
+            <PaginaSupervisaoAdmin pedidos={pedidos} clientes={clientes} cargos={cargos} />
           )}
-          {pagina === "entregadores" && modo === "admin" && cargos && aoDefinirCargo && (
-            <PaginaEntregadoresAdmin
-              clientes={clientes}
-              cargos={cargos}
-              pedidos={pedidos}
-              aoDefinirCargo={aoDefinirCargo}
-            />
+          {paginaAtual === "entregadores" && modo === "admin" && cargos && aoDefinirCargo && (
+            <PaginaEntregadoresAdmin clientes={clientes} cargos={cargos} pedidos={pedidos} aoDefinirCargo={aoDefinirCargo} />
           )}
-          {/* Painel do entregador: só as entregas designadas a ele (o servidor
-              já manda só essas) */}
-          {pagina === "entregas" && modo === "entregador" && (
-            <PaginaEntregas
-              pedidos={pedidos}
-              produtos={produtos}
-              aoAtualizarStatus={aoAtualizarStatusPedido}
-            />
+          {/* Painel do entregador: só as entregas designadas a ele */}
+          {paginaAtual === "entregas" && modo === "entregador" && (
+            <PaginaEntregas pedidos={pedidos} produtos={produtos} aoAtualizarStatus={aoAtualizarStatusPedido} />
           )}
-          {pagina === "masters" && modo === "admin" && cargos && aoDefinirCargo && (
+          {paginaAtual === "masters" && modo === "admin" && cargos && aoDefinirCargo && (
             <PaginaMastersAdmin
               clientes={clientes}
               cargos={cargos}
               aoDefinirCargo={aoDefinirCargo}
               vinculosMasterPlus={vinculosMasterPlus}
-              comissaoEquipePct={config?.comissaoRecrutador ?? 2}
+              regras={regras}
             />
           )}
-          {pagina === "masterplus" && modo === "admin" && cargos && aoDefinirCargo && (
+          {paginaAtual === "masterplus" && modo === "admin" && cargos && aoDefinirCargo && (
             <PaginaMasterPlusAdmin
               clientes={clientes}
               cargos={cargos}
               aoDefinirCargo={aoDefinirCargo}
               vinculosMasterPlus={vinculosMasterPlus}
+              regras={regras}
             />
           )}
-          {pagina === "financeiro" && modo === "admin" && cargos && (
+          {paginaAtual === "financeiro" && modo === "admin" && cargos && (
             <PaginaFinanceiroAdmin
               pedidos={pedidos}
               cargos={cargos}
               clientes={clientes}
               recrutamentos={recrutamentos}
-              comissaoEquipePct={(config?.comissaoRecrutador ?? 2) / 100}
               vinculosMasterPlus={vinculosMasterPlus}
+              regras={regras}
             />
           )}
-          {/* Pagamento semanal. A mesma página, dois pontos de vista:
-              o vendedor vê o que ELE tem a receber; o Admin vê a fila de todo
-              mundo, com o botão que confirma o pagamento. */}
-          {pagina === "pagamentos" && (modo === "vendedor" || modo === "master" || modo === "masterplus") && (
-            <PaginaMeusPagamentos />
+          {/* Ganhos: o associado vê o extrato e cadastra a conta; o Admin vê
+              os repasses de todos e gera o arquivo do banco */}
+          {paginaAtual === "pagamentos" && (modo === "vendedor" || modo === "master" || modo === "masterplus") && (
+            <PaginaMeusGanhos cargo={modo} regras={regras} />
           )}
-          {pagina === "pagamentos" && modo === "admin" && <PaginaPagamentosAdmin />}
+          {paginaAtual === "pagamentos" && modo === "admin" && <PaginaRepassesAdmin aoIrParaConfig={() => setPagina("config")} />}
 
-          {pagina === "estoque" && modo === "admin" && (
-            <PaginaEstoqueAdmin produtos={produtos} />
+          {paginaAtual === "estoque" && modo === "admin" && (
+            <PaginaEstoqueAdmin
+              produtos={produtos}
+              estoqueBaixo={config?.estoqueBaixo ?? 5}
+              aoAjustar={aoAjustarEstoque}
+              aoEditarProduto={() => setPagina("produtos")}
+            />
           )}
-          {pagina === "cupons" && modo === "admin" && aoSalvarCupom && aoExcluirCupom && (
+          {paginaAtual === "cupons" && modo === "admin" && aoSalvarCupom && aoExcluirCupom && (
             <PaginaCuponsAdmin cupons={cupons} aoSalvar={aoSalvarCupom} aoExcluir={aoExcluirCupom} />
           )}
-          {pagina === "banners" && modo === "admin" && aoSalvarBanner && aoExcluirBanner && (
+          {paginaAtual === "banners" && modo === "admin" && aoSalvarBanner && aoExcluirBanner && (
             <PaginaBannersAdmin banners={banners} aoSalvar={aoSalvarBanner} aoExcluir={aoExcluirBanner} />
           )}
-          {pagina === "config" && modo === "admin" && config && aoSalvarConfig && (
+          {paginaAtual === "config" && modo === "admin" && config && aoSalvarConfig && (
             <PaginaConfigAdmin config={config} aoSalvar={aoSalvarConfig} />
           )}
+         </div>
         </div>
         {bancoOffline && <AvisoBancoDesconectado />}
+      </div>
       </div>
     </div>
   );

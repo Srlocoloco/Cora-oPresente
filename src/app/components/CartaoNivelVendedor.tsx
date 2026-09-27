@@ -26,34 +26,34 @@ export function CartaoNivelVendedor({ vendasDoMes, vendasTotais = 0 }: { vendasD
   const comissaoDoMes = vendasDoMes * comissaoFracaoPorNivel(vendasTotais);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="painel overflow-hidden">
       <div className="p-5 border-b border-gray-100">
-        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Sua comissão</p>
+        <p className="text-[12.5px] font-bold text-gray-500">Sua comissão</p>
         <div className="flex items-end gap-2 mt-1 flex-wrap">
-          <span className="text-3xl font-black text-gray-900 leading-none">{faixaAtual.commission}</span>
+          <span className="text-3xl font-bold text-gray-900 leading-none">{faixaAtual.commission}</span>
           <span className="text-[13px] text-gray-500 font-medium pb-0.5">por venda com o seu código</span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
         <div className="p-4">
-          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Vendas do mês</div>
-          <div className="text-lg font-black text-gray-900 mt-1">{formatarMoeda(vendasDoMes)}</div>
+          <div className="text-[12.5px] font-bold text-gray-500">Vendas do mês</div>
+          <div className="text-lg font-bold text-gray-900 mt-1">{formatarMoeda(vendasDoMes)}</div>
         </div>
         <div className="p-4">
-          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">A receber do mês</div>
-          <div className="text-lg font-black text-[#A8102A] mt-1">{formatarMoeda(comissaoDoMes)}</div>
+          <div className="text-[12.5px] font-bold text-gray-500">A receber do mês</div>
+          <div className="text-lg font-bold text-[#A8102A] mt-1">{formatarMoeda(comissaoDoMes)}</div>
         </div>
         <div className="p-4">
-          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Vendas totais</div>
-          <div className="text-lg font-black text-gray-900 mt-1">{formatarMoeda(vendasTotais)}</div>
+          <div className="text-[12.5px] font-bold text-gray-500">Vendas totais</div>
+          <div className="text-lg font-bold text-gray-900 mt-1">{formatarMoeda(vendasTotais)}</div>
         </div>
       </div>
 
       {/* Tabela de comissão: a faixa atual em destaque, as outras como
           referência de quanto passa a valer dali em diante. */}
       <div className="p-5 border-t border-gray-100">
-        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2.5">
+        <p className="text-[12.5px] font-bold text-gray-500 mb-2.5">
           Tabela de comissão
         </p>
         <div className="border border-gray-100 rounded-xl overflow-hidden">
@@ -66,14 +66,14 @@ export function CartaoNivelVendedor({ vendasDoMes, vendasTotais = 0 }: { vendasD
             >
               <span className={`font-bold ${i === indiceFaixa ? "text-[#A8102A]" : "text-gray-600"}`}>
                 {faixa.name}
-                {i === indiceFaixa && <span className="ml-2 text-[10px] font-black uppercase tracking-wide">você está aqui</span>}
+                {i === indiceFaixa && <span className="ml-2 text-[12px] font-bold">você está aqui</span>}
               </span>
               <span className="text-gray-400 text-[12px] flex-1 text-right truncate">
                 {faixa.max === Infinity
                   ? `acima de ${formatarMoeda(faixa.min)} vendidos`
                   : `${formatarMoeda(faixa.min)} a ${formatarMoeda(faixa.max)} vendidos`}
               </span>
-              <span className={`font-black tabular-nums ${i === indiceFaixa ? "text-[#A8102A]" : "text-gray-700"}`}>
+              <span className={`font-bold tabular-nums ${i === indiceFaixa ? "text-[#A8102A]" : "text-gray-700"}`}>
                 {faixa.commission}
               </span>
             </div>

@@ -105,11 +105,13 @@
   # O que cada linha libera (tudo que o site usa de fora, e só isso):
   #   script  → login do Google
   #   style   → Google Fonts ('unsafe-inline' é exigido pelo Tailwind/React)
-  #   img     → data:/blob: (fotos de produto em base64) e o QR do PIX
+  #   img     → data:/blob: (fotos em base64) e https: (foto de produto
+  #             cadastrada por link). O QR do PIX agora é desenhado no
+  #             próprio navegador — não sai mais para um site de terceiros.
   #   media   → data:/blob: (vídeo enviado nas avaliações)
   #   connect → ViaCEP (frete), Google (login); a API é o próprio domínio
   #   frame   → só o iframe do login do Google
   # Serviço externo novo (analytics, chat, pixel) precisa entrar aqui, senão o
   # navegador bloqueia — esse é o comportamento esperado.
-  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://api.qrserver.com https://lh3.googleusercontent.com; media-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://viacep.com.br https://accounts.google.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://viacep.com.br https://accounts.google.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 </IfModule>

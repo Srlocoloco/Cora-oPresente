@@ -20,12 +20,23 @@
 
 import { useState, useEffect, useMemo, useRef, lazy, Suspense, type ComponentProps } from "react";
 import { Search, Plus, Check } from "lucide-react";
-import type { Produto, ItemCarrinho, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, ResultadoCadastroVendedor, Pedido, Cliente, Tela, DadosPagamento, CaixaMontada } from "./types";
-import { CONFIG_PADRAO, CATEGORIAS_VITRINE, CATEGORIA_CAIXA, CATEGORIA_CAIXA_LEGADO, EMAIL_ADMIN, NOMES_MESES, URL_BACKEND_PIX, COMISSAO_MASTER_PROMOVIDO_EQUIPE, QTD_RECOMENDACOES, ATRASO_POPUP_RECOMENDACAO, ESPERA_APOS_DISPENSAR_RECOMENDACAO } from "./constantes";
+import type { Produto, ItemCarrinho, Usuario, ConfigLoja, Cupom, Banner, Cargo, Recrutamento, ResultadoCadastroVendedor, Pedido, Cliente, Tela, DadosPagamento, CaixaMontada, Compra } from "./types";
+import { CONFIG_PADRAO, CATEGORIAS_VITRINE, CATEGORIA_CAIXA, CATEGORIA_CAIXA_LEGADO, EMAIL_ADMIN, URL_BACKEND_PIX, QTD_RECOMENDACOES, ATRASO_POPUP_RECOMENDACAO, ESPERA_APOS_DISPENSAR_RECOMENDACAO } from "./constantes";
 import { cabecalhosAdmin, cabecalhosAuth, definirSessao } from "./authToken";
 import { sincronizarInscricao } from "./notificacoesPush";
-import { cupomEstaValido, clienteJaUsouCupom, codigoVendaDe, lerArmazenamento, gerarCodigoProduto, linhaDeCarrinhoDaCaixa, itensParaEstoque, textoDoPedidoDaCaixa } from "./utils";
-import { produtosComprados, recomendarProdutos, motivoDaRecomendacao } from "./recomendacoes";
+import { cupomEstaValido, codigoVendaDe, lerArmazenamento, gerarCodigoProduto, linhaDeCarrinhoDaCaixa } from "./utils";
+import { api } from "./api";
+import {
+  produtosComprados,
+  recomendarProdutos,
+  motivoDaRecomendacao,
+  maisVendidosDaLoja,
+  ofertasEmDestaque,
+  estaEmOferta,
+  descontoDe,
+  SINAIS_VAZIOS,
+  type SinaisVitrine,
+} from "./recomendacoes";
 import { toast } from "sonner";
 import { ImagemProduto } from "./components/ImagemProduto";
 import { AvisoBancoDesconectado } from "./components/AvisoBancoDesconectado";
@@ -33,11 +44,10 @@ import { PopupRecomendacao } from "./components/PopupRecomendacao";
 import { BarraInferiorMobile } from "./components/BarraInferiorMobile";
 import { ModalVendedorAtivado } from "./components/ModalVendedorAtivado";
 import { CabecalhoLoja } from "./components/CabecalhoLoja";
-import { MenuCategorias } from "./components/MenuCategorias";
 import { BannerRotativo } from "./components/BannerRotativo";
 import { BarraFiltros, type Ordenacao, type FaixaPreco } from "./components/BarraFiltros";
 import { FaixaBeneficios } from "./components/FaixaBeneficios";
-import { SecaoMaisVendidos } from "./components/SecaoMaisVendidos";
+import { SecaoVitrine } from "./components/SecaoVitrine";
 import { SecaoAvaliacoesClientes } from "./components/SecaoAvaliacoesClientes";
 import { ChamadaMonteSuaCaixa } from "./components/ChamadaMonteSuaCaixa";
 import { CartaoProduto } from "./components/CartaoProduto";
@@ -50,9 +60,19 @@ import { TelaPerfil } from "./screens/TelaPerfil";
 import { PaginaProduto } from "./screens/PaginaProduto";
 import { PaginaCarrinho } from "./screens/PaginaCarrinho";
 import { PaginaMontarCaixa } from "./screens/PaginaMontarCaixa";
-import { TelaPix } from "./screens/TelaPix";
-import { TelaPagamento } from "./screens/TelaPagamento";
+import { TelaCheckout } from "./screens/TelaCheckout";
+import { TelaPagamentoCompra } from "./screens/TelaPagamentoCompra";
 import { TelaCompraConcluida } from "./screens/TelaCompraConcluida";
+// Prateleiras da home que podem ser abertas por inteiro ("Ver todos")
+type Colecao = "ofertas" | "para-voce" | "mais-vendidos" | "novidades" | "todos";
+const NOME_COLECAO: Record<Exclude<Colecao, "para-voce" | "todos">, string> = {
+  ofertas: "Ofertas",
+  "mais-vendidos": "Mais vendidos",
+  novidades: "Novidades",
+};
+// Quantos produtos a listagem mostra por vez
+const POR_PAGINA = 20;
+
 // ─── Painel Admin: baixado só por quem abre o painel ─────────────────────────
 //
 // O painel inteiro (19 telas + a biblioteca de gráficos) pesava dentro do mesmo
@@ -69,7 +89,7 @@ const PainelAdminCarregado = lazy(() =>
 // segundo), mostra uma tela de espera em vez de um branco sem explicação.
 function CarregandoPainel() {
   return (
-    <div className="min-h-screen bg-[#FBF4EA] flex flex-col items-center justify-center gap-3">
+    <div className="min-h-screen bg-[#EDEDED] flex flex-col items-center justify-center gap-3">
       <div className="w-8 h-8 border-[3px] border-[#C8102E]/20 border-t-[#C8102E] rounded-full animate-spin" />
       <p className="text-[13px] font-semibold text-gray-500">Abrindo o painel...</p>
     </div>
@@ -145,6 +165,12 @@ export default function App() {
   );
   // Alterna o grid de produtos para mostrar só os favoritados (atalho do coração no cabeçalho)
   const [verSoFavoritos, setVerSoFavoritos] = useState(false);
+  // Uma prateleira da home aberta por inteiro ("Ver todos"). null = nenhuma.
+  const [colecao, setColecao] = useState<Colecao | null>(null);
+  // Mais vendidos e "comprados juntos" de verdade, somados no servidor
+  const [sinaisVitrine, setSinaisVitrine] = useState<SinaisVitrine>(SINAIS_VAZIOS);
+  // A listagem mostra aos poucos: POR_PAGINA de cada vez, "Mostrar mais" traz o resto
+  const [qtdVisivel, setQtdVisivel] = useState(POR_PAGINA);
   // Filtros e ordenação do catálogo (BarraFiltros) — client-side, sobre o
   // que já está carregado; não precisa ir ao servidor de novo.
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("relevancia");
@@ -172,8 +198,11 @@ export default function App() {
   // Caixa que um visitante terminou de montar antes de ter conta: fica
   // guardada durante o cadastro e entra no carrinho assim que ele se cadastra
   const [caixaPendente, setCaixaPendente] = useState<CaixaMontada | null>(null);
-  // Pagamento escolhido no carrinho, aguardando confirmação na tela de pagamento
-  const [pagamentoPendente, setPagamentoPendente] = useState<DadosPagamento | null>(null);
+  // Compra criada no servidor e esperando pagamento (tela de pagamento). O
+  // valor dela é o do servidor — ver TelaCheckout e lib_compras.php.
+  const [compraAtual, setCompraAtual] = useState<Compra | null>(null);
+  // Compra que acabou de ser paga (tela "Pronto!")
+  const [compraConcluida, setCompraConcluida] = useState<Compra | null>(null);
   // Cargos dados pelo Master (e-mail → vendedor), carregados do banco
   const [cargos, setCargos] = useState<Record<string, Cargo>>({});
   // Vendedores cadastrados pelo Master (código de ativação), carregados do banco
@@ -182,16 +211,12 @@ export default function App() {
   // Todo Master tem, obrigatoriamente, um vínculo aqui — não existe Master
   // fora da equipe de um MasterPlus (ver definirCargo). Carregado do banco.
   const [vinculosMasterPlus, setVinculosMasterPlus] = useState<Record<string, string>>({});
-  // Código de venda digitado pelo cliente na compra atual
-  const [codigoVenda, setCodigoVenda] = useState("");
   // Configurações da loja ajustáveis pelo Admin, carregadas do banco
   const [config, setConfig] = useState<ConfigLoja>(CONFIG_PADRAO);
   // Cupons de desconto criados pelo Admin, carregados do banco
   const [cupons, setCupons] = useState<Cupom[]>([]);
   // Banners da vitrine, editados pelo Admin, carregados do banco
   const [banners, setBanners] = useState<Banner[]>([]);
-  // Cupom digitado pelo cliente no carrinho
-  const [cupomDigitado, setCupomDigitado] = useState("");
   // Pedidos de compras finalizadas (carregados do banco de dados)
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   // Clientes cadastrados (carregados do banco de dados)
@@ -541,9 +566,16 @@ export default function App() {
 
   // O Admin muda a configuração da loja (frete, chave PIX, comissão...) —
   // salva no banco na hora, igual às outras ações do Admin
-  const salvarConfig = (novaConfig: ConfigLoja) => {
+  // Espera o servidor confirmar: a tela de Configurações mostra o motivo se um
+  // valor for recusado (ex.: comissão acima de 50%, CNPJ inválido).
+  const salvarConfig = async (novaConfig: ConfigLoja): Promise<string | null> => {
+    const r = await api("/api/dados/config", { metodo: "PUT", corpo: { dados: novaConfig } });
+    if (!r.ok) {
+      if (r.status === 401) setBancoConectado(false);
+      return r.erro ?? "Não foi possível salvar as configurações.";
+    }
     setConfig(novaConfig);
-    salvarNoBanco("config", novaConfig);
+    return null;
   };
 
   // Cria um banner novo ou atualiza um existente (mesmo id)
@@ -599,9 +631,20 @@ export default function App() {
       Object.keys(novosVinculos).length !== Object.keys(vinculosMasterPlus).length;
     if (vinculosMudaram) setVinculosMasterPlus(novosVinculos);
 
-    if (souAdmin) {
-      salvarNoBanco("cargos", novosCargos);
-      if (vinculosMudaram) salvarNoBanco("vinculosMasterPlus", novosVinculos);
+    if (souAdmin && cargo !== "master") {
+      // Admin: uma conta por vez. O servidor aplica a regra "Master sem
+      // MasterPlus não existe" e devolve as duas tabelas como ficaram — a
+      // tela se alinha a elas (antes o painel regravava a tabela inteira e
+      // apagava o cargo que um Master tivesse dado no mesmo intervalo).
+      chamarServidor("/api/admin/cargo", "POST", { email: chave, cargo }).then(({ ok, dados, erro }) => {
+        if (!ok) {
+          toast.error(erro ?? "Não foi possível salvar o cargo.", { duration: 8000 });
+          setRecargaBanco((n) => n + 1);
+          return;
+        }
+        if (dados?.cargos) setCargos(dados.cargos as Record<string, Cargo>);
+        if (dados?.vinculosMasterPlus) setVinculosMasterPlus(dados.vinculosMasterPlus as Record<string, string>);
+      });
     } else {
       // A rota da equipe cuida do vínculo Master ⇄ MasterPlus junto com o cargo
       chamarServidor("/api/equipe/cargo", "POST", { email: chave, cargo }).then(({ ok, dados, erro }) => {
@@ -637,9 +680,7 @@ export default function App() {
     // definirCargo já grava: pelo Admin, a tabela de cargos; pelo MasterPlus,
     // a rota da equipe — que gravou o vínculo Master ⇄ MasterPlus junto.
     definirCargo(chave, "master");
-    const novosVinculos = { ...vinculosMasterPlus, [chave]: masterPlusChave };
-    setVinculosMasterPlus(novosVinculos);
-    if (usuario?.email?.toLowerCase() === EMAIL_ADMIN) salvarNoBanco("vinculosMasterPlus", novosVinculos);
+    setVinculosMasterPlus({ ...vinculosMasterPlus, [chave]: masterPlusChave });
     return null;
   };
 
@@ -711,22 +752,56 @@ export default function App() {
     return { erro: null, codigo: criado?.codigo, jaEraCliente };
   };
 
-  // Cria um produto novo (gera o código sequencial da categoria, ex.:
-  // "BEL-001") ou atualiza um existente (mantém o código já atribuído)
-  const salvarProduto = (p: Produto) => {
-    const existente = produtos.find((x) => x.id === p.id);
-    const novo = existente
-      ? produtos.map((x) => (x.id === p.id ? { ...p, codigo: existente.codigo ?? p.codigo } : x))
-      : [{ ...p, codigo: p.codigo ?? gerarCodigoProduto(p.category, produtos) }, ...produtos];
-    setProdutos(novo);
-    salvarNoBanco("produtos", novo);
+  // Cadastra ou edita UM produto. Antes o painel mandava o catálogo inteiro a
+  // cada "Salvar": com duas pessoas cadastrando, a gravação de uma apagava o
+  // produto da outra. Agora vai só o produto, e a tela só troca a linha depois
+  // que o servidor confirma. Devolve a mensagem de erro (null = salvou), para
+  // o formulário continuar aberto com o que foi digitado quando algo dá errado.
+  const salvarProduto = async (p: Produto & { estoqueBase?: number }): Promise<string | null> => {
+    const novo = !produtos.some((x) => x.id === p.id);
+    const r = await api<{ produto: Produto }>(novo ? "/api/produtos" : `/api/produtos/${p.id}`, {
+      metodo: novo ? "POST" : "PUT",
+      corpo: p,
+    });
+    if (r.status === 409 && r.dados?.produto) {
+      // Outra pessoa salvou antes: mostra a versão atual em vez de apagá-la
+      const atual = r.dados.produto;
+      setProdutos((lista) => lista.map((x) => (x.id === atual.id ? atual : x)));
+      return r.erro;
+    }
+    if (!r.ok || !r.dados?.produto) {
+      if (r.status === 401) setBancoConectado(false);
+      return r.erro ?? "Não foi possível salvar o produto.";
+    }
+    const salvo = r.dados.produto;
+    setProdutos((lista) => (novo ? [...lista, salvo] : lista.map((x) => (x.id === salvo.id ? salvo : x))));
+    toast.success(novo ? `Produto cadastrado (${salvo.codigo}).` : "Alterações salvas.");
+    return null;
   };
 
   // Remove um produto do catálogo
-  const excluirProduto = (id: number) => {
-    const novo = produtos.filter((p) => p.id !== id);
-    setProdutos(novo);
-    salvarNoBanco("produtos", novo);
+  const excluirProduto = async (id: number) => {
+    const r = await api(`/api/produtos/${id}`, { metodo: "DELETE" });
+    if (!r.ok) {
+      toast.error(r.erro ?? "Não foi possível excluir o produto.", { duration: 8000 });
+      return;
+    }
+    setProdutos((lista) => lista.filter((p) => p.id !== id));
+    toast.success("Produto excluído.");
+  };
+
+  // Ajuste rápido de estoque (tela Estoque): soma/subtrai ou define um número,
+  // no geral, numa cor ou num tamanho. O servidor faz a conta com o estoque DE
+  // AGORA (as vendas do meio do caminho não somem) e devolve o produto certo.
+  const ajustarEstoque = async (
+    id: number,
+    ajuste: { delta?: number; definir?: number; cor?: string; tamanho?: string }
+  ): Promise<string | null> => {
+    const r = await api<{ produto: Produto }>(`/api/produtos/${id}/estoque`, { metodo: "PATCH", corpo: ajuste });
+    if (!r.ok || !r.dados?.produto) return r.erro ?? "Não foi possível ajustar o estoque.";
+    const atual = r.dados.produto;
+    setProdutos((lista) => lista.map((x) => (x.id === atual.id ? atual : x)));
+    return null;
   };
 
   // Atualiza na hora o resumo (estrelas + quantidade) de um produto depois que
@@ -747,14 +822,26 @@ export default function App() {
     id: string,
     mudancas: { status?: string; codigoRastreio?: string; entregador?: string | null },
   ) => {
-    setPedidos((anterior) => anterior.map((o) => (o.id === id ? { ...o, ...mudancas } : o)));
+    const anterior = pedidos.find((o) => o.id === id);
+    setPedidos((lista) => lista.map((o) => (o.id === id ? { ...o, ...mudancas } : o)));
     // encodeURIComponent é obrigatório aqui: o número do pedido começa com "#"
     // (ex.: "#CP-A0"), e "#" numa URL significa "âncora" — o navegador corta
-    // tudo dali em diante e nunca envia ao servidor. Sem isto a requisição ia
-    // para "/api/pedidos/" sem número nenhum: a tela mostrava o status novo
-    // (que é aplicado aqui em cima, na hora) e o banco continuava com o antigo,
-    // então bastava recarregar a página para a mudança "desaparecer".
-    salvarNoServidor(`/api/pedidos/${encodeURIComponent(id)}`, "PATCH", mudancas);
+    // tudo dali em diante e nunca envia ao servidor.
+    chamarServidor(`/api/pedidos/${encodeURIComponent(id)}`, "PATCH", mudancas).then(({ ok, dados, erro }) => {
+      if (!ok) {
+        // O servidor recusou (ex.: reabrir pedido cancelado): a tela volta ao
+        // que está gravado, com o motivo.
+        toast.error(erro ?? "Não foi possível atualizar o pedido.", { duration: 8000 });
+        if (anterior) setPedidos((lista) => lista.map((o) => (o.id === id ? anterior : o)));
+        return;
+      }
+      // Confirmar pagamento ou cancelar mexe na compra INTEIRA (todas as
+      // linhas do carrinho), no estoque e nas comissões: recarrega do banco.
+      if (dados?.compraPaga || dados?.compraCancelada || mudancas.status === "Cancelado") {
+        setRecargaBanco((n) => n + 1);
+        if (dados?.compraPaga) toast.success("Pagamento confirmado. O cliente foi avisado.");
+      }
+    });
   };
 
   // Admin escolhe quem leva o pedido. Vai pela mesma rota do status (PATCH de
@@ -795,6 +882,21 @@ export default function App() {
       return;
     }
     colocarNoCarrinho(produto);
+  };
+
+  // "Comprar agora": põe no carrinho e vai direto para o checkout. Visitante
+  // passa antes pelo cadastro (e volta com o produto no carrinho).
+  const comprarAgora = (produto: Produto) => {
+    if (!usuario) {
+      adicionarAoCarrinho(produto);
+      return;
+    }
+    if (produto.stock <= 0) return;
+    colocarNoCarrinho(produto);
+    setToastAdicionado(null);
+    setProdutoSelecionado(null);
+    setTela("checkout");
+    window.scrollTo({ top: 0 });
   };
 
   // Abre a página de um produto na loja. É o atalho de "revisitar o produto"
@@ -861,9 +963,19 @@ export default function App() {
     [pedidosDoCliente, produtos]
   );
   const recomendacoes = useMemo(
-    () => recomendarProdutos(compradosPeloCliente, produtos, QTD_RECOMENDACOES),
-    [compradosPeloCliente, produtos]
+    () => recomendarProdutos(compradosPeloCliente, produtos, QTD_RECOMENDACOES, sinaisVitrine),
+    [compradosPeloCliente, produtos, sinaisVitrine]
   );
+
+  // Os sinais mudam devagar (o servidor guarda a conta por 10 minutos):
+  // uma busca por visita basta. Sem resposta, as prateleiras usam o catálogo.
+  useEffect(() => {
+    api<SinaisVitrine>("/api/vitrine").then((r) => {
+      if (r.ok && r.dados) {
+        setSinaisVitrine({ maisVendidos: r.dados.maisVendidos ?? [], compradosJuntos: r.dados.compradosJuntos ?? {} });
+      }
+    });
+  }, []);
 
   // Pop-up de recomendação. As regras existem para ele NÃO atrapalhar: só na
   // vitrine (nunca no carrinho, no pagamento ou dentro de um produto), depois
@@ -952,9 +1064,9 @@ export default function App() {
     setTela("login");
   };
 
-  // Finaliza a compra: cria os pedidos, dá baixa no estoque e gera alertas
-  // Chamado pelo carrinho: valida o cliente e abre a tela de pagamento
-  const finalizarCompra = (dados: DadosPagamento) => {
+  // "Continuar a compra" no carrinho: exige conta e abre o checkout (entrega →
+  // pagamento → revisão).
+  const irParaCheckout = () => {
     if (!usuario) {
       setModoTelaLogin("cadastro");
       setAvisoTelaLogin("Crie sua conta para finalizar a compra");
@@ -962,195 +1074,93 @@ export default function App() {
       return;
     }
     if (carrinho.length === 0) return;
-    setPagamentoPendente(dados);
-    setTela("pagamento");
+    setTela("checkout");
+    window.scrollTo({ top: 0 });
   };
 
-  // Trava de uma compra por vez. A tela do PIX pergunta ao servidor a cada 5
-  // segundos se o dinheiro caiu; se duas respostas "CONCLUIDA" chegarem juntas
-  // (a primeira demorou mais que o intervalo), esta função seria chamada duas
-  // vezes e o cliente pagava uma compra e recebia duas — com baixa dobrada no
-  // estoque. A trava é uma ref porque precisa valer no mesmo instante, antes
-  // de qualquer re-renderização.
-  const finalizandoCompra = useRef(false);
+  // Linhas do carrinho no formato que o servidor entende: produto solto (com a
+  // cor escolhida) ou caixa montada (recipiente, tamanho, conteúdo e cartão).
+  // Vai só O QUE se compra — preço e total quem calcula é o servidor.
+  const linhasParaOServidor = () =>
+    carrinho.map((item) =>
+      item.caixa
+        ? {
+            qty: item.qty,
+            caixa: {
+              recipienteId: item.caixa.recipienteId,
+              tamanho: item.caixa.recipienteTamanho ?? null,
+              itens: item.caixa.itens.map((i) => ({ produtoId: i.produtoId, qty: i.qty })),
+              para: item.caixa.para ?? "",
+              de: item.caixa.de ?? "",
+              mensagem: item.caixa.mensagem ?? "",
+            },
+          }
+        : { produtoId: item.id, qty: item.qty, cor: item.corEscolhida ?? null }
+    );
 
-  // Chamado quando o pagamento é confirmado: cria os pedidos, dá baixa no
-  // estoque e gera alertas. O site só chama isso depois de confirmar o PIX
-  // de verdade — o status inicial do pedido é sempre "Pago".
-  const confirmarPagamento = async () => {
-    if (!usuario || !pagamentoPendente) return;
-    if (finalizandoCompra.current) return;
-    finalizandoCompra.current = true;
-    const agora = new Date();
-    const date = agora.toLocaleDateString("pt-BR");
-    const month = NOMES_MESES[agora.getMonth()];
-    // Número do pedido: aleatório, não o relógio. Os 5 últimos dígitos de
-    // Date.now() repetem a cada 100 segundos — em algumas centenas de vendas
-    // dois pedidos acabariam com o mesmo número, e o segundo era recusado
-    // pelo banco (chave duplicada), derrubando a compra inteira de um cliente
-    // que já tinha pagado.
-    const sufixo = Array.from({ length: 4 }, () =>
-      "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]
-    ).join("") + String(Date.now()).slice(-4);
-    const rotuloPagamento =
-      pagamentoPendente.metodo === "cartao"
-        ? `Cartão ${pagamentoPendente.parcelas}x`
-        : "PIX";
-    const statusInicial = "Pago";
-
-    // Uma caixa montada é UMA linha do carrinho, mas vários produtos no
-    // estoque: aqui ela é desmontada de volta em produtos de verdade, que é o
-    // que dá baixa (aqui e no servidor) — ver itensParaEstoque.
-    const itensVendidos = itensParaEstoque(carrinho);
-
-    const novosPedidos: Pedido[] = carrinho.map((item, i) => {
-      // Nome-base + cor escolhida (se houver) + quantidade — nessa ordem —
-      // para o produto continuar batendo com produtoFoiCompradoPor
-      const nomeComCor = item.corEscolhida ? `${item.name} - ${item.corEscolhida}` : item.name;
-      // Caixa montada pelo cliente tem descrição própria: recipiente,
-      // conteúdo e cartão de mensagem — é por ela que o Admin monta o pedido
-      const descricao = item.caixa
-        ? textoDoPedidoDaCaixa(item.caixa, item.qty)
-        : item.qty > 1
-        ? `${nomeComCor} (${item.qty}x)`
-        : nomeComCor;
-      return {
-        id: `#CP-${sufixo}${i}`,
-        customer: usuario.name,
-        email: usuario.email,
-        items: descricao,
-        total: item.price * item.qty,
-        status: statusInicial,
-        date,
-        month,
-        category: item.category,
-        pagamento: rotuloPagamento,
-        // Foto do e-mail de confirmação: numa caixa, a foto é a da caixa
-        produtoId: item.caixa ? item.caixa.recipienteId : item.id,
-        // Atribuição da venda: com código de venda válido, a venda conta somente
-        // para a conta dona do código. Sem código, a venda cai para o
-        // administrador (a loja) — só o código credita o vendedor ou o Master.
-        vendedor: vendedorVinculado ?? donoCodigoVenda ?? EMAIL_ADMIN,
-        codigoVenda: !vendedorVinculado && donoCodigoVenda ? codigoVendaLimpo : undefined,
-        // Endereço de entrega preenchido no carrinho (CEP + número)
-        endereco: pagamentoPendente.endereco,
-        // Cupom usado nesta compra — trava o mesmo cupom para o cliente de novo
-        cupomUsado: cupomAplicado ? cupomAplicado.codigo : undefined,
-      };
+  // "Confirmar e pagar" no checkout: o servidor confere preço, estoque, frete,
+  // cupom e código de venda, reserva os produtos e cria a compra "Aguardando
+  // pagamento". Devolve a mensagem de erro para a tela, ou null.
+  const criarCompra = async (dados: DadosPagamento): Promise<string | null> => {
+    const r = await api<{ compra: Compra }>("/api/checkout", {
+      corpo: {
+        linhas: linhasParaOServidor(),
+        metodo: dados.metodo,
+        parcelas: dados.parcelas,
+        cupom: dados.cupom,
+        codigoVenda: dados.codigoVenda,
+        endereco: dados.endereco,
+        // Se o cliente voltou do pagamento e mudou algo, a compra anterior
+        // (ainda não paga) é desfeita e o estoque dela volta antes de reservar de novo
+        substituirCompra: compraAtual?.status === "aguardando_pagamento" ? compraAtual.id : undefined,
+      },
     });
+    if (!r.ok || !r.dados?.compra) {
+      if (r.status === 401) {
+        setModoTelaLogin("login");
+        setAvisoTelaLogin("Sua sessão expirou. Entre de novo para finalizar a compra.");
+        setTela("login");
+      }
+      return r.erro ?? "Não foi possível registrar sua compra.";
+    }
+    setCompraAtual(r.dados.compra);
+    setTela("pagamento");
+    window.scrollTo({ top: 0 });
+    // O estoque mudou (reserva): a vitrine se atualiza em segundo plano
+    setRecargaBanco((n) => n + 1);
+    return null;
+  };
 
-    // Baixa de estoque dos produtos vendidos: soma as quantidades de todas as
-    // linhas do carrinho com este id (mesmo produto pode ter cores diferentes
-    // no carrinho, cada uma em uma linha) para tirar do estoque geral
-    const produtosAtualizados = produtos.map((p) => {
-      const itensDoProduto = itensVendidos.filter((i) => i.id === p.id);
-      if (itensDoProduto.length === 0) return p;
-      const qtyTotal = itensDoProduto.reduce((acum, i) => acum + i.qty, 0);
-      // Também desconta do estoque da cor específica escolhida (quando ela
-      // tem um estoque próprio cadastrado), senão a cor nunca esgota sozinha
-      const coresAtualizadas = p.colors?.map((c) => {
-        const itemDaCor = itensDoProduto.find((i) => i.corEscolhida === c.nome);
-        if (!itemDaCor || typeof c.estoque !== "number") return c;
-        return { ...c, estoque: Math.max(0, c.estoque - itemDaCor.qty) };
-      });
-      // Mesma ideia para o tamanho da caixa (P/M/G): a baixa desce no tamanho
-      // que o cliente escolheu, senão o P nunca esgotaria antes do G
-      const tamanhosAtualizados = p.tamanhos?.map((t) => {
-        const itemDoTamanho = itensDoProduto.find((i) => i.tamanhoEscolhido === t.tamanho);
-        if (!itemDoTamanho) return t;
-        return { ...t, estoque: Math.max(0, t.estoque - itemDoTamanho.qty) };
-      });
-      return {
-        ...p,
-        stock: Math.max(0, p.stock - qtyTotal),
-        colors: coresAtualizadas ?? p.colors,
-        tamanhos: tamanhosAtualizados ?? p.tamanhos,
-      };
-    });
-    // Alerta de produto esgotado (para as notificações do admin)
-    const esgotados = produtos
-      .filter((p) => {
-        const qtyTotal = itensVendidos.filter((i) => i.id === p.id).reduce((acum, i) => acum + i.qty, 0);
-        return qtyTotal > 0 && p.stock > 0 && p.stock - qtyTotal <= 0;
-      })
-      .map((p) => ({ id: p.id, name: p.name, date }));
-
-    // Grava a compra no banco pelo endpoint pontual — só insere os pedidos
-    // novos e dá baixa no estoque dos itens comprados (com lock de linha),
-    // sem reescrever as tabelas inteiras de produtos/pedidos/cupons (que
-    // outros clientes podem estar alterando ao mesmo tempo).
-    //
-    // ESPERA a resposta antes de comemorar. Antes isto era disparado e
-    // esquecido: se o servidor recusasse (estoque acabado, sessão expirada,
-    // banco fora do ar), o cliente via "Compra realizada!" mesmo assim e ia
-    // embora achando que estava tudo certo — enquanto na loja não existia
-    // pedido nenhum para separar e enviar.
-    const resposta = await chamarServidor("/api/checkout", "POST", {
-      pedidos: novosPedidos,
-      itens: itensVendidos,
-      cupomCodigo: cupomAplicado ? cupomAplicado.codigo : undefined,
-    });
-
-    if (!resposta.ok) {
-      finalizandoCompra.current = false;
-      toast.error(
-        resposta.erro ?? "Não foi possível registrar seu pedido. Fale com a loja antes de pagar de novo.",
-        { duration: 12000 }
-      );
-      // O carrinho continua intacto e a pessoa volta para ele: dá para
-      // corrigir o que o servidor apontou (quantidade, cupom) e tentar de novo
-      // sem remontar a compra.
-      setTela("carrinho");
+  // Retoma o pagamento de uma compra que ficou "Aguardando pagamento" (link
+  // "Pagar agora" nos pedidos do cliente).
+  const retomarPagamento = async (compraId: string) => {
+    const r = await api<{ compra: Compra }>(`/api/compras/${compraId}`);
+    if (!r.ok || !r.dados?.compra) {
+      toast.error(r.erro ?? "Não foi possível abrir esta compra.");
       return;
     }
-
-    // Números que o servidor realmente gravou (ele troca o número quando já
-    // existe um pedido com aquele id) — é o que vai para a tela e para o
-    // rastreamento do cliente.
-    const idsGravados = Array.isArray(resposta.dados?.pedidos)
-      ? (resposta.dados!.pedidos as string[])
-      : null;
-    const pedidosGravados = idsGravados
-      ? novosPedidos.map((p, i) => ({ ...p, id: idsGravados[i] ?? p.id }))
-      : novosPedidos;
-
-    // Atualiza o estado local na hora, só para a UI — o servidor já fez o
-    // cálculo real e definitivo acima.
-    setProdutos(produtosAtualizados);
-    // Mantém só os 30 mais recentes — o efeito acima já remove o que foi
-    // reabastecido, isso aqui é só uma trava extra contra crescimento sem fim
-    if (esgotados.length > 0) setAlertasEstoque((anterior) => [...esgotados, ...anterior].slice(0, 30));
-
-    setPedidos((anterior) => [...pedidosGravados, ...anterior]);
-    // Primeira compra com código válido: o cliente fica vinculado a essa conta
-    // para sempre (o servidor grava o vínculo no checkout). A partir daqui o
-    // campo de código de venda some — só é pedido uma vez por conta.
-    if (!vendedorVinculado && donoCodigoVenda) {
-      const chaveCliente = usuario.email.toLowerCase();
-      setClientes((anterior) =>
-        anterior.map((c) =>
-          c.email.toLowerCase() === chaveCliente ? { ...c, vendedorVinculado: donoCodigoVenda } : c
-        )
-      );
+    if (r.dados.compra.status === "paga") {
+      toast.success("Esta compra já está paga.");
+      setRecargaBanco((n) => n + 1);
+      return;
     }
-    setTotalUltimaCompra(pagamentoPendente.total);
-    // Produtos desta compra: viram o convite de avaliação na tela de sucesso
-    setProdutosUltimaCompra(
-      produtos.filter((p) => itensVendidos.some((i) => i.id === p.id))
-    );
+    setCompraAtual(r.dados.compra);
+    setTela("pagamento");
+    window.scrollTo({ top: 0 });
+  };
+
+  // O servidor confirmou o pagamento: carrinho vazio, dados recarregados
+  // (pedidos novos, estoque) e a tela "Pronto!".
+  const aoCompraAprovada = (compra: Compra) => {
+    const idsComprados = new Set(compra.pedidos.map((p) => p.produtoId).filter(Boolean) as number[]);
+    setProdutosUltimaCompra(produtos.filter((p) => idsComprados.has(p.id)));
+    setTotalUltimaCompra(compra.total);
+    setCompraConcluida(compra);
+    setCompraAtual(null);
     setCarrinho([]);
-    setPagamentoPendente(null);
-    setCodigoVenda(""); // já virou vínculo fixo da conta, não é pedido de novo
-    // Registra o uso do cupom (localmente) e limpa para a próxima compra
-    if (cupomAplicado) {
-      setCupons((anterior) =>
-        anterior.map((c) => (c.codigo === cupomAplicado.codigo ? { ...c, usos: c.usos + 1 } : c))
-      );
-      setCupomDigitado("");
-    }
+    setRecargaBanco((n) => n + 1);
     setTela("sucesso");
-    // Compra encerrada: libera a trava para a próxima compra desta sessão.
-    finalizandoCompra.current = false;
+    window.scrollTo({ top: 0 });
   };
 
   // Cada linha do carrinho é identificada por id + cor escolhida (cores
@@ -1178,49 +1188,23 @@ export default function App() {
     ? pedidos.filter(
         (o) =>
           o.email.toLowerCase() === usuario.email.toLowerCase() &&
-          (o.status === "Processando" || o.status === "Em trânsito")
+          (o.status === "Aguardando pagamento" || o.status === "Processando" || o.status === "Em trânsito")
       ).length
     : 0;
 
-  // Dono do código de venda digitado pelo cliente (null = vazio ou inválido).
-  // Sem código (ou com código inválido), a compra segue normalmente.
-  // Contas com código: quem vende — Vendedor, Master e MasterPlus. Entregador
-  // não tem código de venda (não divulga produto, não ganha comissão), então
-  // fica de fora: senão o código derivado do e-mail dele seria aceito no
-  // carrinho e a venda ficaria creditada a quem não vendeu nada.
-  const codigoVendaLimpo = codigoVenda.trim().toUpperCase();
-  const contasComCodigo = Object.keys(cargos).filter((email) => cargos[email] !== "entregador");
-  const donoCodigoVenda = codigoVendaLimpo
-    ? contasComCodigo.find((email) => codigoVendaDe(email) === codigoVendaLimpo) ?? null
-    : null;
-  // Nome amigável do dono do código (para mostrar ao cliente)
-  const nomeDonoCodigoVenda = donoCodigoVenda
-    ? clientes.find((c) => c.email.toLowerCase() === donoCodigoVenda)?.name ?? donoCodigoVenda
-    : null;
+  // Nome do dono de um código de venda (null = não reconhecido). Só contas que
+  // VENDEM têm código — entregador fica de fora. É só para mostrar ao cliente
+  // de quem é o código; quem decide de verdade é o servidor no checkout.
+  const nomeDoDonoDoCodigo = (codigo: string): string | null => {
+    const limpo = codigo.trim().toUpperCase();
+    if (!limpo) return null;
+    const email = Object.keys(cargos).find((e) => cargos[e] !== "entregador" && codigoVendaDe(e) === limpo);
+    if (!email) return null;
+    return clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email;
+  };
   const vendedorVinculado = usuario
     ? clientes.find((c) => c.email.toLowerCase() === usuario.email.toLowerCase())?.vendedorVinculado ?? null
     : null;
-
-  // Cupom digitado no carrinho, se existir, estiver válido (ativo e na
-  // validade) e ainda não tiver sido usado por este cliente antes (cada
-  // cupom vale só uma vez por pessoa)
-  const cupomAplicado = cupomDigitado.trim()
-    ? cupons.find(
-        (c) =>
-          c.codigo === cupomDigitado.trim().toUpperCase() &&
-          cupomEstaValido(c) &&
-          (!usuario || !clienteJaUsouCupom(usuario.email, c.codigo, pedidos))
-      ) ?? null
-    : null;
-  // true quando o código digitado existe mas já foi usado por este cliente —
-  // usado só para mostrar uma mensagem melhor que "cupom inválido"
-  const cupomJaUsado =
-    !cupomAplicado &&
-    !!usuario &&
-    cupomDigitado.trim().length > 0 &&
-    cupons.some(
-      (c) => c.codigo === cupomDigitado.trim().toUpperCase() && cupomEstaValido(c) && clienteJaUsouCupom(usuario.email, c.codigo, pedidos)
-    );
 
   // Produtos que a LOJA mostra: tudo menos as caixas. Os recipientes da
   // categoria "Caixas" não são presente que alguém compre sozinho — eles são
@@ -1235,6 +1219,18 @@ export default function App() {
     [produtos]
   );
 
+  // A coleção aberta por inteiro, já na ordem dela
+  const listaDaColecao = useMemo((): Produto[] | null => {
+    switch (colecao) {
+      case "ofertas": return produtosDaVitrine.filter(estaEmOferta).sort((a, b) => descontoDe(b) - descontoDe(a));
+      case "para-voce": return recomendarProdutos(compradosPeloCliente, produtosDaVitrine, 40, sinaisVitrine);
+      case "mais-vendidos": return maisVendidosDaLoja(produtosDaVitrine, 40, sinaisVitrine);
+      case "novidades": return [...produtosDaVitrine].sort((a, b) => b.id - a.id).slice(0, 40);
+      case "todos": return produtosDaVitrine;
+      default: return null;
+    }
+  }, [colecao, produtosDaVitrine, compradosPeloCliente, sinaisVitrine]);
+
   const produtosFiltrados = useMemo(() => {
     const dentroDaFaixa = (preco: number): boolean => {
       switch (faixaPreco) {
@@ -1245,7 +1241,7 @@ export default function App() {
         default: return true;
       }
     };
-    const filtrados = produtosDaVitrine.filter((p) => {
+    const filtrados = (listaDaColecao ?? produtosDaVitrine).filter((p) => {
       if (verSoFavoritos && !favoritos.includes(p.id)) return false;
       const termo = busca.trim().toLowerCase();
       const matchSearch =
@@ -1256,7 +1252,7 @@ export default function App() {
       // Com uma busca digitada, procura em todas as categorias — só filtra
       // pela categoria selecionada quando o campo de busca está vazio.
       // Em "só favoritos" a categoria não filtra: são poucos itens, mistura tudo.
-      const matchCat = termo || verSoFavoritos ? true : categoriaSelecionada === "Outros" || p.category === categoriaSelecionada;
+      const matchCat = termo || verSoFavoritos || listaDaColecao ? true : categoriaSelecionada === "Outros" || p.category === categoriaSelecionada;
       if (!matchCat || !matchSearch) return false;
       if (!dentroDaFaixa(p.price)) return false;
       if (avaliacaoMinFiltro > 0 && p.rating < avaliacaoMinFiltro) return false;
@@ -1274,10 +1270,16 @@ export default function App() {
       case "maior-preco": ordenados.sort((a, b) => b.price - a.price); break;
       case "avaliacao": ordenados.sort((a, b) => b.rating - a.rating || b.reviews - a.reviews); break;
       case "novidade": ordenados.sort((a, b) => b.id - a.id); break;
-      // "relevancia": mantém a ordem do catálogo (curadoria do Admin)
+      // "relevancia": mantém a ordem do catálogo (curadoria do Admin) ou a
+      // da coleção aberta (maior desconto, mais vendido…)
     }
     return ordenados;
-  }, [categoriaSelecionada, busca, produtosDaVitrine, verSoFavoritos, favoritos, faixaPreco, avaliacaoMinFiltro, marcaFiltro, apenasEstoqueFiltro, ordenacao]);
+  }, [categoriaSelecionada, busca, produtosDaVitrine, listaDaColecao, verSoFavoritos, favoritos, faixaPreco, avaliacaoMinFiltro, marcaFiltro, apenasEstoqueFiltro, ordenacao]);
+
+  // Nova listagem (outra categoria, busca, filtro…) começa da primeira página
+  useEffect(() => {
+    setQtdVisivel(POR_PAGINA);
+  }, [categoriaSelecionada, busca, colecao, verSoFavoritos, faixaPreco, avaliacaoMinFiltro, marcaFiltro, apenasEstoqueFiltro, ordenacao]);
 
   // Marcas disponíveis dentro do recorte atual (categoria/busca/favoritos),
   // pra não oferecer no filtro uma marca que não tem nenhum produto ali
@@ -1323,6 +1325,40 @@ export default function App() {
     return CATEGORIAS_VITRINE.filter((c) => c === "Outros" || comEstoqueNoCatalogo.has(c));
   }, [produtosDaVitrine]);
 
+  // As prateleiras da home. Cada produto aparece em uma só (a primeira em que
+  // entrar), para a página não repetir o mesmo item três vezes.
+  const prateleiras = useMemo(() => {
+    const usados = new Set<number>();
+    const semRepetir = (lista: Produto[], n = 10) => {
+      const livres = lista.filter((p) => !usados.has(p.id)).slice(0, n);
+      livres.slice(0, 5).forEach((p) => usados.add(p.id));
+      return livres;
+    };
+    const ofertas = semRepetir(ofertasEmDestaque(produtosDaVitrine, 20));
+    const paraVoce = semRepetir(recomendarProdutos(compradosPeloCliente, produtosDaVitrine, 20, sinaisVitrine));
+    const maisVendidos = semRepetir(maisVendidosDaLoja(produtosDaVitrine, 20, sinaisVitrine));
+    const novidades = semRepetir(
+      produtosDaVitrine.filter((p) => p.stock > 0).sort((a, b) => b.id - a.id).slice(0, 20)
+    );
+    // Uma fileira por categoria: os mais vendidos dela primeiro, depois os
+    // de melhor nota. Esgotado não entra na vitrine.
+    const posicaoVenda = (p: Produto) => {
+      const i = sinaisVitrine.maisVendidos.indexOf(p.id);
+      return i < 0 ? Infinity : i;
+    };
+    const porCategoria = categoriasComProduto
+      .filter((c) => c !== "Outros")
+      .map((categoria) => ({
+        categoria,
+        produtos: produtosDaVitrine
+          .filter((p) => p.category === categoria && p.stock > 0)
+          .sort((a, b) => posicaoVenda(a) - posicaoVenda(b) || b.rating - a.rating || b.id - a.id)
+          .slice(0, 5),
+      }))
+      .filter((g) => g.produtos.length >= 2);
+    return { ofertas, paraVoce, maisVendidos, novidades, porCategoria };
+  }, [produtosDaVitrine, compradosPeloCliente, sinaisVitrine, categoriasComProduto]);
+
   const filtrosDeCatalogoAtivos = faixaPreco !== "" || avaliacaoMinFiltro > 0 || marcaFiltro !== "" || apenasEstoqueFiltro;
   const limparFiltrosDeCatalogo = () => {
     setFaixaPreco(""); setAvaliacaoMinFiltro(0); setMarcaFiltro(""); setApenasEstoqueFiltro(false); setOrdenacao("relevancia");
@@ -1331,7 +1367,7 @@ export default function App() {
   // Home "limpa": sem categoria/busca/favoritos filtrando — é quando faz
   // sentido mostrar as seções de vitrine (categorias, mais vendidos, etc.),
   // em vez de competir com o resultado de uma navegação específica.
-  const naHomeLimpa = categoriaSelecionada === "Outros" && busca.trim() === "" && !verSoFavoritos;
+  const naHomeLimpa = categoriaSelecionada === "Outros" && busca.trim() === "" && !verSoFavoritos && !colecao;
 
   // Após login/cadastro: a conta já foi criada/conferida no backend pela
   // própria TelaLogin (senha com hash, ou Google verificado de verdade) —
@@ -1453,7 +1489,49 @@ export default function App() {
     else if (cargoUsuario === "entregador") { setPaginaAdmin("entregas"); setTela("entregador"); }
   };
 
+  // Sair de verdade: apaga a sessão no servidor e no navegador. (O "Sair" do
+  // painel antes só mostrava a tela de login — a sessão continuava valendo.)
+  const sair = () => {
+    const ehAdminSaindo = usuario?.email?.toLowerCase() === EMAIL_ADMIN;
+    salvarNoServidor(ehAdminSaindo ? "/api/admin/logout" : "/api/clientes/logout", "POST");
+    definirSessao(null);
+    setUsuario(null);
+    setCompraAtual(null);
+    setTela("loja");
+    setRecargaBanco((n) => n + 1);
+  };
+
   // Abre o perfil do cliente (pede login se for visitante)
+  // Abre uma categoria do menu. "Outros" é o "Todos os produtos".
+  const verCategoria = (c: string) => {
+    setCategoriaSelecionada(c);
+    setColecao(c === "Outros" ? "todos" : null);
+    setBusca("");
+    setProdutoSelecionado(null);
+    setVerSoFavoritos(false);
+    window.scrollTo({ top: 0 });
+  };
+
+  // Abre uma prateleira da home por inteiro ("Ver todos")
+  const verColecao = (c: Colecao) => {
+    setColecao(c);
+    setCategoriaSelecionada("Outros");
+    setBusca("");
+    setProdutoSelecionado(null);
+    setVerSoFavoritos(false);
+    window.scrollTo({ top: 0 });
+  };
+
+  // Volta à vitrine inicial: sem busca, sem categoria, sem produto aberto
+  const irParaInicio = () => {
+    setProdutoSelecionado(null);
+    setColecao(null);
+    setCategoriaSelecionada("Outros");
+    setBusca("");
+    setVerSoFavoritos(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const abrirPerfil = () => {
     if (!usuario) {
       setModoTelaLogin("login");
@@ -1493,24 +1571,18 @@ export default function App() {
           pedidos={pedidosDoCliente}
           produtos={produtos}
           cupons={cupons.filter(cupomEstaValido)}
-          categorias={categoriasComProduto.filter((c) => c !== "Outros")}
           desde={clientes.find((c) => c.email.toLowerCase() === usuario.email.toLowerCase())?.since}
-          aoVerCategoria={(c) => { setCategoriaSelecionada(c); setProdutoSelecionado(null); setTela("loja"); }}
+          aoVerCategoria={(c) => { verCategoria(c); setTela("loja"); }}
           aoVerProduto={abrirProdutoNaLoja}
           aoVoltar={() => setTela("loja")}
-          aoSair={() => {
-            const ehAdminSaindo = usuario?.email?.toLowerCase() === EMAIL_ADMIN;
-            salvarNoServidor(ehAdminSaindo ? "/api/admin/logout" : "/api/clientes/logout", "POST");
-            definirSessao(null);
-            setUsuario(null);
-            setTela("loja");
-          }}
+          aoSair={sair}
           aoAbrirNotificacoes={abrirNotificacoes}
           aoAbrirAjuda={() => { setPaginaInstitucional("ajuda"); setTela("institucional"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
           rotuloPainel={rotuloPainel}
           aoAbrirPainel={abrirPainel}
           cargoUsuario={cargoUsuario}
           aoAtivarCodigo={ativarCodigoVendedor}
+          aoPagarCompra={retomarPagamento}
         />
         <BarraInferiorMobile
           ativa="perfil"
@@ -1575,6 +1647,7 @@ export default function App() {
           compradosPeloCliente={compradosPeloCliente}
           aoVerProduto={abrirProdutoNaLoja}
           aoAvaliarProduto={abrirAvaliacaoDoProduto}
+          aoPagarCompra={retomarPagamento}
           aoVoltar={() => setTela("loja")}
         />
         <BarraInferiorMobile
@@ -1625,8 +1698,10 @@ export default function App() {
         aoExcluirBanner={excluirBanner}
         config={config}
         aoSalvarConfig={salvarConfig}
+        aoAjustarEstoque={ajustarEstoque}
         bancoOffline={bancoConectado === false}
         aoAtualizarResumoAvaliacoes={atualizarResumoAvaliacoes}
+        aoSair={sair}
       />
     );
   }
@@ -1637,10 +1712,10 @@ export default function App() {
   // Um Master promovido por um MasterPlus ganha 1% sobre a própria equipe em
   // vez do padrão configurável (o restante vira repasse ao MasterPlus).
   if (tela === "master" && ehMaster) {
-    const souMasterPromovido = usuario ? Boolean(vinculosMasterPlus[usuario.email.toLowerCase()]) : false;
     return (
       <PainelAdmin
         modo="master"
+        config={config}
         pagina={paginaAdmin}
         setPagina={setPaginaAdmin}
         setTela={setTela}
@@ -1665,8 +1740,8 @@ export default function App() {
             : Promise.resolve({ erro: "Você precisa estar logado." })
         }
         codigoVenda={usuario ? codigoVendaDe(usuario.email) : undefined}
-        comissaoPct={souMasterPromovido ? COMISSAO_MASTER_PROMOVIDO_EQUIPE : config.comissaoRecrutador / 100}
         bancoOffline={bancoConectado === false}
+        aoSair={sair}
       />
     );
   }
@@ -1680,6 +1755,7 @@ export default function App() {
     return (
       <PainelAdmin
         modo="masterplus"
+        config={config}
         pagina={paginaAdmin}
         setPagina={setPaginaAdmin}
         setTela={setTela}
@@ -1708,6 +1784,7 @@ export default function App() {
         }
         codigoVenda={usuario ? codigoVendaDe(usuario.email) : undefined}
         bancoOffline={bancoConectado === false}
+        aoSair={sair}
       />
     );
   }
@@ -1722,6 +1799,7 @@ export default function App() {
     return (
       <PainelAdmin
         modo="vendedor"
+        config={config}
         pagina={paginaAdmin}
         setPagina={setPaginaAdmin}
         setTela={setTela}
@@ -1738,6 +1816,7 @@ export default function App() {
         alertasEstoque={[]}
         codigoVenda={codigoVendaDe(emailVendedor)}
         bancoOffline={bancoConectado === false}
+        aoSair={sair}
       />
     );
   }
@@ -1751,6 +1830,7 @@ export default function App() {
     return (
       <PainelAdmin
         modo="entregador"
+        config={config}
         pagina={paginaAdmin}
         setPagina={setPaginaAdmin}
         setTela={setTela}
@@ -1765,28 +1845,42 @@ export default function App() {
         aoAtualizarStatusPedido={atualizarStatusPedido}
         alertasEstoque={[]}
         bancoOffline={bancoConectado === false}
+        aoSair={sair}
       />
     );
   }
 
-  // Tela de pagamento: confirma o pagamento pendente ou volta ao carrinho.
-  // PIX tem página própria com QR Code e código copia e cola (expira em 30 min)
-  if (tela === "pagamento" && pagamentoPendente) {
-    if (pagamentoPendente.metodo === "pix") {
-      return (
-        <TelaPix
-          total={pagamentoPendente.total}
-          aoConfirmar={confirmarPagamento}
-          aoVoltar={() => { setPagamentoPendente(null); setTela("carrinho"); }}
-        />
-      );
-    }
+  // Checkout: entrega → pagamento → revisão (como no Mercado Livre)
+  if (tela === "checkout" && usuario) {
     return (
-      <TelaPagamento
-        dados={pagamentoPendente}
-        email={usuario?.email ?? ""}
-        aoConfirmar={confirmarPagamento}
-        aoVoltar={() => { setPagamentoPendente(null); setTela("carrinho"); }}
+      <TelaCheckout
+        items={carrinho}
+        config={config}
+        cupons={cupons.filter(cupomEstaValido)}
+        vendedorVinculado={vendedorVinculado}
+        nomeDoDonoDoCodigo={nomeDoDonoDoCodigo}
+        aoVoltar={() => setTela("carrinho")}
+        aoConfirmar={criarCompra}
+      />
+    );
+  }
+
+  // Pagamento de uma compra já registrada no servidor (PIX ou cartão). Quem
+  // diz que foi pago é o servidor: esta tela só acompanha.
+  if (tela === "pagamento" && compraAtual) {
+    return (
+      <TelaPagamentoCompra
+        key={compraAtual.id}
+        compraInicial={compraAtual}
+        produtos={produtos}
+        aoAprovado={aoCompraAprovada}
+        aoVoltar={() => setTela("carrinho")}
+        aoCancelada={() => {
+          setCompraAtual(null);
+          setRecargaBanco((n) => n + 1);
+          setTela("carrinho");
+          toast.info("Compra cancelada. Seu carrinho continua salvo.");
+        }}
       />
     );
   }
@@ -1795,6 +1889,8 @@ export default function App() {
     return (
       <TelaCompraConcluida
         total={totalUltimaCompra}
+        compra={compraConcluida}
+        aoVerPedidos={() => { setProdutosUltimaCompra([]); setTela("notificacoes"); }}
         produtosComprados={produtosUltimaCompra}
         aoAvaliarProduto={(p) => {
           // Leva o cliente direto para a seção de avaliações daquele produto
@@ -1807,7 +1903,8 @@ export default function App() {
         recomendacoes={recomendarProdutos(
           produtosUltimaCompra.length > 0 ? produtosUltimaCompra : compradosPeloCliente,
           produtos,
-          QTD_RECOMENDACOES
+          QTD_RECOMENDACOES,
+          sinaisVitrine
         )}
         aoVerProduto={(p) => { setProdutosUltimaCompra([]); abrirProdutoNaLoja(p); }}
       />
@@ -1835,24 +1932,25 @@ export default function App() {
         aoVoltar={() => setTela("loja")}
         aoEditarCaixa={abrirMontagemDeCaixa}
         aoMontarCaixa={() => abrirMontagemDeCaixa(null)}
-        aoFinalizarCompra={finalizarCompra}
-        usuario={usuario}
-        codigoVenda={codigoVenda}
-        aoMudarCodigoVenda={setCodigoVenda}
-        nomeDonoCodigo={nomeDonoCodigoVenda}
-        vendedorVinculado={vendedorVinculado}
+        aoContinuar={irParaCheckout}
         config={config}
-        cupom={cupomDigitado}
-        aoMudarCupom={setCupomDigitado}
-        cupomAplicado={cupomAplicado}
-        cupomJaUsado={cupomJaUsado}
       />
     );
   }
 
+  const abrirProdutoDaVitrine = (prod: Produto) => {
+    setProdutoSelecionado(prod);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const propsVitrine = {
+    favoritos,
+    aoFavoritar: alternarFavorito,
+    aoAbrirProduto: abrirProdutoDaVitrine,
+    estoqueBaixo: config.estoqueBaixo,
+  };
+
   return (
-    <div className="min-h-screen bg-[#FBF4EA] pb-14 md:pb-0" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      {/* Cabeçalho + categorias empilhados num único sticky, pra não sobrepor um no outro */}
+    <div className="min-h-screen bg-[#EDEDED] pb-14 md:pb-0">
       <div className="sticky top-0 z-40">
         <CabecalhoLoja
           qtdCarrinho={qtdCarrinho}
@@ -1860,6 +1958,7 @@ export default function App() {
           aoAbrirCarrinho={() => setTela("carrinho")}
           aoAbrirFavoritos={() => {
             setVerSoFavoritos(true);
+            setColecao(null);
             setProdutoSelecionado(null);
             document.getElementById("produtos-section")?.scrollIntoView({ behavior: "smooth" });
           }}
@@ -1867,14 +1966,15 @@ export default function App() {
           rotuloPainel={rotuloPainel}
           aoClicarEntrar={abrirTelaLogin}
           aoAbrirPerfil={abrirPerfil}
+          aoIrInicio={irParaInicio}
           busca={busca}
-          aoBuscar={(v) => { setBusca(v); setProdutoSelecionado(null); setVerSoFavoritos(false); }}
+          aoBuscar={(v) => { setBusca(v); setColecao(null); setProdutoSelecionado(null); setVerSoFavoritos(false); }}
           usuario={usuario}
-        />
-        <MenuCategorias
           categorias={categoriasComProduto}
-          selecionada={categoriaSelecionada}
-          aoSelecionar={(c) => { setCategoriaSelecionada(c); setProdutoSelecionado(null); setVerSoFavoritos(false); }}
+          categoriaSelecionada={
+            verSoFavoritos || busca.trim() || naHomeLimpa ? "" : colecao === "todos" ? "Outros" : colecao ? "" : categoriaSelecionada
+          }
+          aoSelecionarCategoria={verCategoria}
           aoMontarCaixa={() => abrirMontagemDeCaixa(null)}
         />
       </div>
@@ -1883,24 +1983,24 @@ export default function App() {
       {toastAdicionado && (
         <div
           key={toastAdicionado.key}
-          className="fixed bottom-5 right-4 left-4 md:left-auto md:right-5 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 px-4 py-3 flex items-center gap-3 md:max-w-sm"
-          style={{ animation: "toastIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)" }}
+          role="status"
+          className="fixed bottom-[68px] md:bottom-6 right-3 left-3 md:left-auto md:right-6 z-50 bg-white rounded-md shadow-[0_4px_16px_rgba(0,0,0,0.18)] px-4 py-3 flex items-center gap-3 md:w-[380px]"
+          style={{ animation: "toastIn 0.2s ease-out" }}
         >
-          <div className="w-9 h-9 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <Check size={18} className="text-emerald-600" strokeWidth={3} />
-          </div>
           <ImagemProduto
             src={toastAdicionado.p.image}
             alt={toastAdicionado.p.name}
-            className="w-10 h-10 object-contain bg-gray-50 rounded-lg p-1 flex-shrink-0"
+            className="w-11 h-11 object-contain flex-shrink-0"
           />
           <div className="min-w-0 flex-1">
-            <div className="text-[12px] font-black text-gray-900">Adicionado ao carrinho!</div>
-            <div className="text-[11px] text-gray-500 truncate">{toastAdicionado.p.name}</div>
+            <div className="text-[13.5px] text-[#00A650] font-semibold flex items-center gap-1">
+              <Check size={15} strokeWidth={3} /> Adicionado ao carrinho
+            </div>
+            <div className="text-[12.5px] text-gray-500 truncate">{toastAdicionado.p.name}</div>
           </div>
           <button
             onClick={() => { setToastAdicionado(null); setTela("carrinho"); }}
-            className="bg-[#C8102E] hover:bg-[#8C1626] text-white text-[11px] font-black px-3 py-2 rounded-lg transition-colors flex-shrink-0"
+            className="btn-secundario text-[13px] px-3 py-2 flex-shrink-0"
           >
             Ver carrinho
           </button>
@@ -1908,8 +2008,8 @@ export default function App() {
       )}
       <style>{`
         @keyframes toastIn {
-          from { opacity: 0; transform: translateY(24px) scale(0.9); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         @keyframes puloCarrinho {
           0% { transform: scale(1); }
@@ -1923,6 +2023,7 @@ export default function App() {
           produto={produtoSelecionado}
           produtos={produtosDaVitrine}
           aoAdicionarAoCarrinho={adicionarAoCarrinho}
+          aoComprarAgora={comprarAgora}
           aoAbrirProduto={(p) => { setProdutoSelecionado(p); setIrParaAvaliacoes(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}
           aoVoltar={() => { setProdutoSelecionado(null); setIrParaAvaliacoes(false); }}
           aoFavoritar={alternarFavorito}
@@ -1932,52 +2033,82 @@ export default function App() {
           aoAtualizarResumoAvaliacoes={atualizarResumoAvaliacoes}
           config={config}
           focarAvaliacoes={irParaAvaliacoes}
+          sinais={sinaisVitrine}
         />
       ) : (
       <main>
         <BannerRotativo
           banners={banners}
-          aoClicarBanner={(c) => {
-            setCategoriaSelecionada(c);
-            setProdutoSelecionado(null);
-            setVerSoFavoritos(false);
-            document.getElementById("produtos-section")?.scrollIntoView({ behavior: "smooth" });
-          }}
+          aoClicarBanner={verCategoria}
         />
 
-        {naHomeLimpa && <ChamadaMonteSuaCaixa aoAbrir={() => abrirMontagemDeCaixa(null)} />}
-
-        <section id="produtos-section" className="max-w-[1440px] mx-auto px-4 py-8">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2.5">
-              <span className="w-1 h-6 rounded-full bg-[#A8102A]" />
-              <div>
-                <h2 className="text-xl font-black text-gray-900">
-                  {/* Com uma busca em andamento o título mostrava o nome da
-                      categoria selecionada — quase sempre "Outros", que não
-                      diz nada sobre o que a pessoa procurou e ainda parecia
-                      que a busca tinha sido ignorada. */}
-                  {verSoFavoritos
-                    ? "Seus favoritos"
-                    : busca.trim()
-                    ? `Resultados para “${busca.trim()}”`
-                    : naHomeLimpa
-                    ? "Produtos em destaque"
-                    : categoriaSelecionada}
-                </h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {produtosFiltrados.length} produto{produtosFiltrados.length !== 1 ? "s" : ""} encontrado{produtosFiltrados.length !== 1 ? "s" : ""}
-                </p>
+        {naHomeLimpa ? (
+          produtosDaVitrine.length === 0 ? (
+            <div className="max-w-[1200px] mx-auto px-4 pt-8">
+              <div className="painel py-16 px-6 text-center">
+                <p className="text-[18px] text-gray-800">Nenhum produto cadastrado ainda</p>
+                <p className="text-[14px] text-gray-500 mt-1">Em breve novidades por aqui.</p>
               </div>
             </div>
-            {verSoFavoritos && (
-              <button
-                onClick={() => setVerSoFavoritos(false)}
-                className="text-[#A8102A] font-bold text-sm hover:underline flex-shrink-0"
-              >
-                Ver tudo
-              </button>
-            )}
+          ) : (
+            <>
+              <SecaoVitrine titulo="Ofertas" produtos={prateleiras.ofertas} aoVerTodos={() => verColecao("ofertas")} rotuloVerTodos="Ver todas" {...propsVitrine} />
+              <ChamadaMonteSuaCaixa
+                aoAbrir={() => abrirMontagemDeCaixa(null)}
+                fotos={produtosDaVitrine.filter((p) => p.stock > 0 && p.image).slice(0, 4).map((p) => ({ src: p.image, alt: p.name }))}
+              />
+              <SecaoVitrine
+                titulo={compradosPeloCliente.length > 0 ? "Inspirado nas suas compras" : "Descubra na loja"}
+                produtos={prateleiras.paraVoce}
+                aoVerTodos={() => verColecao("para-voce")}
+                {...propsVitrine}
+              />
+              {prateleiras.maisVendidos.length >= 3 && (
+                <SecaoVitrine titulo="Mais vendidos" produtos={prateleiras.maisVendidos} aoVerTodos={() => verColecao("mais-vendidos")} {...propsVitrine} />
+              )}
+              {prateleiras.porCategoria.map((g) => (
+                <SecaoVitrine
+                  key={g.categoria}
+                  titulo={g.categoria}
+                  produtos={g.produtos}
+                  aoVerTodos={() => verCategoria(g.categoria)}
+                  {...propsVitrine}
+                />
+              ))}
+              <SecaoVitrine titulo="Novidades" produtos={prateleiras.novidades} aoVerTodos={() => verColecao("novidades")} rotuloVerTodos="Ver todas" {...propsVitrine} />
+              <div className="max-w-[1200px] mx-auto px-4 pt-8 text-center">
+                <button onClick={() => verCategoria("Outros")} className="btn-secundario px-8 py-3 text-[15px]">
+                  Ver todos os produtos da loja
+                </button>
+              </div>
+              <SecaoAvaliacoesClientes />
+              <FaixaBeneficios config={config} />
+            </>
+          )
+        ) : (
+        <section id="produtos-section" className="max-w-[1200px] mx-auto px-4 pt-6 scroll-mt-28">
+          <div className="flex items-baseline justify-between gap-4 mb-4">
+            <div className="flex items-baseline gap-3 min-w-0">
+              <h1 className="text-[22px] md:text-[24px] text-gray-800 truncate">
+                {verSoFavoritos
+                  ? "Seus favoritos"
+                  : busca.trim()
+                  ? `Resultados para “${busca.trim()}”`
+                  : colecao && colecao !== "todos"
+                  ? colecao === "para-voce"
+                    ? compradosPeloCliente.length > 0 ? "Inspirado nas suas compras" : "Descubra na loja"
+                    : NOME_COLECAO[colecao]
+                  : colecao === "todos"
+                  ? "Todos os produtos"
+                  : categoriaSelecionada}
+              </h1>
+              <span className="text-[13px] text-gray-500 flex-shrink-0">
+                {produtosFiltrados.length} {produtosFiltrados.length !== 1 ? "resultados" : "resultado"}
+              </span>
+            </div>
+            <button onClick={irParaInicio} className="text-[#C8102E] text-[14px] hover:underline flex-shrink-0">
+              Voltar ao início
+            </button>
           </div>
 
           {/* Filtros de catálogo (preço, avaliação, marca, estoque, ordenação):
@@ -2002,59 +2133,48 @@ export default function App() {
           </div>
 
           {produtosFiltrados.length === 0 ? (
-            <div className="py-16 md:py-20 text-center bg-white rounded-2xl border border-gray-100">
-              <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
-                <Search size={26} strokeWidth={1.75} className="text-[#A8102A]" />
-              </div>
-              <p className="font-bold text-gray-700 mb-1">
-                {verSoFavoritos
-                  ? "Você ainda não favoritou nenhum produto"
-                  : produtos.length === 0 ? "Nenhum produto cadastrado ainda" : "Nenhum produto encontrado"}
+            <div className="painel py-14 md:py-20 px-6 text-center">
+              <Search size={40} strokeWidth={1.25} className="text-gray-400 mx-auto mb-4" />
+              <p className="text-[18px] text-gray-800 mb-1">
+                {verSoFavoritos ? "Você ainda não favoritou nenhum produto" : "Nenhum produto encontrado"}
               </p>
-              <p className="text-sm text-gray-400 max-w-xs mx-auto">
-                {verSoFavoritos
-                  ? "Toque no coração de um produto para guardá-lo aqui."
-                  : produtos.length === 0
-                  ? "Em breve novidades por aqui — cadastre produtos no painel Admin."
-                  : "Tente outra categoria ou termo de busca."}
+              <p className="text-[14px] text-gray-500 max-w-sm mx-auto">
+                {verSoFavoritos ? "Toque no coração de um produto para guardá-lo aqui." : "Tente outra categoria ou outra palavra na busca."}
               </p>
-              {(verSoFavoritos || filtrosDeCatalogoAtivos || (categoriaSelecionada !== "Outros" && produtos.length > 0)) && (
-                <button
-                  onClick={() => { setVerSoFavoritos(false); setCategoriaSelecionada("Outros"); limparFiltrosDeCatalogo(); }}
-                  className="mt-5 text-[#A8102A] font-bold text-sm hover:underline"
-                >
-                  Ver todos os produtos
-                </button>
-              )}
+              <button
+                onClick={() => { limparFiltrosDeCatalogo(); irParaInicio(); }}
+                className="mt-5 btn-secundario px-5 py-2.5 text-[14px]"
+              >
+                Voltar ao início
+              </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5">
-              {produtosFiltrados.map((p) => (
-                <CartaoProduto
-                  key={p.id}
-                  produto={p}
-                  aoAdicionarAoCarrinho={(prod) => { adicionarAoCarrinho(prod); }}
-                  aoFavoritar={alternarFavorito}
-                  estaFavoritado={favoritos.includes(p.id)}
-                  aoAbrirProduto={(prod) => { setProdutoSelecionado(prod); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 md:gap-4">
+                {produtosFiltrados.slice(0, qtdVisivel).map((p) => (
+                  <CartaoProduto
+                    key={p.id}
+                    produto={p}
+                    aoFavoritar={alternarFavorito}
+                    estaFavoritado={favoritos.includes(p.id)}
+                    aoAbrirProduto={abrirProdutoDaVitrine}
+                    estoqueBaixo={config.estoqueBaixo}
+                  />
+                ))}
+              </div>
+              {produtosFiltrados.length > qtdVisivel && (
+                <div className="mt-6 text-center">
+                  <p className="text-[13px] text-gray-500 mb-3">
+                    Mostrando {qtdVisivel} de {produtosFiltrados.length}
+                  </p>
+                  <button onClick={() => setQtdVisivel((n) => n + POR_PAGINA)} className="btn-secundario px-8 py-3 text-[15px]">
+                    Mostrar mais produtos
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </section>
-
-        {naHomeLimpa && (
-          <>
-            <FaixaBeneficios />
-            <SecaoMaisVendidos
-              produtos={produtosDaVitrine}
-              aoAdicionarAoCarrinho={adicionarAoCarrinho}
-              aoFavoritar={alternarFavorito}
-              favoritos={favoritos}
-              aoAbrirProduto={(prod) => { setProdutoSelecionado(prod); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-            />
-            <SecaoAvaliacoesClientes />
-          </>
         )}
       </main>
       )}
@@ -2072,13 +2192,7 @@ export default function App() {
         ativa={verSoFavoritos ? "favoritos" : "inicio"}
         qtdCarrinho={qtdCarrinho}
         qtdFavoritos={favoritos.length}
-        aoIrInicio={() => {
-          setProdutoSelecionado(null);
-          setCategoriaSelecionada("Outros");
-          setBusca("");
-          setVerSoFavoritos(false);
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }}
+        aoIrInicio={irParaInicio}
         aoAbrirFavoritos={() => {
           setProdutoSelecionado(null);
           setVerSoFavoritos(true);
@@ -2093,7 +2207,7 @@ export default function App() {
       {popupRecomendado && (
         <PopupRecomendacao
           produto={popupRecomendado}
-          motivo={motivoDaRecomendacao(popupRecomendado, compradosPeloCliente)}
+          motivo={motivoDaRecomendacao(popupRecomendado, compradosPeloCliente, sinaisVitrine)}
           aoAbrir={(p) => { setPopupRecomendado(null); abrirProdutoNaLoja(p); }}
           aoFechar={fecharPopupRecomendado}
         />

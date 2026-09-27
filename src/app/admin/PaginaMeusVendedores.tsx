@@ -82,18 +82,18 @@ export function PaginaMeusVendedores({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         {cartoes.map((c) => (
-          <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+          <div key={c.label} className="painel p-4 flex items-center gap-3">
             <span className="flex-shrink-0">{c.icone}</span>
             <div className="min-w-0">
-              <div className="text-xl font-black text-gray-900">{c.valor}</div>
-              <div className="text-[11px] text-gray-400 font-semibold truncate">{c.label}</div>
+              <div className="text-xl font-bold text-gray-900">{c.valor}</div>
+              <div className="text-[12.5px] text-gray-400 font-semibold truncate">{c.label}</div>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="font-black text-gray-900 text-[15px] mb-1">Cadastrar novo vendedor</h3>
+      <div className="painel p-5">
+        <h3 className="font-bold text-gray-900 text-[15px] mb-1">Cadastrar novo vendedor</h3>
         <p className="text-[12px] text-gray-400 mb-4">
           Informe o nome e o e-mail. Se a pessoa já tem conta na loja, ela entra na sua equipe na
           hora; se ainda não tem, geramos um código para ela ativar a conta no perfil dela.
@@ -115,7 +115,7 @@ export function PaginaMeusVendedores({
           <button
             onClick={cadastrar}
             disabled={cadastrando}
-            className="bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-60 text-white font-black px-6 py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
+            className="bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-60 text-white font-bold px-6 py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
           >
             <Plus size={15} />
             {cadastrando ? "Cadastrando..." : "Cadastrar"}
@@ -133,9 +133,9 @@ export function PaginaMeusVendedores({
         )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">
+          <h3 className="font-bold text-gray-900 text-[15px]">
             Minha equipe ({recrutamentos.length})
           </h3>
           <p className="text-[12px] text-gray-400 mt-0.5">
@@ -156,12 +156,12 @@ export function PaginaMeusVendedores({
               return (
                 <div key={r.codigo} className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-black flex items-center justify-center flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-bold flex items-center justify-center flex-shrink-0">
                       {r.nome[0]}
                     </div>
                     <div className="min-w-0">
                       <div className="text-[13px] font-bold text-gray-800 truncate">{r.nome}</div>
-                      <div className="text-[11px] text-gray-400 truncate">{r.email} · {r.date}</div>
+                      <div className="text-[12.5px] text-gray-400 truncate">{r.email} · {r.date}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -177,7 +177,7 @@ export function PaginaMeusVendedores({
                       </button>
                     )}
                     <span
-                      className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                      className={`text-[12px] font-bold px-2.5 py-1 rounded-sm ${
                         r.ativado ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
                       }`}
                     >
@@ -189,19 +189,19 @@ export function PaginaMeusVendedores({
                       cargoAtual === null ? (
                         <button
                           onClick={() => aoDefinirCargo(r.email, "vendedor")}
-                          className="px-3 py-1.5 rounded-lg text-[11px] font-bold border-2 border-gray-200 text-gray-500 hover:border-[#C8102E] hover:text-[#C8102E] transition-all"
+                          className="px-3 py-1.5 rounded-lg text-[12.5px] font-bold border-2 border-gray-200 text-gray-500 hover:border-[#C8102E] hover:text-[#C8102E] transition-all"
                         >
                           Tornar Vendedor
                         </button>
                       ) : cargoAtual === "vendedor" ? (
                         <button
                           onClick={() => aoDefinirCargo(r.email, null)}
-                          className="px-3 py-1.5 rounded-lg text-[11px] font-bold border-2 border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600 transition-all"
+                          className="px-3 py-1.5 rounded-lg text-[12.5px] font-bold border-2 border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600 transition-all"
                         >
                           Remover cargo
                         </button>
                       ) : (
-                        <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 uppercase">
+                        <span className="text-[12px] font-bold px-2.5 py-1 rounded-sm bg-gray-100 text-gray-500">
                           {cargoAtual}
                         </span>
                       )

@@ -1,5 +1,10 @@
 # Backend da loja — Banco de dados (XAMPP) + Cobranças PIX (Sicredi)
 
+> ⚠️ **DESATUALIZADO — não use.** Este servidor Node ficou para trás: não tem
+> as rotas de compras, produtos um a um, comissões e repasses, e ainda usa o
+> fluxo antigo de checkout (inseguro). O backend de verdade é o PHP da pasta
+> `backend-php/` — para testar no computador, use `backend-php/servidor-local.php`.
+
 Este servidor faz duas coisas:
 
 1. **Banco de dados**: guarda TODAS as informações da loja no MySQL do XAMPP

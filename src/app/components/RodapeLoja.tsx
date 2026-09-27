@@ -1,57 +1,48 @@
 // Componente RodapeLoja
+//
+// Rodapé claro e discreto, como nas grandes lojas: links úteis em colunas e os
+// dados da empresa embaixo. A coluna Pagamento é só informativa.
 
-import type { Pedido } from "../types";
 import type { PaginaInstitucional } from "../screens/TelaInstitucional";
-import { Logo } from "./Logo";
-
-// ─── Store Footer ─────────────────────────────────────────────────────────────
 
 // Links das colunas Institucional e Atendimento: cada rótulo aponta para uma
-// página da TelaInstitucional. A coluna Pagamento segue sendo só informativa.
+// página da TelaInstitucional.
 const PAGINA_POR_LINK: Record<string, PaginaInstitucional> = {
-  "Sobre Nós": "sobre",
-  "Trabalhe Conosco": "trabalhe",
-  "Central de Ajuda (FAQ)": "ajuda",
-  "Rastrear Pedido": "rastreio",
-  "Fale Conosco": "contato",
-  "Política de Privacidade": "privacidade",
-  "Termos de Uso": "termos",
+  "Sobre nós": "sobre",
+  "Trabalhe conosco": "trabalhe",
+  "Central de ajuda": "ajuda",
+  "Rastrear pedido": "rastreio",
+  "Fale conosco": "contato",
+  "Política de privacidade": "privacidade",
+  "Termos de uso": "termos",
 };
+
+const COLUNAS = [
+  { titulo: "Institucional", links: ["Sobre nós", "Trabalhe conosco"] },
+  { titulo: "Atendimento", links: ["Central de ajuda", "Rastrear pedido", "Fale conosco"] },
+  { titulo: "Legal", links: ["Política de privacidade", "Termos de uso"] },
+  { titulo: "Pagamento", links: ["Pix", "Cartão de crédito", "Parcelamento sem juros"] },
+];
 
 export function RodapeLoja({ aoAbrirPagina }: { aoAbrirPagina?: (p: PaginaInstitucional) => void }) {
   return (
-    <footer className="bg-[#4A1218] text-white mt-2">
-      <div className="max-w-[1440px] mx-auto px-4 py-10">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
-          <div>
-            <Logo small claro />
-            <p className="text-white/50 text-xs leading-relaxed mt-4">
-              © {new Date().getFullYear()} Coração Presente LTDA.<br />
-              CNPJ: 68.076.424/0001-73
-            </p>
-          </div>
-          {[
-            { title: "Institucional", links: ["Sobre Nós", "Trabalhe Conosco"] },
-            { title: "Atendimento", links: ["Central de Ajuda (FAQ)", "Rastrear Pedido", "Fale Conosco"] },
-            { title: "Legal", links: ["Política de Privacidade", "Termos de Uso"] },
-            { title: "Pagamento", links: ["Cartão de Crédito", "PIX", "Parcelamento"] },
-          ].map((col) => (
-            <div key={col.title}>
-              <h4 className="font-black text-[#E8B84B] mb-4 text-sm">{col.title}</h4>
+    <footer className="bg-white border-t border-black/10 mt-12">
+      <div className="max-w-[1200px] mx-auto px-4 pt-8 pb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-7">
+          {COLUNAS.map((col) => (
+            <div key={col.titulo}>
+              <h4 className="text-[14px] font-semibold text-gray-800 mb-3">{col.titulo}</h4>
               <ul className="space-y-2">
                 {col.links.map((l) => {
                   const destino = PAGINA_POR_LINK[l];
                   return (
-                    <li key={l}>
+                    <li key={l} className="text-[13px]">
                       {destino && aoAbrirPagina ? (
-                        <button
-                          onClick={() => aoAbrirPagina(destino)}
-                          className="text-white/55 hover:text-white transition-colors text-xs text-left"
-                        >
+                        <button onClick={() => aoAbrirPagina(destino)} className="text-gray-500 hover:text-gray-900 text-left">
                           {l}
                         </button>
                       ) : (
-                        <span className="text-white/55 text-xs">{l}</span>
+                        <span className="text-gray-500">{l}</span>
                       )}
                     </li>
                   );
@@ -60,8 +51,8 @@ export function RodapeLoja({ aoAbrirPagina }: { aoAbrirPagina?: (p: PaginaInstit
             </div>
           ))}
         </div>
-        <div className="border-t border-white/10 mt-8 pt-6 text-center text-[11px] text-white/30">
-          Coração Presente · Todos os direitos reservados · {new Date().getFullYear()}
+        <div className="border-t border-black/[0.08] mt-8 pt-5 text-[12px] text-gray-400 leading-relaxed">
+          Copyright © {new Date().getFullYear()} Coração Presente LTDA · CNPJ 68.076.424/0001-73
         </div>
       </div>
     </footer>

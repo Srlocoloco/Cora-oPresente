@@ -1,18 +1,23 @@
 // Tela TelaCompraConcluida
+//
+// Depois do pagamento aprovado: a faixa verde de "Pronto!", os números dos
+// pedidos, onde vai chegar e o que acontece agora. Embaixo, o convite para
+// avaliar o que comprou (clicando, vai direto para as opiniões do produto) e
+// sugestões a partir do que acabou de ser comprado.
 
-import { Check, Star, Sparkles, ChevronRight } from "lucide-react";
-import type { Produto } from "../types";
+import { Check, ChevronRight } from "lucide-react";
+import type { Compra, Produto } from "../types";
 import { formatarMoeda } from "../utils";
 import { descontoDe } from "../recomendacoes";
 import { ImagemProduto } from "../components/ImagemProduto";
+import { CabecalhoCheckout } from "../components/CabecalhoCheckout";
 
-// ─── Pedido Success ────────────────────────────────────────────────────────────
+const PROXIMOS_PASSOS = ["Pagamento aprovado", "Preparando", "A caminho", "Entregue"];
 
-// Depois da compra confirmada, convida o cliente a avaliar o que comprou:
-// clicando no produto, ele vai direto para a seção de avaliações da página
-// daquele produto (o formulário já fica liberado, porque a compra existe).
 export function TelaCompraConcluida({
   total,
+  compra,
+  aoVerPedidos,
   produtosComprados = [],
   recomendacoes = [],
   aoAvaliarProduto,
@@ -20,6 +25,9 @@ export function TelaCompraConcluida({
   aoContinuar,
 }: {
   total: number;
+  // A compra paga (números dos pedidos, endereço, forma de pagamento)
+  compra?: Compra | null;
+  aoVerPedidos?: () => void;
   produtosComprados?: Produto[];
   // O que a loja sugere a partir do que acabou de ser comprado (ver
   // recomendacoes.ts). É a hora em que a sugestão mais faz sentido: a pessoa
@@ -30,100 +38,120 @@ export function TelaCompraConcluida({
   aoContinuar: () => void;
 }) {
   const podeAvaliar = produtosComprados.length > 0 && Boolean(aoAvaliarProduto);
-  const sugestoes = aoVerProduto ? recomendacoes.slice(0, 3) : [];
+  const sugestoes = aoVerProduto ? recomendacoes.slice(0, 4) : [];
+  const linhaProduto = "w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-black/[0.02]";
+
   return (
-    <div className="min-h-screen bg-[#FBF4EA] flex items-center justify-center p-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 sm:p-10 max-w-md w-full text-center my-6">
-        <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
-          <Check size={32} className="text-emerald-600" strokeWidth={3} />
+    <div className="min-h-screen bg-[#EDEDED]">
+      <CabecalhoCheckout />
+      <div className="bg-[#00A650] text-white">
+        <div className="max-w-[720px] mx-auto px-4 pt-8 pb-16 flex items-center gap-4">
+          <span className="w-12 h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
+            <Check size={26} className="text-[#00A650]" strokeWidth={3} />
+          </span>
+          <div>
+            <h1 className="text-[22px] md:text-[26px] font-semibold leading-tight">Pronto! Seu pagamento foi aprovado</h1>
+            <p className="text-[15px] text-white/90 mt-0.5">
+              Você pagou {formatarMoeda(compra?.total ?? total)}
+              {compra?.metodo === "cartao" && compra.parcelas > 1 ? ` em ${compra.parcelas}x no cartão` : compra?.metodo === "pix" ? " com Pix" : ""}.
+            </p>
+          </div>
         </div>
-        <h2 className="text-2xl font-black text-gray-900 mb-2">Compra realizada!</h2>
-        <p className="text-gray-500 text-sm mb-1">Seu pedido foi registrado com sucesso.</p>
-        <div className="text-3xl font-black text-gray-900 my-4">{formatarMoeda(total)}</div>
-        <p className="text-[12px] text-gray-400 mb-6">Você receberá as atualizações do pedido por e-mail.</p>
+      </div>
+
+      <main className="max-w-[720px] mx-auto px-4 -mt-10 pb-12 space-y-3">
+        {compra && (
+          <section className="painel">
+            <div className="px-5 py-4 border-b border-black/[0.08]">
+              <p className="text-[13px] text-gray-500 mb-2">{compra.pedidos.length === 1 ? "Seu pedido" : "Seus pedidos"}</p>
+              <ul className="space-y-2">
+                {compra.pedidos.map((p) => (
+                  <li key={p.id} className="flex items-start justify-between gap-3 text-[14px]">
+                    <span className="min-w-0">
+                      <span className="text-gray-900">Pedido {p.id}</span>
+                      <span className="block text-gray-500 line-clamp-1">{p.items}</span>
+                    </span>
+                    <span className="text-gray-700 tabular-nums flex-shrink-0">{formatarMoeda(p.total)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="px-5 py-4 border-b border-black/[0.08] text-[14px]">
+              <p className="text-[13px] text-gray-500 mb-1">Entrega em</p>
+              <p className="text-gray-800">{compra.endereco}</p>
+            </div>
+            <div className="px-5 py-5">
+              <ol className="grid grid-cols-4 gap-1.5">
+                {PROXIMOS_PASSOS.map((passo, i) => (
+                  <li key={passo}>
+                    <span className={`block h-1 rounded-full ${i === 0 ? "bg-[#00A650]" : "bg-black/10"}`} />
+                    <span className={`block text-[12px] mt-1.5 leading-tight ${i === 0 ? "text-[#00A650] font-semibold" : "text-gray-400"}`}>
+                      {passo}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <p className="text-[13.5px] text-gray-500 mt-4">Avisamos por e-mail e no sino da loja a cada mudança.</p>
+              {aoVerPedidos && (
+                <button onClick={aoVerPedidos} className="btn-primario w-full sm:w-auto mt-4 px-8 py-3 text-[15px]">
+                  Acompanhar meu pedido
+                </button>
+              )}
+            </div>
+          </section>
+        )}
 
         {podeAvaliar && (
-          <div className="border-t border-gray-100 pt-5 mb-5 text-left">
-            <div className="flex items-center justify-center gap-1.5 mb-1">
-              <Star size={16} className="fill-[#E8B84B] text-[#E8B84B]" />
-              <h3 className="font-black text-gray-900 text-[14px]">O que achou? Avalie sua compra</h3>
-            </div>
-            <p className="text-[12px] text-gray-400 text-center mb-3">
-              Sua opinião ajuda outros clientes a escolher.
-            </p>
-            <div className="space-y-2">
+          <section className="painel">
+            <h2 className="px-5 pt-4 pb-2 text-[16px] text-gray-900">O que você achou? Dê sua opinião</h2>
+            <ul className="divide-y divide-black/[0.06] pb-1">
               {produtosComprados.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => aoAvaliarProduto?.(p)}
-                  className="w-full flex items-center gap-3 border border-gray-100 hover:border-[#C8102E] rounded-xl p-2.5 text-left transition-colors"
-                >
-                  <div className="w-11 h-11 bg-gray-50 rounded-lg flex items-center justify-center p-1 flex-shrink-0">
-                    <ImagemProduto src={p.image} alt={p.name} className="w-full h-full object-contain" />
-                  </div>
-                  <span className="text-[13px] font-semibold text-gray-800 leading-snug line-clamp-2 flex-1 min-w-0">
-                    {p.name}
-                  </span>
-                  <span className="text-[12px] font-black text-[#C8102E] flex-shrink-0">Avaliar</span>
-                </button>
+                <li key={p.id}>
+                  <button onClick={() => aoAvaliarProduto?.(p)} className={linhaProduto}>
+                    <span className="w-12 h-12 rounded border border-black/10 p-0.5 flex-shrink-0 bg-white">
+                      <ImagemProduto src={p.image} alt={p.name} className="w-full h-full object-contain" />
+                    </span>
+                    <span className="text-[14px] text-gray-800 line-clamp-2 flex-1 min-w-0">{p.name}</span>
+                    <span className="text-[14px] text-[#C8102E] flex-shrink-0">Avaliar</span>
+                  </button>
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          </section>
         )}
 
         {sugestoes.length > 0 && (
-          <div className="border-t border-gray-100 pt-5 mb-5 text-left">
-            <div className="flex items-center justify-center gap-1.5 mb-1">
-              <Sparkles size={15} className="text-[#A8102A]" />
-              <h3 className="font-black text-gray-900 text-[14px]">Você também pode gostar</h3>
-            </div>
-            <p className="text-[12px] text-gray-400 text-center mb-3">
-              Escolhidos a partir do que você acabou de comprar.
-            </p>
-            <div className="space-y-2">
+          <section className="painel">
+            <h2 className="px-5 pt-4 pb-2 text-[16px] text-gray-900">Para completar o presente</h2>
+            <ul className="divide-y divide-black/[0.06] pb-1">
               {sugestoes.map((p) => {
                 const desconto = descontoDe(p);
                 return (
-                  <button
-                    key={p.id}
-                    onClick={() => aoVerProduto?.(p)}
-                    className="w-full flex items-center gap-3 border border-gray-100 hover:border-[#C8102E] rounded-xl p-2.5 text-left transition-colors"
-                  >
-                    <div className="w-11 h-11 bg-gray-50 rounded-lg flex items-center justify-center p-1 flex-shrink-0">
-                      <ImagemProduto src={p.image} alt={p.name} className="w-full h-full object-contain" />
-                    </div>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-[13px] font-semibold text-gray-800 leading-snug line-clamp-2">
-                        {p.name}
+                  <li key={p.id}>
+                    <button onClick={() => aoVerProduto?.(p)} className={linhaProduto}>
+                      <span className="w-12 h-12 rounded border border-black/10 p-0.5 flex-shrink-0 bg-white">
+                        <ImagemProduto src={p.image} alt={p.name} className="w-full h-full object-contain" />
                       </span>
-                      <span className="flex items-baseline gap-1.5">
-                        <span className="text-[13px] font-black text-gray-900">{formatarMoeda(p.price)}</span>
-                        {desconto > 0 && (
-                          <span className="text-[10px] font-black text-emerald-600">
-                            -{Math.round(desconto * 100)}%
-                          </span>
-                        )}
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[14px] text-gray-800 line-clamp-1">{p.name}</span>
+                        <span className="text-[15px] text-gray-900">{formatarMoeda(p.price)}</span>
+                        {desconto > 0 && <span className="text-[13px] text-[#00A650] ml-2">{Math.round(desconto * 100)}% OFF</span>}
                       </span>
-                    </span>
-                    <ChevronRight size={17} className="text-gray-300 flex-shrink-0" />
-                  </button>
+                      <ChevronRight size={18} className="text-gray-300 flex-shrink-0" />
+                    </button>
+                  </li>
                 );
               })}
-            </div>
-          </div>
+            </ul>
+          </section>
         )}
 
-        <button
-          onClick={aoContinuar}
-          className={`w-full font-black py-3.5 rounded-xl transition-colors ${
-            podeAvaliar
-              ? "border-2 border-gray-200 text-gray-600 hover:border-gray-300"
-              : "bg-[#C8102E] hover:bg-[#8C1626] text-white"
-          }`}
-        >
-          Continuar Comprando
-        </button>
-      </div>
+        <div className="pt-2 text-center">
+          <button onClick={aoContinuar} className="text-[15px] text-[#C8102E] hover:underline">
+            Voltar para a loja
+          </button>
+        </div>
+      </main>
     </div>
   );
 }

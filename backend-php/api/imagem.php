@@ -77,6 +77,14 @@ if ($tipo === "banner") {
     $dataUri = $stmt->fetchColumn();
 }
 
+// Capa cadastrada por link de outro site: manda o navegador (ou o programa de
+// e-mail) buscar lá. Só https e só o formato já conferido na gravação.
+if (is_string($dataUri) && link_de_imagem_valido($dataUri)) {
+    header("Cache-Control: public, max-age=3600");
+    header("Location: " . $dataUri, true, 302);
+    exit;
+}
+
 if (!$dataUri || !preg_match('/^data:([a-zA-Z0-9\/\+\.\-]+);base64,(.+)$/', $dataUri, $m)) {
     http_response_code(404);
     exit;

@@ -1,116 +1,111 @@
 // Componente CartaoProduto
+//
+// Um produto na vitrine, como nos grandes marketplaces: foto grande sobre
+// branco, o nome, e o preço em destaque — com as parcelas em verde. O cartão inteiro abre o produto; comprar é na página dele, onde a
+// pessoa escolhe cor e quantidade.
 
-import { Star, Heart, Truck } from "lucide-react";
+import { Star, Heart } from "lucide-react";
 import type { Produto } from "../types";
-import { CORES_SELO } from "../constantes";
 import { formatarMoeda, precoParcela, pctDesconto } from "../utils";
 import { ImagemProduto } from "./ImagemProduto";
+import { Preco } from "./Preco";
 
-export function CartaoProduto({ produto, aoAdicionarAoCarrinho, aoFavoritar, estaFavoritado, aoAbrirProduto }: {
+export function CartaoProduto({ produto, aoFavoritar, estaFavoritado, aoAbrirProduto, estoqueBaixo = 5 }: {
   produto: Produto;
-  aoAdicionarAoCarrinho: (p: Produto) => void;
   aoFavoritar: (id: number) => void;
   estaFavoritado: boolean;
   aoAbrirProduto?: (p: Produto) => void;
+  // Abaixo disto aparece "Últimas unidades" (Configurações → Estoque)
+  estoqueBaixo?: number;
 }) {
   const temDesconto = produto.originalPrice && produto.originalPrice > produto.price;
+  const pix = produto.pixDesconto && produto.pixDesconto > 0 ? produto.price * (1 - produto.pixDesconto / 100) : null;
+  const esgotado = produto.stock <= 0;
+  const ultimas = !esgotado && produto.stock <= estoqueBaixo;
+  const abrir = () => aoAbrirProduto?.(produto);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:border-[#A8102A]/25 hover:shadow-md transition-shadow duration-150 flex flex-col group">
-      <div
-        className="relative p-2.5 md:p-4 bg-gray-50/70 cursor-pointer"
-        onClick={() => aoAbrirProduto?.(produto)}
-      >
-        <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
-          {produto.badge && (
-            <span className={`${CORES_SELO[produto.badge] || "bg-[#C8102E]"} text-white text-[8px] md:text-[9px] font-black px-2 py-1 rounded-full tracking-wider`}>
-              {produto.badge}
-            </span>
-          )}
-          {temDesconto && (
-            <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md">
-              -{pctDesconto(produto.originalPrice!, produto.price)}%
-            </span>
-          )}
-        </div>
+    <article
+      onClick={abrir}
+      className="painel w-full overflow-hidden flex flex-col group cursor-pointer hover:shadow-md transition-shadow"
+    >
+      <div className="relative aspect-square bg-white border-b border-black/[0.06] p-3 md:p-4">
         <ImagemProduto
           src={produto.image}
           alt={produto.name}
-          className="w-full h-[115px] md:h-[155px] object-contain group-hover:scale-[1.04] transition-transform duration-300"
+          className={`w-full h-full object-contain ${esgotado ? "opacity-50" : ""}`}
         />
         <button
           onClick={(e) => { e.stopPropagation(); aoFavoritar(produto.id); }}
           aria-label={estaFavoritado ? "Remover dos favoritos" : "Adicionar aos favoritos"}
           aria-pressed={estaFavoritado}
-          className="absolute top-2 right-2 p-2 bg-white rounded-full border border-gray-100"
+          className={`absolute top-2 right-2 w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center transition-opacity ${
+            estaFavoritado ? "" : "md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100"
+          }`}
         >
-          <Heart size={15} className={estaFavoritado ? "fill-[#A8102A] text-[#A8102A]" : "text-gray-300"} />
+          <Heart size={16} className={estaFavoritado ? "fill-[#C8102E] text-[#C8102E]" : "text-[#C8102E]"} />
         </button>
-        {produto.colors && produto.colors.length > 0 && (
-          <div className="absolute bottom-2 left-2 flex gap-0.5 bg-white/90 rounded-full px-1.5 py-1">
-            {produto.colors.slice(0, 4).map((c, i) => (
-              <span
-                key={i}
-                className="w-2.5 h-2.5 rounded-full border border-white shadow-sm"
-                style={{ backgroundColor: c.hex || "#cccccc" }}
-                title={c.nome}
-              />
-            ))}
-          </div>
-        )}
       </div>
-      <div className="p-2 md:p-3 flex flex-col flex-1">
-        <span className="text-[9px] md:text-[10px] text-gray-400 font-semibold uppercase tracking-wide">{produto.brand}</span>
-        <p
-          className="text-[12px] md:text-[14px] text-gray-900 font-semibold leading-snug mt-0.5 mb-1.5 md:mb-2 line-clamp-2 flex-1 cursor-pointer hover:text-[#A8102A] transition-colors"
-          onClick={() => aoAbrirProduto?.(produto)}
-        >
-          {produto.name}
-        </p>
-        <div className="flex items-center gap-1 mb-2 md:mb-3">
-          <div className="flex" role="img" aria-label={`Avaliação ${produto.rating.toFixed(1)} de 5`}>
-            {[...Array(5)].map((_, i) => (
-              <Star key={i} size={11} className={i < Math.floor(produto.rating) ? "fill-[#C79A3B] text-[#C79A3B]" : "fill-gray-200 text-gray-200"} />
-            ))}
-          </div>
-          <span className="text-[10px] md:text-[11px] text-gray-500">
-            {produto.reviews > 0 ? `(${produto.reviews.toLocaleString("pt-BR")})` : "(novo)"}
+
+      <div className="px-3 pt-3 pb-4 md:px-4 flex flex-col flex-1">
+        {produto.badge && (
+          <span className="self-start bg-[#FF7733] text-white text-[10.5px] font-bold px-1.5 py-[1px] rounded-sm mb-1.5">
+            {produto.badge}
           </span>
-        </div>
-        <div className="mt-auto">
-          {temDesconto && (
-            <span className="text-[10px] md:text-[11px] text-gray-400 line-through">{formatarMoeda(produto.originalPrice!)}</span>
-          )}
-          <div className="text-[17px] md:text-[22px] font-black text-gray-900 leading-tight">{formatarMoeda(produto.price)}</div>
-          <div className="text-[10px] md:text-[11px] text-gray-500 mt-0.5">
-            ou {produto.installments}x de{" "}
-            <span className="font-bold text-gray-700">{precoParcela(produto.price, produto.installments)}</span>{" "}
-            sem juros
-          </div>
-          {produto.freeShipping && (
-            <div className="text-[9px] md:text-[10px] text-green-700 font-bold mt-1 md:mt-1.5 flex items-center gap-1">
-              <Truck size={10} />
-              FRETE GRÁTIS
-            </div>
-          )}
-        </div>
-        {produto.stock <= 0 ? (
-          <button
-            disabled
-            className="mt-3 bg-gray-200 text-gray-400 font-bold text-[13px] py-2.5 md:py-3 rounded-xl w-full cursor-not-allowed"
-          >
-            Esgotado
-          </button>
-        ) : (
-          <button
-            onClick={() => aoAdicionarAoCarrinho(produto)}
-            className="mt-3 bg-[#A8102A] hover:bg-[#7A1220] text-white font-bold text-[13px] py-2.5 md:py-3 rounded-xl transition-colors w-full whitespace-nowrap"
-          >
-            <span className="md:hidden">Adicionar</span>
-            <span className="hidden md:inline">Adicionar ao carrinho</span>
-          </button>
         )}
+        {/* Nome em até duas linhas, sempre com a altura de duas: os preços da
+            fileira ficam alinhados mesmo com nomes de tamanhos diferentes */}
+        <h3 className="text-[13.5px] md:text-[14px] leading-[1.3] text-gray-800 min-h-[2.6em]">
+          {/* Botão para quem navega pelo teclado; o clique vale no cartão todo */}
+          <button
+            onClick={(e) => { e.stopPropagation(); abrir(); }}
+            title={produto.name}
+            className="text-left line-clamp-2 group-hover:text-black focus-visible:underline outline-none"
+          >
+            {produto.name}
+          </button>
+        </h3>
+
+        {produto.reviews > 0 && (
+          <div className="flex items-center gap-1 mt-1 text-[12px] text-gray-500">
+            <span>{produto.rating.toFixed(1)}</span>
+            <span className="flex" role="img" aria-label={`Avaliação ${produto.rating.toFixed(1)} de 5`}>
+              {[...Array(5)].map((_, i) => (
+                <Star key={i} size={10} className={i < Math.round(produto.rating) ? "fill-[#C8102E] text-[#C8102E]" : "fill-gray-300 text-gray-300"} />
+              ))}
+            </span>
+            <span>({produto.reviews.toLocaleString("pt-BR")})</span>
+          </div>
+        )}
+
+        <div className="mt-2">
+          {temDesconto && (
+            <s className="block text-[12px] text-gray-400 leading-none mb-1">{formatarMoeda(produto.originalPrice!)}</s>
+          )}
+          <div className="flex items-start gap-2">
+            <Preco valor={produto.price} tamanho={22} className="text-gray-900" />
+            {temDesconto && (
+              <span className="text-[13px] text-[#00A650] leading-none mt-1">{pctDesconto(produto.originalPrice!, produto.price)}% OFF</span>
+            )}
+          </div>
+          {produto.installments > 1 && (
+            <p className="text-[12.5px] text-[#00A650] mt-1">
+              em {produto.installments}x {precoParcela(produto.price, produto.installments)} sem juros
+            </p>
+          )}
+          {pix !== null && (
+            <p className="text-[12.5px] text-gray-600 mt-0.5">{formatarMoeda(pix)} no Pix</p>
+          )}
+        </div>
+
+        <div className="mt-auto pt-2 text-[12.5px] space-y-0.5">
+          {esgotado ? (
+            <p className="text-gray-500">Esgotado</p>
+          ) : (
+            ultimas && <p className="text-[#C8102E]">{produto.stock === 1 ? "Última unidade" : `Restam ${produto.stock} unidades`}</p>
+          )}
+        </div>
       </div>
-    </div>
+    </article>
   );
 }

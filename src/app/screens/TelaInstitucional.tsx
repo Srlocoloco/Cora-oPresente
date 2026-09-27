@@ -38,15 +38,11 @@ const CANAIS = [
 const PERGUNTAS = [
   {
     p: "Em quanto tempo meu pedido chega?",
-    r: "O pedido é preparado assim que o pagamento é confirmado. O prazo depende do seu endereço e aparece no carrinho junto com o frete, calculado pelo CEP. Qualquer dúvida sobre um pedido específico, chame a gente no WhatsApp.",
+    r: "O pedido é preparado assim que o pagamento é confirmado. O prazo depende do seu endereço e aparece na finalização da compra, assim que você informa o CEP. Qualquer dúvida sobre um pedido específico, chame a gente no WhatsApp.",
   },
   {
     p: "Quais formas de pagamento vocês aceitam?",
     r: "Cartão de crédito parcelado em até 12x, PIX (com desconto em vários produtos) e cartão de débito. O pedido só é preparado depois que o pagamento é aprovado.",
-  },
-  {
-    p: "O frete é grátis?",
-    r: "Compras acima de um valor mínimo têm frete grátis. Tanto esse valor quanto o frete da sua região aparecem no carrinho depois que você informa o CEP.",
   },
   {
     p: "Como acompanho o andamento da compra?",
@@ -66,8 +62,8 @@ const PERGUNTAS = [
 
 function Secao({ titulo, children }: { titulo?: string; children: React.ReactNode }) {
   return (
-    <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-7">
-      {titulo && <h2 className="font-black text-[#4A1218] text-base md:text-lg mb-3">{titulo}</h2>}
+    <section className="painel p-5 md:p-7">
+      {titulo && <h2 className="font-bold text-[#4A1218] text-base md:text-lg mb-3">{titulo}</h2>}
       <div className="space-y-3 text-[13px] md:text-sm text-gray-600 leading-relaxed">{children}</div>
     </section>
   );
@@ -77,12 +73,12 @@ function Numeros({ itens }: { itens: { valor: string; rotulo: string; icone: Rea
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {itens.map((n) => (
-        <div key={n.rotulo} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-          <span className="w-8 h-8 rounded-full bg-[#FBF4EA] text-[#C8102E] flex items-center justify-center mx-auto mb-2">
+        <div key={n.rotulo} className="painel p-4 text-center">
+          <span className="w-8 h-8 rounded-full bg-[#EDEDED] text-[#C8102E] flex items-center justify-center mx-auto mb-2">
             {n.icone}
           </span>
-          <p className="font-black text-[#C8102E] text-xl md:text-2xl">{n.valor}</p>
-          <p className="text-[11px] text-gray-500 mt-1 leading-tight">{n.rotulo}</p>
+          <p className="font-bold text-[#C8102E] text-xl md:text-2xl">{n.valor}</p>
+          <p className="text-[12.5px] text-gray-500 mt-1 leading-tight">{n.rotulo}</p>
         </div>
       ))}
     </div>
@@ -124,13 +120,13 @@ function ListaCanais() {
   return (
     <div className="grid md:grid-cols-3 gap-3">
       {CANAIS.map((c) => (
-        <div key={c.titulo} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <span className="w-9 h-9 rounded-full bg-[#FBF4EA] text-[#C8102E] flex items-center justify-center mb-3">
+        <div key={c.titulo} className="painel p-4">
+          <span className="w-9 h-9 rounded-full bg-[#EDEDED] text-[#C8102E] flex items-center justify-center mb-3">
             {c.icone}
           </span>
           <p className="font-bold text-[13px] text-gray-800">{c.titulo}</p>
           <p className="text-[12px] text-gray-600 mt-0.5 break-all">{c.detalhe}</p>
-          <p className="text-[11px] text-gray-400 mt-1">{c.nota}</p>
+          <p className="text-[12.5px] text-gray-400 mt-1">{c.nota}</p>
         </div>
       ))}
     </div>
@@ -140,10 +136,10 @@ function ListaCanais() {
 function Pergunta({ p, r }: { p: string; r: string }) {
   const [aberta, setAberta] = useState(false);
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="painel overflow-hidden">
       <button
         onClick={() => setAberta((v) => !v)}
-        className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-[#FBF4EA]/60 transition-colors"
+        className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-[#EDEDED]/60 transition-colors"
       >
         <span className="font-semibold text-[13px] text-gray-800">{p}</span>
         <ChevronDown size={18} className={`text-gray-400 flex-shrink-0 transition-transform ${aberta ? "rotate-180" : ""}`} />
@@ -318,7 +314,7 @@ function Rastreamento({
                     </span>
                     <div>
                       <p className={`text-[13px] font-semibold ${feito ? "text-gray-800" : "text-gray-400"}`}>{etapa}</p>
-                      <p className="text-[11.5px] text-gray-400">{DESCRICAO_ETAPA[i]}</p>
+                      <p className="text-[13px] text-gray-400">{DESCRICAO_ETAPA[i]}</p>
                     </div>
                   </li>
                 );
@@ -334,7 +330,7 @@ function Rastreamento({
           {/* Código de postagem: o cliente pode conferir direto no site dos
               Correios, mesmo que a consulta automática esteja indisponível. */}
           {encontrado.codigoRastreio && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-[#FBF4EA] rounded-xl px-4 py-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-[#EDEDED] rounded-xl px-4 py-3">
               <span className="text-[12px] text-gray-500 font-semibold">Código dos Correios</span>
               <span className="font-mono text-[13px] font-bold text-gray-800">{encontrado.codigoRastreio}</span>
               <a
@@ -368,8 +364,8 @@ function Rastreamento({
                   <p className={`text-[13px] font-semibold ${i === 0 ? "text-gray-800" : "text-gray-500"}`}>
                     {ev.descricao}
                   </p>
-                  {ev.detalhe && <p className="text-[11.5px] text-gray-400">{ev.detalhe}</p>}
-                  <p className="text-[11.5px] text-gray-400">
+                  {ev.detalhe && <p className="text-[13px] text-gray-400">{ev.detalhe}</p>}
+                  <p className="text-[13px] text-gray-400">
                     {[dataHoraEvento(ev.data), ev.local].filter(Boolean).join(" · ")}
                   </p>
                 </div>
@@ -495,7 +491,7 @@ function Conteudo({
           >
             <Truck size={18} className="text-[#C8102E] mb-2" />
             <p className="font-bold text-[13px] text-gray-800">Rastrear pedido</p>
-            <p className="text-[11.5px] text-gray-400">Veja onde está sua compra.</p>
+            <p className="text-[13px] text-gray-400">Veja onde está sua compra.</p>
           </button>
           <ListaCanais />
         </>
@@ -621,18 +617,15 @@ export function TelaInstitucional({
   const grupos: ("Institucional" | "Atendimento")[] = ["Institucional", "Atendimento"];
 
   return (
-    <div className="min-h-screen bg-[#FBF4EA] pb-20 md:pb-10" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      <div className="bg-[#C8102E] px-4 py-4">
-        <div className="max-w-[980px] mx-auto flex items-center gap-3">
-          <button onClick={aoVoltar} className="text-white/90 hover:text-white transition-colors">
-            <ChevronLeft size={22} />
+    <div className="min-h-screen bg-[#EDEDED] pb-20 md:pb-10">
+      <header className="bg-[#A8102A] text-white">
+        <div className="max-w-[980px] mx-auto px-4 h-[52px] flex items-center gap-2">
+          <button onClick={aoVoltar} aria-label="Voltar à loja" className="-ml-2 p-2 text-white/90 hover:text-white">
+            <ChevronLeft size={20} />
           </button>
-          <div>
-            <p className="text-white/60 text-[11px] font-semibold uppercase tracking-wide">{PAGINAS[pagina].grupo}</p>
-            <h1 className="text-white font-black text-lg leading-tight">{PAGINAS[pagina].titulo}</h1>
-          </div>
+          <h1 className="text-[17px]">{PAGINAS[pagina].titulo}</h1>
         </div>
-      </div>
+      </header>
 
       {/* Atalhos entre as páginas: rolagem horizontal no celular, coluna no desktop */}
       <div className="max-w-[980px] mx-auto px-4 py-5 md:flex md:gap-6 md:items-start">
@@ -640,16 +633,16 @@ export function TelaInstitucional({
           <div className="flex gap-2 overflow-x-auto pb-3 md:flex-col md:overflow-visible md:pb-0 md:gap-5">
             {grupos.map((g) => (
               <div key={g} className="contents md:block">
-                <p className="hidden md:block text-[11px] font-black uppercase tracking-wide text-gray-400 mb-2">{g}</p>
+                <p className="hidden md:block text-[12.5px] text-gray-400 mb-1 px-3">{g}</p>
                 <div className="contents md:block md:space-y-1">
                   {chaves.filter((k) => PAGINAS[k].grupo === g).map((k) => (
                     <button
                       key={k}
                       onClick={() => irPara(k)}
-                      className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-[12.5px] font-semibold transition-colors md:w-full ${
+                      className={`flex items-center gap-2 whitespace-nowrap rounded px-3 py-2 text-[14px] transition-colors md:w-full ${
                         k === pagina
-                          ? "bg-[#C8102E] text-white"
-                          : "bg-white text-gray-600 border border-gray-100 hover:text-[#C8102E] md:bg-transparent md:border-0"
+                          ? "bg-white md:bg-[#C8102E]/[0.07] text-[#A8102A] font-semibold shadow-sm md:shadow-none"
+                          : "bg-white text-gray-600 shadow-sm md:shadow-none hover:text-gray-900 md:bg-transparent"
                       }`}
                     >
                       {PAGINAS[k].icone} {PAGINAS[k].titulo}

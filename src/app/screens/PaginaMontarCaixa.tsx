@@ -9,8 +9,7 @@
 
 import { useState, useMemo } from "react";
 import {
-  ChevronLeft, ChevronRight, Gift, Check, Plus, Minus, Search, Trash2,
-  Sparkles, ShoppingBasket, PenLine, X,
+  ChevronLeft, ChevronRight, Gift, Check, Plus, Minus, Search, Trash2, PenLine, X,
 } from "lucide-react";
 import type { Produto, CaixaMontada, ItemDaCaixa } from "../types";
 import {
@@ -242,11 +241,10 @@ export function PaginaMontarCaixa({
 
   // ─── Resumo (coluna da direita no desktop, painel por cima no celular) ───
   const resumo = (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      <div className="bg-[#4A1218] px-4 py-3 flex items-center gap-2">
-        <ShoppingBasket size={17} className="text-[#E8B84B]" />
-        <span className="text-white font-black text-[13px]">Sua caixa</span>
-        <span className="ml-auto text-white/60 text-[11px] font-semibold">
+    <div className="painel overflow-hidden">
+      <div className="px-4 py-3 flex items-center gap-2 border-b border-black/[0.08]">
+        <span className="text-gray-900 text-[16px]">Sua caixa</span>
+        <span className="ml-auto text-gray-500 text-[13px]">
           {capacidade === Infinity
             ? `${qtdItens} ${qtdItens === 1 ? "produto" : "produtos"}`
             : `${qtdItens} de ${capacidade}`}
@@ -261,21 +259,21 @@ export function PaginaMontarCaixa({
               <ImagemProduto src={recipiente.image} alt={recipiente.name} className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[9px] text-[#C79A3B] font-black uppercase tracking-wide">
+              <p className="text-[12.5px] text-[#C79A3B] font-bold">
                 A caixa{tamanho ? " · tamanho " + tamanho.tamanho : ""}
               </p>
               <p className="text-[12px] font-bold text-gray-800 leading-tight line-clamp-2">{recipiente.name}</p>
               {tamanho && (
-                <p className="text-[10px] text-gray-400 font-semibold mt-0.5">
+                <p className="text-[12px] text-gray-400 font-semibold mt-0.5">
                   cabe {tamanho.capacidade} {tamanho.capacidade === 1 ? "produto" : "produtos"}
                 </p>
               )}
             </div>
             <div className="text-right flex-shrink-0">
-              <p className="text-[12px] font-black text-gray-900">{formatarMoeda(precoRecipiente)}</p>
+              <p className="text-[12px] font-bold text-gray-900">{formatarMoeda(precoRecipiente)}</p>
               <button
                 onClick={() => { setEtapa(1); setResumoAberto(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                className="text-[10px] text-[#A8102A] font-bold hover:underline"
+                className="text-[12px] text-[#A8102A] font-bold hover:underline"
               >
                 trocar
               </button>
@@ -301,10 +299,10 @@ export function PaginaMontarCaixa({
                   <ImagemProduto src={i.image} alt={i.name} className="w-full h-full object-contain" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[11.5px] font-semibold text-gray-700 leading-tight line-clamp-1">{i.name}</p>
-                  <p className="text-[10.5px] text-gray-400">{i.qty}x {formatarMoeda(i.price)}</p>
+                  <p className="text-[13px] font-semibold text-gray-700 leading-tight line-clamp-1">{i.name}</p>
+                  <p className="text-[12px] text-gray-400">{i.qty}x {formatarMoeda(i.price)}</p>
                 </div>
-                <span className="text-[11.5px] font-black text-gray-800 flex-shrink-0">
+                <span className="text-[13px] font-bold text-gray-800 flex-shrink-0">
                   {formatarMoeda(i.price * i.qty)}
                 </span>
                 <button
@@ -321,10 +319,10 @@ export function PaginaMontarCaixa({
 
         <div className="border-t border-gray-100 pt-3 flex items-end justify-between">
           <span className="text-[12px] font-bold text-gray-500">Total da caixa</span>
-          <span className="text-xl font-black text-gray-900">{formatarMoeda(total)}</span>
+          <span className="text-xl font-bold text-gray-900">{formatarMoeda(total)}</span>
         </div>
-        <p className="text-[10.5px] text-gray-400 leading-snug">
-          Frete e descontos são calculados no carrinho, na finalização da compra.
+        <p className="text-[12px] text-gray-400 leading-snug">
+          Os descontos são calculados na finalização da compra.
         </p>
       </div>
     </div>
@@ -345,10 +343,10 @@ export function PaginaMontarCaixa({
     etapa === 3 ? !podeFinalizar : etapa === 2 ? qtdItens === 0 : !recipiente || faltaEscolherTamanho;
 
   return (
-    <div className="min-h-screen bg-[#FBF4EA] pb-28 lg:pb-12" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+    <div className="min-h-screen bg-[#EDEDED] pb-28 lg:pb-12">
       {/* Cabeçalho */}
       <div className="bg-[#A8102A] py-3 px-4">
-        <div className="max-w-[1440px] mx-auto grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div className="max-w-[1200px] mx-auto grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <button
             onClick={aoVoltar}
             className="justify-self-start text-white/85 hover:text-white flex items-center gap-1.5 text-[13px] font-semibold transition-colors py-2 pr-2 -my-2 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
@@ -363,66 +361,38 @@ export function PaginaMontarCaixa({
         </div>
       </div>
 
-      {/* Chamada da área. No celular ela ocupa quase a tela toda, e cada troca
-          de etapa volta o scroll para o topo — quem já está montando cairia
-          nela de novo em vez de nos produtos. Por isso some depois da etapa 1;
-          no desktop, onde sobra altura, continua sempre visível. */}
-      <div
-        className={`bg-gradient-to-br from-[#4A1218] to-[#7A1220] text-white ${
-          etapa > 1 ? "hidden md:block" : ""
-        }`}
-      >
-        <div className="max-w-[1440px] mx-auto px-4 py-7 md:py-9 text-center">
-          <span className="inline-flex items-center gap-1.5 bg-[#E8B84B]/15 text-[#E8B84B] text-[10.5px] font-black px-3 py-1 rounded-full tracking-wide">
-            <Sparkles size={12} /> EXCLUSIVO
-          </span>
-          <h1 className="text-2xl md:text-4xl font-black mt-3">Monte sua caixa de presente</h1>
-          <p className="text-white/70 text-[13px] md:text-[15px] mt-2 max-w-xl mx-auto leading-relaxed">
-            Escolha a caixa, encha do jeito que quiser e escreva o cartão.
-            Nós montamos e entregamos tudo pronto para presentear.
-          </p>
+      {/* Etapas: a mesma barra de progresso da finalização da compra. O
+          título da área só aparece na 1ª etapa no celular — cada troca de
+          etapa volta ao topo, e quem já está montando cairia nele de novo. */}
+      <div className="bg-white border-b border-black/10 sticky top-0 z-30">
+        <div className="max-w-[1200px] mx-auto px-4 py-3">
+          <ol className="grid grid-cols-3 gap-1.5">
+            {ETAPAS.map((e) => {
+              const ativa = etapa === e.numero;
+              return (
+                <li key={e.numero}>
+                  <button onClick={() => irParaEtapa(e.numero)} aria-current={ativa ? "step" : undefined} className="w-full text-left">
+                    <span className={`block text-[13px] mb-1.5 ${ativa ? "text-gray-900 font-semibold" : etapa > e.numero ? "text-gray-600" : "text-gray-400"}`}>
+                      {e.numero}. <span className="hidden md:inline">{e.titulo}</span>
+                      <span className="md:hidden">{e.curto}</span>
+                    </span>
+                    <span className={`block h-1 rounded-full ${etapa >= e.numero ? "bg-[#C8102E]" : "bg-black/10"}`} />
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
         </div>
       </div>
 
-      {/* Passo a passo */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-30">
-        <div className="max-w-[1440px] mx-auto px-4 py-3 flex items-center justify-center gap-1.5 md:gap-3">
-          {ETAPAS.map((e, indice) => {
-            const concluida = etapa > e.numero;
-            const ativa = etapa === e.numero;
-            return (
-              <div key={e.numero} className="flex items-center gap-1.5 md:gap-3">
-                <button
-                  onClick={() => irParaEtapa(e.numero)}
-                  className="flex items-center gap-2 group"
-                  aria-current={ativa ? "step" : undefined}
-                >
-                  <span
-                    className={`w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-black transition-colors ${
-                      concluida
-                        ? "bg-emerald-500 text-white"
-                        : ativa
-                        ? "bg-[#A8102A] text-white"
-                        : "bg-gray-100 text-gray-400 group-hover:bg-gray-200"
-                    }`}
-                  >
-                    {concluida ? <Check size={14} strokeWidth={3} /> : e.numero}
-                  </span>
-                  <span className={`text-[12px] font-bold ${ativa ? "text-gray-900" : "text-gray-400"}`}>
-                    <span className="hidden md:inline">{e.titulo}</span>
-                    <span className="md:hidden">{e.curto}</span>
-                  </span>
-                </button>
-                {indice < ETAPAS.length - 1 && (
-                  <span className={`w-4 md:w-10 h-[2px] rounded-full ${etapa > e.numero ? "bg-emerald-400" : "bg-gray-200"}`} />
-                )}
-              </div>
-            );
-          })}
-        </div>
+      <div className={`max-w-[1200px] mx-auto px-4 pt-6 ${etapa > 1 ? "hidden md:block" : ""}`}>
+        <h1 className="text-[24px] md:text-[28px] text-gray-900">Monte sua caixa de presente</h1>
+        <p className="text-[14.5px] text-gray-500 mt-1">
+          Escolha a caixa, encha do jeito que quiser e escreva o cartão. Nós montamos e entregamos pronto para presentear.
+        </p>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-4 py-6">
+      <div className="max-w-[1200px] mx-auto px-4 py-6">
         {aviso && (
           <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 text-[12.5px] font-semibold px-4 py-3 rounded-xl">
             {aviso}
@@ -435,9 +405,8 @@ export function PaginaMontarCaixa({
             {etapa === 1 && (
               <section>
                 <div className="flex items-center gap-2.5 mb-4">
-                  <span className="w-1 h-6 rounded-full bg-[#A8102A]" />
                   <div>
-                    <h2 className="text-lg font-black text-gray-900">Escolha a caixa</h2>
+                    <h2 className="text-[20px] text-gray-900">Escolha a caixa</h2>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {caixasDisponiveis.length}{" "}
                       {caixasDisponiveis.length === 1 ? "opção disponível" : "opções disponíveis"}
@@ -495,21 +464,21 @@ export function PaginaMontarCaixa({
                                 </span>
                               )}
                               {esgotada && (
-                                <span className="absolute top-2 left-2 bg-gray-700 text-white text-[9px] font-black px-2 py-1 rounded-full">
+                                <span className="absolute top-2 left-2 bg-gray-700 text-white text-[12.5px] font-bold px-2 py-1 rounded-sm">
                                   ESGOTADA
                                 </span>
                               )}
                             </div>
                             <div className="p-3 flex-1 min-w-0">
                               <p className="text-[13px] font-bold text-gray-800 leading-snug line-clamp-2">{p.name}</p>
-                              <p className="text-[17px] font-black text-gray-900 mt-1.5">
+                              <p className="text-[17px] font-bold text-gray-900 mt-1.5">
                                 {tams.length > 1 && (
-                                  <span className="text-[10.5px] font-bold text-gray-400">a partir de </span>
+                                  <span className="text-[12px] font-bold text-gray-400">a partir de </span>
                                 )}
                                 {formatarMoeda(menorPreco)}
                               </p>
                               <span
-                                className={`mt-2.5 block text-center text-[12px] font-black py-2 rounded-xl ${
+                                className={`mt-2.5 block text-center text-[12px] font-bold py-2 rounded-xl ${
                                   selecionada && (tams.length === 0 || tamanhoEscolhido)
                                     ? "bg-emerald-50 text-emerald-700"
                                     : "bg-[#A8102A] text-white"
@@ -534,7 +503,7 @@ export function PaginaMontarCaixa({
                               para não poluir a grade toda de uma vez */}
                           {selecionada && tams.length > 0 && !esgotada && (
                             <div className="px-3 pb-3 -mt-1">
-                              <p className="text-[9.5px] font-black text-gray-400 uppercase tracking-wide mb-1.5">
+                              <p className="text-[9.5px] font-bold text-gray-400 mb-1.5">
                                 Escolha o tamanho
                               </p>
                               <div className="flex flex-col gap-1.5">
@@ -554,7 +523,7 @@ export function PaginaMontarCaixa({
                                     >
                                       {/* A letra num quadrinho: âncora visual da linha */}
                                       <span
-                                        className={`w-6 h-6 rounded-lg flex items-center justify-center text-[12px] font-black flex-shrink-0 ${
+                                        className={`w-6 h-6 rounded-lg flex items-center justify-center text-[12px] font-bold flex-shrink-0 ${
                                           marcado ? "bg-[#A8102A] text-white" : "bg-gray-100 text-gray-700"
                                         }`}
                                       >
@@ -564,18 +533,18 @@ export function PaginaMontarCaixa({
                                           empurrar o preço para fora do card */}
                                       <span className="flex-1 min-w-0 text-left">
                                         <span
-                                          className={`block text-[11px] font-black leading-tight truncate ${
+                                          className={`block text-[12.5px] font-bold leading-tight truncate ${
                                             marcado ? "text-[#A8102A]" : "text-gray-700"
                                           }`}
                                         >
                                           {rotulo?.nome ?? t.tamanho}
                                         </span>
-                                        <span className="block text-[10px] font-bold text-gray-400 leading-tight truncate">
+                                        <span className="block text-[12px] font-bold text-gray-400 leading-tight truncate">
                                           cabe {t.capacidade} {t.capacidade === 1 ? "produto" : "produtos"}
                                         </span>
                                       </span>
                                       <span
-                                        className={`text-[11.5px] font-black whitespace-nowrap flex-shrink-0 ${
+                                        className={`text-[13px] font-bold whitespace-nowrap flex-shrink-0 ${
                                           marcado ? "text-[#A8102A]" : "text-gray-800"
                                         }`}
                                       >
@@ -599,9 +568,8 @@ export function PaginaMontarCaixa({
             {etapa === 2 && (
               <section>
                 <div className="flex items-center gap-2.5 mb-4">
-                  <span className="w-1 h-6 rounded-full bg-[#A8102A]" />
                   <div>
-                    <h2 className="text-lg font-black text-gray-900">Escolha os produtos</h2>
+                    <h2 className="text-[20px] text-gray-900">Escolha os produtos</h2>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {capacidade === Infinity
                         ? `Coloque na caixa quantos produtos quiser — até ${MAX_QTD_POR_ITEM_CAIXA} de cada.`
@@ -615,11 +583,11 @@ export function PaginaMontarCaixa({
                 {capacidade !== Infinity && (
                   <div className="bg-white rounded-xl border border-gray-100 px-3.5 py-2.5 mb-3">
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[11.5px] font-bold text-gray-600">
+                      <span className="text-[13px] font-bold text-gray-600">
                         Ocupação da caixa {tamanhoEscolhido}
                       </span>
                       <span
-                        className={`text-[11.5px] font-black ${caixaCheia ? "text-[#A8102A]" : "text-gray-700"}`}
+                        className={`text-[13px] font-bold ${caixaCheia ? "text-[#A8102A]" : "text-gray-700"}`}
                         aria-live="polite"
                       >
                         {qtdItens} de {capacidade}
@@ -634,7 +602,7 @@ export function PaginaMontarCaixa({
                     {caixaCheia && (
                       <button
                         onClick={() => irParaEtapa(1)}
-                        className="text-[10.5px] text-[#A8102A] font-bold mt-1.5 hover:underline"
+                        className="text-[12px] text-[#A8102A] font-bold mt-1.5 hover:underline"
                       >
                         Caixa cheia — trocar por um tamanho maior
                       </button>
@@ -671,7 +639,7 @@ export function PaginaMontarCaixa({
                     <button
                       key={c}
                       onClick={() => { setCategoria(c); setBusca(""); }}
-                      className={`px-3.5 py-2 rounded-full text-[12.5px] font-bold whitespace-nowrap transition-colors ${
+                      className={`px-3.5 py-2 rounded-sm text-[12.5px] font-bold whitespace-nowrap transition-colors ${
                         categoria === c && !busca
                           ? "bg-[#A8102A] text-white"
                           : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
@@ -709,17 +677,17 @@ export function PaginaMontarCaixa({
                               className="w-full h-[105px] md:h-[130px] object-contain"
                             />
                             {qty > 0 && (
-                              <span className="absolute top-2 right-2 min-w-[24px] h-6 px-1.5 bg-[#A8102A] rounded-full flex items-center justify-center text-white text-[11px] font-black">
+                              <span className="absolute top-2 right-2 min-w-[24px] h-6 px-1.5 bg-[#A8102A] rounded-full flex items-center justify-center text-white text-[12.5px] font-bold">
                                 {qty}
                               </span>
                             )}
                           </div>
                           <div className="p-2.5 md:p-3 flex flex-col flex-1">
-                            <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wide">{p.brand}</span>
+                            <span className="text-[12.5px] text-gray-400 font-semibold">{p.brand}</span>
                             <p className="text-[12px] md:text-[13px] text-gray-800 font-semibold leading-snug mt-0.5 line-clamp-2 flex-1">
                               {p.name}
                             </p>
-                            <p className="text-[15px] md:text-[17px] font-black text-gray-900 mt-1.5">
+                            <p className="text-[15px] md:text-[17px] font-bold text-gray-900 mt-1.5">
                               {formatarMoeda(p.price)}
                             </p>
 
@@ -739,7 +707,7 @@ export function PaginaMontarCaixa({
                                 >
                                   <Minus size={14} strokeWidth={3} />
                                 </button>
-                                <span className="flex-1 text-center text-[13px] font-black" aria-live="polite">{qty}</span>
+                                <span className="flex-1 text-center text-[13px] font-bold" aria-live="polite">{qty}</span>
                                 <button
                                   onClick={() => mudarQtd(p, 1)}
                                   disabled={qty >= Math.min(MAX_QTD_POR_ITEM_CAIXA, p.stock)}
@@ -751,7 +719,7 @@ export function PaginaMontarCaixa({
                               </div>
                             )}
                             {qty > 0 && qty >= teto && (
-                              <p className="text-[10px] text-amber-600 font-semibold mt-1 text-center">
+                              <p className="text-[12px] text-amber-600 font-semibold mt-1 text-center">
                                 {caixaCheia
                                   ? "Caixa cheia"
                                   : p.stock <= MAX_QTD_POR_ITEM_CAIXA
@@ -772,9 +740,8 @@ export function PaginaMontarCaixa({
             {etapa === 3 && (
               <section className="space-y-4">
                 <div className="flex items-center gap-2.5">
-                  <span className="w-1 h-6 rounded-full bg-[#A8102A]" />
                   <div>
-                    <h2 className="text-lg font-black text-gray-900">Cartão de mensagem</h2>
+                    <h2 className="text-[20px] text-gray-900">Cartão de mensagem</h2>
                     <p className="text-xs text-gray-500 mt-0.5">Opcional — escrevemos à mão e colocamos na caixa.</p>
                   </div>
                 </div>
@@ -812,17 +779,17 @@ export function PaginaMontarCaixa({
                       placeholder="Escreva aqui o recado que vai no cartão…"
                       className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#A8102A] transition-colors resize-none"
                     />
-                    <p className="text-[10.5px] text-gray-400 text-right mt-1">
+                    <p className="text-[12px] text-gray-400 text-right mt-1">
                       {mensagem.length}/{MAX_CARACTERES_MENSAGEM_CAIXA}
                     </p>
                   </div>
 
                   {/* Prévia do cartão */}
                   {(para || de || mensagem) && (
-                    <div className="mt-2 bg-[#FBF4EA] border border-dashed border-[#C79A3B]/50 rounded-xl p-4">
+                    <div className="mt-2 bg-[#EDEDED] border border-dashed border-[#C79A3B]/50 rounded-xl p-4">
                       <div className="flex items-center gap-1.5 mb-2">
                         <PenLine size={13} className="text-[#C79A3B]" />
-                        <span className="text-[10px] font-black text-[#C79A3B] uppercase tracking-wide">Prévia do cartão</span>
+                        <span className="text-[12px] font-bold text-[#C79A3B]">Prévia do cartão</span>
                       </div>
                       {para && <p className="text-[13px] font-bold text-gray-800">Para: {para}</p>}
                       {mensagem && <p className="text-[13px] text-gray-700 italic mt-1.5 whitespace-pre-wrap">“{mensagem}”</p>}
@@ -833,9 +800,8 @@ export function PaginaMontarCaixa({
 
                 {/* Revisão do que vai dentro */}
                 <div className="flex items-center gap-2.5 pt-1">
-                  <span className="w-1 h-6 rounded-full bg-[#A8102A]" />
                   <div>
-                    <h2 className="text-lg font-black text-gray-900">Confira sua caixa</h2>
+                    <h2 className="text-[20px] text-gray-900">Confira sua caixa</h2>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {recipiente?.name} · {qtdItens} {qtdItens === 1 ? "produto" : "produtos"} dentro
                     </p>
@@ -850,9 +816,9 @@ export function PaginaMontarCaixa({
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-[13px] font-semibold text-gray-800 leading-snug line-clamp-2">{i.name}</p>
-                        <p className="text-[11.5px] text-gray-400 mt-0.5">{i.qty}x {formatarMoeda(i.price)}</p>
+                        <p className="text-[13px] text-gray-400 mt-0.5">{i.qty}x {formatarMoeda(i.price)}</p>
                       </div>
-                      <span className="text-[14px] font-black text-gray-900 flex-shrink-0">
+                      <span className="text-[14px] font-bold text-gray-900 flex-shrink-0">
                         {formatarMoeda(i.price * i.qty)}
                       </span>
                     </div>
@@ -876,7 +842,7 @@ export function PaginaMontarCaixa({
               <button
                 onClick={acaoBotao}
                 disabled={botaoDesabilitado}
-                className="w-full bg-[#A8102A] hover:bg-[#7A1220] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-black text-[14px] py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-[#A8102A] hover:bg-[#7A1220] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-[14px] py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2"
               >
                 {rotuloBotao}
                 <ChevronRight size={17} />
@@ -902,7 +868,7 @@ export function PaginaMontarCaixa({
             onClick={() => setResumoAberto(false)}
             className="absolute inset-0 bg-black/40"
           />
-          <div className="relative bg-[#FBF4EA] rounded-t-3xl p-4 max-h-[85vh] overflow-y-auto">
+          <div className="relative bg-[#EDEDED] rounded-t-3xl p-4 max-h-[85vh] overflow-y-auto">
             {/* O próprio resumo já se apresenta ("Sua caixa"), então aqui em
                 cima fica só o fechar */}
             <div className="flex justify-end mb-2">
@@ -919,16 +885,16 @@ export function PaginaMontarCaixa({
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] z-40 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div className="flex items-center gap-3">
           <button onClick={() => setResumoAberto(true)} className="text-left flex-shrink-0">
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">
+            <p className="text-[12px] text-gray-400 font-bold">
               {qtdItens} {qtdItens === 1 ? "produto" : "produtos"}
             </p>
-            <p className="text-[17px] font-black text-gray-900 leading-tight">{formatarMoeda(total)}</p>
-            <span className="text-[10.5px] text-[#A8102A] font-bold">ver caixa</span>
+            <p className="text-[17px] font-bold text-gray-900 leading-tight">{formatarMoeda(total)}</p>
+            <span className="text-[12px] text-[#A8102A] font-bold">ver caixa</span>
           </button>
           <button
             onClick={acaoBotao}
             disabled={botaoDesabilitado}
-            className="flex-1 bg-[#A8102A] hover:bg-[#7A1220] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-black text-[13.5px] py-3.5 rounded-xl transition-colors flex items-center justify-center gap-1.5"
+            className="flex-1 bg-[#A8102A] hover:bg-[#7A1220] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-[13.5px] py-3.5 rounded-xl transition-colors flex items-center justify-center gap-1.5"
           >
             {rotuloBotao}
             <ChevronRight size={16} />

@@ -11,14 +11,14 @@ export function ModalVendedorAtivado({ aoFechar, aoAbrirPainel }: { aoFechar: ()
         <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-100 flex items-center justify-center">
           <Check size={28} className="text-emerald-600" strokeWidth={3} />
         </div>
-        <h3 className="font-black text-gray-900 text-lg mb-2">Conta ativada como Vendedor!</h3>
+        <h3 className="font-bold text-gray-900 text-lg mb-2">Conta ativada como Vendedor!</h3>
         <p className="text-[13px] text-gray-500 mb-5">
           Você já pode divulgar os produtos da loja com o seu código de venda pessoal e ganhar comissão em cada venda.
         </p>
         <div className="flex flex-col gap-2">
           <button
             onClick={aoAbrirPainel}
-            className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-3 rounded-xl transition-colors text-sm"
+            className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold py-3 rounded-xl transition-colors text-sm"
           >
             Ir para o Painel do Vendedor
           </button>

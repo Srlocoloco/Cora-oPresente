@@ -1,7 +1,7 @@
 // Tela TelaLogin
 
 import { useState, useEffect, useRef } from "react";
-import { Plus, Heart, Truck, CreditCard, Eye, EyeOff, ChevronLeft, Check, Zap, Lock } from "lucide-react";
+import { Eye, EyeOff, ChevronLeft, Check, Lock } from "lucide-react";
 import type { Usuario, Cliente } from "../types";
 import { EMAIL_ADMIN, NOME_ADMIN, GOOGLE_CLIENT_ID, URL_BACKEND_PIX } from "../constantes";
 import { Logo } from "../components/Logo";
@@ -92,7 +92,9 @@ export function TelaLogin({
       g.accounts.id.renderButton(botaoGoogleRef.current, {
         theme: "outline",
         size: "large",
-        width: 380,
+        // Do tamanho do quadro do formulário (no celular ele é mais estreito
+        // que 380 px e o botão vazava pela borda). O Google aceita até 400.
+        width: Math.min(400, Math.max(200, Math.floor(botaoGoogleRef.current.parentElement?.clientWidth ?? 380))),
         text: "continue_with",
         locale: "pt-BR",
       });
@@ -260,71 +262,18 @@ export function TelaLogin({
     }
   };
 
+  // Login simples, como nas grandes lojas: a marca em cima e o formulário
+  // num quadro branco no meio. Sem painel de propaganda ao lado (e sem foto
+  // de banco de imagens carregada de outro site).
   return (
-    <div
-      className="min-h-screen flex"
-      style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
-    >
-      {/* Left panel */}
-      <div className="hidden lg:flex lg:w-[55%] bg-[#4A1218] relative overflow-hidden flex-col">
-        <img
-          src="https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=900&h=1200&fit=crop&auto=format"
-          alt="Shopping"
-          className="absolute inset-0 w-full h-full object-cover opacity-25"
-        />
-        <div className="absolute inset-0 bg-gradient-to-br from-[#4A1218] via-[#C8102E]/60 to-[#4A1218]/80" />
-
-        <div className="relative z-10 flex flex-col h-full p-12">
+    <div className="min-h-screen bg-[#EDEDED]">
+      <header className="bg-[#A8102A]">
+        <div className="max-w-[1100px] mx-auto px-4 h-[52px] flex items-center">
           <Logo claro />
-
-          <div className="flex-1 flex flex-col justify-center">
-            <div className="max-w-sm">
-              <h1 className="text-4xl font-black text-white leading-tight mb-4">
-                Bem-vindo de volta!
-              </h1>
-              <p className="text-white/65 text-base leading-relaxed mb-10">
-                Acesse sua conta para acompanhar seus pedidos, guardar seus favoritos e aproveitar os descontos no PIX.
-              </p>
-
-              {/* Só promessa que a loja cumpre de verdade. As frases daqui vinham
-                  do layout original e duas eram mentira: "frete grátis em
-                  milhares de produtos" (o catálogo tem centenas, e o frete só
-                  zera acima do mínimo do carrinho ou no produto com o selo) e
-                  "parte da receita vai para projetos sociais" (não existe
-                  repasse nenhum no sistema). Promessa que o carrinho não
-                  cumpre vira reclamação no Procon e pedido cancelado.
-                  O valor do frete grátis NÃO entra aqui de propósito: quem
-                  manda nele é config.freteGratisAcima, que o Admin muda na
-                  tela de Configurações — número fixo no texto envelhece. */}
-              <div className="space-y-4">
-                {[
-                  { icon: <Truck size={18} />, text: "Frete grátis acima do valor mínimo do carrinho" },
-                  { icon: <CreditCard size={18} />, text: "Parcele em até 12x sem juros" },
-                  { icon: <Zap size={18} />, text: "Descontos exclusivos pagando com PIX" },
-                  { icon: <Heart size={18} />, text: "Monte sua caixa de presente do seu jeito" },
-                ].map((item) => (
-                  <div key={item.text} className="flex items-center gap-3">
-                    <span className="text-[#E8B84B]">{item.icon}</span>
-                    <span className="text-white/75 text-sm font-medium">{item.text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="text-white/30 text-xs">
-            © {new Date().getFullYear()} Coração Presente · Todos os direitos reservados
-          </div>
         </div>
-      </div>
-
-      {/* Right panel */}
-      <div className="flex-1 bg-white flex items-center justify-center p-8">
-        <div className="w-full max-w-[400px]">
-          {/* Mobile logo */}
-          <div className="lg:hidden mb-8 flex justify-center">
-            <Logo />
-          </div>
+      </header>
+      <div className="px-4 py-8 md:py-14 flex justify-center">
+        <div className="w-full max-w-[440px] painel px-6 py-8 md:px-10 md:py-10">
 
           {aoVoltar && (
             <button
@@ -345,7 +294,7 @@ export function TelaLogin({
           {tipo2fa ? (
             <>
               <div className="mb-8">
-                <h2 className="text-2xl font-black text-gray-900">Confirme o código</h2>
+                <h2 className="text-[24px] text-gray-900">Confirme o código</h2>
                 <p className="text-gray-500 text-sm mt-1">
                   {tipo2fa === "admin"
                     ? "Enviamos um código de 6 dígitos para o e-mail do Admin. Confira sua caixa de entrada."
@@ -363,7 +312,7 @@ export function TelaLogin({
                     onChange={(e) => setCodigo2fa(e.target.value.replace(/\D/g, ""))}
                     placeholder="000000"
                     autoFocus
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.4em] font-black outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.4em] font-bold outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all"
                   />
                 </div>
                 {erro2fa && (
@@ -374,7 +323,7 @@ export function TelaLogin({
                 <button
                   type="submit"
                   disabled={verificando2fa}
-                  className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-black py-3.5 rounded-xl transition-colors text-[15px]"
+                  className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-bold py-3.5 rounded-xl transition-colors text-[15px]"
                 >
                   {verificando2fa ? "Confirmando..." : "Confirmar e entrar"}
                 </button>
@@ -390,7 +339,7 @@ export function TelaLogin({
           ) : modoEsqueciSenha ? (
             <>
               <div className="mb-8">
-                <h2 className="text-2xl font-black text-gray-900">Redefinir senha</h2>
+                <h2 className="text-[24px] text-gray-900">Redefinir senha</h2>
                 <p className="text-gray-500 text-sm mt-1">
                   Informe seu e-mail — se tiver uma conta, mandamos um link para você escolher uma senha nova.
                 </p>
@@ -414,7 +363,7 @@ export function TelaLogin({
                 <button
                   type="submit"
                   disabled={enviandoRecuperacao}
-                  className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-black py-3.5 rounded-xl transition-colors text-[15px]"
+                  className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-bold py-3.5 rounded-xl transition-colors text-[15px]"
                 >
                   {enviandoRecuperacao ? "Enviando..." : "Enviar link de redefinição"}
                 </button>
@@ -430,7 +379,7 @@ export function TelaLogin({
           ) : (
           <>
           <div className="mb-8">
-            <h2 className="text-2xl font-black text-gray-900">
+            <h2 className="text-[24px] text-gray-900">
               {modo === "login" ? "Entrar na sua conta" : "Criar sua conta"}
             </h2>
             <p className="text-gray-500 text-sm mt-1">
@@ -524,7 +473,7 @@ export function TelaLogin({
             <button
               type="submit"
               disabled={carregando}
-              className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-black py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-[15px]"
+              className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-[15px]"
             >
               {carregando ? (
                 <>
@@ -540,7 +489,7 @@ export function TelaLogin({
 
             <div className="relative flex items-center gap-3 py-1">
               <div className="flex-1 h-px bg-gray-200" />
-              <span className="text-[11px] text-gray-400 font-medium">ou continue com</span>
+              <span className="text-[12.5px] text-gray-400 font-medium">ou continue com</span>
               <div className="flex-1 h-px bg-gray-200" />
             </div>
 
@@ -563,7 +512,7 @@ export function TelaLogin({
                   <span className="text-lg">G</span>
                   <span className="text-[13px] font-bold text-gray-800">Cadastro rápido com Google</span>
                 </div>
-                <p className="text-[11px] text-gray-500">
+                <p className="text-[12.5px] text-gray-500">
                   Informe apenas seu nome de usuário — o resto criamos automaticamente.
                 </p>
                 <input
@@ -587,7 +536,7 @@ export function TelaLogin({
                     type="button"
                     onClick={cadastrarComGoogle}
                     disabled={carregando}
-                    className="flex-1 bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-black py-2.5 rounded-xl transition-colors text-[13px] flex items-center justify-center gap-2"
+                    className="flex-1 bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-bold py-2.5 rounded-xl transition-colors text-[13px] flex items-center justify-center gap-2"
                   >
                     {carregando ? (
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -610,7 +559,7 @@ export function TelaLogin({
             </button>
           </p>
 
-          <div className="flex items-center justify-center gap-1.5 mt-5 text-[11px] text-gray-400">
+          <div className="flex items-center justify-center gap-1.5 mt-5 text-[12.5px] text-gray-400">
             <Lock size={11} />
             <span>Seus dados estão seguros e protegidos</span>
           </div>

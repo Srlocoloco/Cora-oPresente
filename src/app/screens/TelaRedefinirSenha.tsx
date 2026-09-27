@@ -45,7 +45,7 @@ export function TelaRedefinirSenha({ token, aoConcluir }: { token: string; aoCon
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
       <div className="w-full max-w-[400px] bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
         <div className="flex justify-center mb-6">
           <Logo />
@@ -56,18 +56,18 @@ export function TelaRedefinirSenha({ token, aoConcluir }: { token: string; aoCon
             <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto">
               <Lock size={20} className="text-emerald-600" />
             </div>
-            <h2 className="text-xl font-black text-gray-900">Senha redefinida!</h2>
+            <h2 className="text-xl font-bold text-gray-900">Senha redefinida!</h2>
             <p className="text-gray-500 text-sm">Já pode entrar na sua conta com a senha nova.</p>
             <button
               onClick={aoConcluir}
-              className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-3 rounded-xl transition-colors text-sm"
+              className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold py-3 rounded-xl transition-colors text-sm"
             >
               Ir para o login
             </button>
           </div>
         ) : (
           <>
-            <h2 className="text-xl font-black text-gray-900 mb-1">Escolha uma senha nova</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-1">Escolha uma senha nova</h2>
             <p className="text-gray-500 text-sm mb-6">Crie uma senha forte para proteger sua conta.</p>
             <form onSubmit={aoEnviar} className="space-y-4">
               <div>
@@ -108,7 +108,7 @@ export function TelaRedefinirSenha({ token, aoConcluir }: { token: string; aoCon
               <button
                 type="submit"
                 disabled={carregando}
-                className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-black py-3.5 rounded-xl transition-colors text-[15px]"
+                className="w-full bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-bold py-3.5 rounded-xl transition-colors text-[15px]"
               >
                 {carregando ? "Salvando..." : "Redefinir senha"}
               </button>

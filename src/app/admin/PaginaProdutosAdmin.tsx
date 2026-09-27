@@ -15,17 +15,20 @@ export function PaginaProdutosAdmin({
   aoExcluir,
 }: {
   produtos: Produto[];
-  aoSalvar: (p: Produto) => void;
+  // Salva no servidor; devolve a mensagem de erro (null = salvou)
+  aoSalvar: (p: Produto & { estoqueBase?: number }) => Promise<string | null> | void;
   aoExcluir: (id: number) => void;
 }) {
   const [termoBusca, setTermoBusca] = useState("");
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [editando, setEditando] = useState<Produto | null>(null);
 
-  const visiveis = produtos.filter(
+  const termo = termoBusca.trim().toLowerCase();
+  const visiveis = [...produtos].sort((a, b) => b.id - a.id).filter(
     (p) =>
-      p.name.toLowerCase().includes(termoBusca.toLowerCase()) ||
-      p.brand.toLowerCase().includes(termoBusca.toLowerCase())
+      p.name.toLowerCase().includes(termo) ||
+      p.brand.toLowerCase().includes(termo) ||
+      (p.codigo ?? "").toLowerCase().includes(termo)
   );
 
   return (
@@ -35,7 +38,7 @@ export function PaginaProdutosAdmin({
           <Search size={15} className="text-gray-400" />
           <input
             className="flex-1 text-[13px] outline-none placeholder:text-gray-400 bg-transparent"
-            placeholder="Buscar produto ou marca..."
+            placeholder="Buscar por nome, marca ou código..."
             value={termoBusca}
             onChange={(e) => setTermoBusca(e.target.value)}
           />
@@ -49,10 +52,10 @@ export function PaginaProdutosAdmin({
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
-            <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
+            <thead className="bg-gray-50 text-[12.5px] text-gray-500">
               <tr>
                 <th className="text-left px-5 py-3.5 font-semibold hidden sm:table-cell">Código</th>
                 <th className="text-left px-5 py-3.5 font-semibold">Produto</th>
@@ -74,7 +77,7 @@ export function PaginaProdutosAdmin({
               {visiveis.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-50/70 transition-colors">
                   <td className="px-5 py-4 hidden sm:table-cell">
-                    <span className="font-mono text-[11px] font-bold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded-lg">
+                    <span className="font-mono text-[12.5px] font-bold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded-lg whitespace-nowrap">
                       {p.codigo || "—"}
                     </span>
                   </td>
@@ -83,29 +86,29 @@ export function PaginaProdutosAdmin({
                       <ImagemProduto src={p.image} alt={p.name} className="w-10 h-10 object-contain bg-gray-50 rounded-xl p-1 flex-shrink-0" />
                       <div>
                         <div className="font-semibold text-gray-800 text-[12px] leading-snug line-clamp-1 max-w-[180px]">{p.name}</div>
-                        <div className="text-[10px] text-gray-400 mt-0.5 font-medium">{p.brand}</div>
+                        <div className="text-[12px] text-gray-400 mt-0.5 font-medium">{p.brand}</div>
                       </div>
                     </div>
                   </td>
                   <td className="px-5 py-4 text-[12px] text-gray-500 hidden md:table-cell">{p.category}</td>
-                  <td className="px-5 py-4 font-black text-gray-900 text-[13px]">
+                  <td className="px-5 py-4 font-bold text-gray-900 text-[13px] whitespace-nowrap">
                     {formatarMoeda(p.price)}
                     {p.originalPrice && p.originalPrice > p.price && (
-                      <div className="text-[10px] text-red-500 font-bold">-{pctDesconto(p.originalPrice, p.price)}%</div>
+                      <div className="text-[12px] text-red-500 font-bold">-{pctDesconto(p.originalPrice, p.price)}%</div>
                     )}
                   </td>
                   <td className="px-5 py-4 hidden lg:table-cell">
-                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${p.stock < 15 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-700"}`}>
-                      {p.stock} un.
+                    <span className={`text-[12.5px] font-bold px-2.5 py-1 rounded-sm ${p.stock <= 0 ? "bg-red-100 text-red-600" : p.stock <= 5 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                      {p.stock <= 0 ? "Esgotado" : `${p.stock} un.`}
                     </span>
                   </td>
                   <td className="px-5 py-4 hidden md:table-cell">
                     {p.badge ? (
-                      <span className={`${CORES_SELO[p.badge] || "bg-[#C8102E]"} text-white text-[10px] font-black px-2.5 py-1 rounded-full tracking-wide`}>
+                      <span className={`${CORES_SELO[p.badge] || "bg-[#C8102E]"} text-white text-[12px] font-bold px-2.5 py-1 rounded-sm`}>
                         {p.badge}
                       </span>
                     ) : (
-                      <span className="text-[11px] text-gray-300 font-medium">—</span>
+                      <span className="text-[12.5px] text-gray-300 font-medium">—</span>
                     )}
                   </td>
                   <td className="px-5 py-4">
@@ -118,7 +121,9 @@ export function PaginaProdutosAdmin({
                         <Edit2 size={13} />
                       </button>
                       <button
-                        onClick={() => aoExcluir(p.id)}
+                        onClick={() => {
+                          if (window.confirm(`Excluir "${p.name}"? Ele sai da loja na hora e isso não pode ser desfeito.`)) aoExcluir(p.id);
+                        }}
                         className="p-1.5 hover:bg-red-50 rounded-lg text-red-400 transition-colors"
                         title="Excluir produto"
                       >
@@ -135,9 +140,17 @@ export function PaginaProdutosAdmin({
 
       {mostrarFormulario && (
         <FormularioProduto
-          inicial={editando}
+          // A versão atual do produto (pode ter sido trocada pela do servidor
+          // se outra pessoa salvou antes)
+          inicial={editando ? produtos.find((x) => x.id === editando.id) ?? editando : null}
           aoFechar={() => setMostrarFormulario(false)}
-          aoSalvar={(p) => { aoSalvar(p); setMostrarFormulario(false); }}
+          aoSalvar={async (p) => {
+            // Só fecha quando o servidor confirmar. Antes fechava na hora: se
+            // o salvamento falhasse, tudo o que foi digitado se perdia.
+            const erro = await aoSalvar(p);
+            if (!erro) setMostrarFormulario(false);
+            return erro ?? null;
+          }}
         />
       )}
     </div>
@@ -153,7 +166,7 @@ export function FormularioProduto({
 }: {
   inicial: Produto | null;
   aoFechar: () => void;
-  aoSalvar: (p: Produto) => void;
+  aoSalvar: (p: Produto & { estoqueBase?: number }) => Promise<string | null>;
 }) {
   const [name, setName] = useState(inicial?.name || "");
   const [brand, setBrand] = useState(inicial?.brand || "");
@@ -162,8 +175,11 @@ export function FormularioProduto({
   // manter o valor antigo "escondido" no estado (o <select> mostraria a opção
   // certa visualmente, mas salvaria a categoria antiga de qualquer forma).
   const categoriasValidas = CATEGORIAS.filter((c) => c !== "Outros");
+  // Produto novo começa SEM categoria. Antes vinha "Caixas" marcada — e
+  // produto da categoria Caixas não aparece na vitrine (é recipiente do Monte
+  // sua Caixa): quem não reparava cadastrava e o produto "sumia".
   const [cat, setCat] = useState(
-    inicial?.category && categoriasValidas.includes(inicial.category) ? inicial.category : categoriasValidas[0]
+    inicial?.category && categoriasValidas.includes(inicial.category) ? inicial.category : ""
   );
   const [price, setPrice] = useState(inicial ? String(inicial.price) : "");
   const [originalPrice, setOriginalPrice] = useState(inicial?.originalPrice ? String(inicial.originalPrice) : "");
@@ -183,6 +199,38 @@ export function FormularioProduto({
   const [pixDesconto, setPixDesconto] = useState(inicial?.pixDesconto ? String(inicial.pixDesconto) : "");
   const [description, setDescription] = useState(inicial?.description || "");
   const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  // Lê uma foto do computador/celular, reduz para no máximo 800 px e devolve
+  // em JPEG. Foto que o navegador não sabe abrir (ex.: HEIC do iPhone em alguns
+  // navegadores) antes falhava calada — agora avisa.
+  const lerFoto = (arquivo: File, pronto: (dataUrl: string) => void) => {
+    if (arquivo.size > 15 * 1024 * 1024) {
+      setErro("Foto muito grande (mais de 15 MB). Escolha outra ou tire um print dela.");
+      return;
+    }
+    const leitor = new FileReader();
+    leitor.onerror = () => setErro("Não foi possível ler esta foto. Tente outra (JPG ou PNG).");
+    leitor.onload = () => {
+      const img = new Image();
+      img.onerror = () => setErro("Este formato de foto não abre no navegador (comum com HEIC do iPhone). Envie em JPG ou PNG.");
+      img.onload = () => {
+        const escala = Math.min(1, 800 / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * escala);
+        canvas.height = Math.round(img.height * escala);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return setErro("Não foi possível processar a foto.");
+        ctx.fillStyle = "#fff"; // PNG transparente não vira fundo preto no JPEG
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setErro("");
+        pronto(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.src = leitor.result as string;
+    };
+    leitor.readAsDataURL(arquivo);
+  };
 
   const estiloInput =
     "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#C8102E] focus:ring-2 focus:ring-[#C8102E]/10 transition-all";
@@ -213,8 +261,9 @@ export function FormularioProduto({
       )
     );
 
-  const aoEnviarFormulario = (e: React.FormEvent) => {
+  const aoEnviarFormulario = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (salvando) return;
     const p = parseFloat(price.replace(",", "."));
     const op = originalPrice ? parseFloat(originalPrice.replace(",", ".")) : undefined;
     // Com cores/modelos cadastrados, cada um tem o próprio estoque (descontado
@@ -237,6 +286,7 @@ export function FormularioProduto({
     }
     const precoFinal = temTamanhos ? Math.min(...tamanhosParaSalvar.map((t) => t.price)) : p;
     if (!name.trim() || !brand.trim()) { setErro("Informe o nome e a marca do produto."); return; }
+    if (!cat) { setErro("Escolha a categoria do produto."); return; }
     if (ehCaixa && temTamanhos && tamanhosParaSalvar.some((t) => t.capacidade <= 0)) {
       setErro("Informe quantos produtos cabem em cada tamanho da caixa.");
       return;
@@ -256,8 +306,21 @@ export function FormularioProduto({
     }
     const pix = pixDesconto ? parseInt(pixDesconto, 10) : 0;
     if (pix < 0 || pix > 90) { setErro("O desconto no PIX deve ser entre 0% e 90%."); return; }
-    aoSalvar({
-      id: inicial?.id ?? Date.now(),
+    if (image.trim() && !ehFotoGuardada(image.trim()) && !/^https:\/\//i.test(image.trim())) {
+      setErro("O link da imagem precisa começar com https://");
+      return;
+    }
+    setSalvando(true);
+    setErro("");
+    const erroServidor = await aoSalvar({
+      // Produto novo vai sem id: quem dá o id e o código (BEL-001) é o servidor
+      id: inicial?.id ?? 0,
+      versao: inicial?.versao,
+      codigo: inicial?.codigo,
+      // Estoque de quando o formulário abriu: o servidor aplica só a DIFERENÇA
+      // que você fez, somada ao estoque de agora — vendas feitas enquanto o
+      // formulário estava aberto não se perdem.
+      estoqueBase: inicial?.stock,
       name: name.trim(),
       brand: brand.trim(),
       price: precoFinal,
@@ -267,8 +330,14 @@ export function FormularioProduto({
       reviews: inicial?.reviews ?? 0,
       image: image.trim(),
       images: images.length ? images : undefined,
-      colors: colors.length ? colors.filter((c) => c.nome.trim()) : undefined,
-      tamanhos: temTamanhos ? tamanhosParaSalvar : undefined,
+      colors: colors.length
+        ? colors
+            .filter((c) => c.nome.trim())
+            .map((c) => ({ ...c, estoqueBase: inicial?.colors?.find((x) => x.nome === c.nome)?.estoque }))
+        : undefined,
+      tamanhos: temTamanhos
+        ? tamanhosParaSalvar.map((t) => ({ ...t, estoqueBase: inicial?.tamanhos?.find((x) => x.tamanho === t.tamanho)?.estoque }))
+        : undefined,
       category: cat,
       badge: badge || undefined,
       freeShipping,
@@ -277,6 +346,8 @@ export function FormularioProduto({
       owner: inicial?.owner,
       description: description.trim() || undefined,
     });
+    setSalvando(false);
+    if (erroServidor) setErro(erroServidor);
   };
 
   return (
@@ -286,7 +357,7 @@ export function FormularioProduto({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
-          <h3 className="font-black text-gray-900">{inicial ? "Editar Produto" : "Novo Produto"}</h3>
+          <h3 className="font-bold text-gray-900">{inicial ? "Editar Produto" : "Novo Produto"}</h3>
           <button onClick={aoFechar} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 transition-colors">
             <X size={17} />
           </button>
@@ -295,13 +366,13 @@ export function FormularioProduto({
         <form onSubmit={aoEnviarFormulario} className="p-6 space-y-4">
           {inicial?.codigo && (
             <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
-              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Código do produto</span>
-              <span className="font-mono text-[13px] font-black text-gray-700">{inicial.codigo}</span>
+              <span className="text-[12.5px] font-bold text-gray-400">Código do produto</span>
+              <span className="font-mono text-[13px] font-bold text-gray-700">{inicial.codigo}</span>
             </div>
           )}
           {!inicial && (
-            <p className="text-[11px] text-gray-400 -mt-1">
-              O código (ex.: BEL-001) é gerado automaticamente pela categoria ao salvar.
+            <p className="text-[12.5px] text-gray-400 -mt-1">
+              O código (ex.: BEL-001) é dado automaticamente pela categoria ao salvar e nunca muda.
             </p>
           )}
           <div>
@@ -317,10 +388,16 @@ export function FormularioProduto({
             <div>
               <label className={estiloRotulo}>Categoria</label>
               <select className={estiloInput} value={cat} onChange={(e) => setCat(e.target.value)}>
+                <option value="" disabled>Escolha…</option>
                 {CATEGORIAS.filter((c) => c !== "Outros").map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>{c === CATEGORIA_CAIXA ? "Caixas (recipiente do Monte sua Caixa)" : c}</option>
                 ))}
               </select>
+              {cat === CATEGORIA_CAIXA && (
+                <p className="text-[12.5px] text-amber-700 mt-1">
+                  Caixas não aparecem na vitrine: são o recipiente que o cliente escolhe no “Monte sua Caixa”.
+                </p>
+              )}
             </div>
           </div>
 
@@ -328,12 +405,12 @@ export function FormularioProduto({
             <div>
               <label className={estiloRotulo}>Preço de venda (R$) *</label>
               <input className={estiloInput} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Ex.: 1899,90" inputMode="decimal" />
-              <p className="text-[11px] text-gray-400 mt-1">Valor que o cliente paga.</p>
+              <p className="text-[12.5px] text-gray-400 mt-1">Valor que o cliente paga.</p>
             </div>
             <div>
               <label className={estiloRotulo}>Preço "De:" (R$)</label>
               <input className={estiloInput} value={originalPrice} onChange={(e) => setOriginalPrice(e.target.value)} placeholder="Ex.: 2299,90 (opcional)" inputMode="decimal" />
-              <p className="text-[11px] text-gray-400 mt-1">Preço antigo, aparece riscado como desconto. Deixe vazio se não houver.</p>
+              <p className="text-[12.5px] text-gray-400 mt-1">Preço antigo, aparece riscado como desconto. Deixe vazio se não houver.</p>
             </div>
           </div>
 
@@ -345,15 +422,15 @@ export function FormularioProduto({
             const pix = pixDesconto ? parseInt(pixDesconto, 10) : 0;
             return (
               <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-wide mb-1">Como o cliente vai ver</p>
+                <p className="text-[12px] font-bold text-gray-400 mb-1">Como o cliente vai ver</p>
                 {op && op > p ? (
                   <p className="text-[14px]">
                     <span className="text-gray-400 line-through">{formatarMoeda(op)}</span>{" "}
-                    <span className="font-black text-gray-900">{formatarMoeda(p)}</span>{" "}
-                    <span className="text-red-500 font-black text-[11px]">-{pctDesconto(op, p)}%</span>
+                    <span className="font-bold text-gray-900">{formatarMoeda(p)}</span>{" "}
+                    <span className="text-red-500 font-bold text-[12.5px]">-{pctDesconto(op, p)}%</span>
                   </p>
                 ) : (
-                  <p className="text-[14px] font-black text-gray-900">{formatarMoeda(p)}</p>
+                  <p className="text-[14px] font-bold text-gray-900">{formatarMoeda(p)}</p>
                 )}
                 {pix > 0 && pix <= 90 && (
                   <p className="text-[12px] text-emerald-600 font-bold mt-0.5">
@@ -400,7 +477,7 @@ export function FormularioProduto({
               placeholder="Ex.: 5 — deixe vazio para não dar desconto no PIX"
               inputMode="numeric"
             />
-            <p className="text-[11px] text-gray-400 mt-1">Aplicado sobre o preço de venda somente quando o cliente paga com PIX.</p>
+            <p className="text-[12.5px] text-gray-400 mt-1">Aplicado sobre o preço de venda somente quando o cliente paga com PIX.</p>
           </div>
 
           <div>
@@ -412,7 +489,7 @@ export function FormularioProduto({
               placeholder="Detalhes, características, material, o que vem na caixa..."
               rows={4}
             />
-            <p className="text-[11px] text-gray-400 mt-1">Aparece na página do produto, abaixo das informações principais. Deixe vazio se não quiser mostrar nada.</p>
+            <p className="text-[12.5px] text-gray-400 mt-1">Aparece na página do produto, abaixo das informações principais. Deixe vazio se não quiser mostrar nada.</p>
           </div>
 
           <div>
@@ -421,7 +498,7 @@ export function FormularioProduto({
               <button
                 type="button"
                 onClick={() => setBadge("")}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-black border-2 transition-all ${
+                className={`px-3 py-1.5 rounded-sm text-[12.5px] font-bold border-2 transition-all ${
                   badge === "" ? "border-gray-800 bg-gray-800 text-white" : "border-gray-200 text-gray-500 hover:border-gray-400"
                 }`}
               >
@@ -432,7 +509,7 @@ export function FormularioProduto({
                   key={b}
                   type="button"
                   onClick={() => setBadge(b)}
-                  className={`px-3 py-1.5 rounded-full text-[11px] font-black border-2 transition-all ${
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold border-2 transition-all ${
                     badge === b
                       ? `${CORES_SELO[b]} text-white border-transparent`
                       : "border-gray-200 text-gray-500 hover:border-gray-400"
@@ -462,22 +539,7 @@ export function FormularioProduto({
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      const img = new Image();
-                      img.onload = () => {
-                        // Redimensiona para economizar espaço de armazenamento
-                        const scale = Math.min(1, 600 / Math.max(img.width, img.height));
-                        const canvas = document.createElement("canvas");
-                        canvas.width = Math.round(img.width * scale);
-                        canvas.height = Math.round(img.height * scale);
-                        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        setImage(canvas.toDataURL("image/jpeg", 0.85));
-                      };
-                      img.src = reader.result as string;
-                    };
-                    reader.readAsDataURL(file);
+                    if (file) lerFoto(file, setImage);
                     e.target.value = "";
                   }}
                 />
@@ -489,7 +551,7 @@ export function FormularioProduto({
                 <button
                   type="button"
                   onClick={() => setImage("")}
-                  className="text-[11px] text-red-500 font-bold hover:underline"
+                  className="text-[12.5px] text-red-500 font-bold hover:underline"
                 >
                   Remover imagem
                 </button>
@@ -499,7 +561,7 @@ export function FormularioProduto({
 
           <div>
             <label className={estiloRotulo}>Mais fotos do produto (galeria)</label>
-            <p className="text-[11px] text-gray-400 mb-2">
+            <p className="text-[12.5px] text-gray-400 mb-2">
               Fotos extras mostradas na página do produto, além da imagem principal. Útil para mostrar o relógio em ângulos diferentes.
             </p>
             <div className="flex flex-wrap gap-2 mb-2">
@@ -525,23 +587,7 @@ export function FormularioProduto({
                 multiple
                 className="hidden"
                 onChange={(e) => {
-                  const files = Array.from(e.target.files || []);
-                  files.forEach((file) => {
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      const img = new Image();
-                      img.onload = () => {
-                        const scale = Math.min(1, 600 / Math.max(img.width, img.height));
-                        const canvas = document.createElement("canvas");
-                        canvas.width = Math.round(img.width * scale);
-                        canvas.height = Math.round(img.height * scale);
-                        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        setImages((prev) => [...prev, canvas.toDataURL("image/jpeg", 0.85)]);
-                      };
-                      img.src = reader.result as string;
-                    };
-                    reader.readAsDataURL(file);
-                  });
+                  Array.from(e.target.files || []).forEach((file) => lerFoto(file, (foto) => setImages((prev) => [...prev, foto])));
                   e.target.value = "";
                 }}
               />
@@ -552,7 +598,7 @@ export function FormularioProduto({
           {ehCaixa && (
             <div>
               <label className={estiloRotulo}>Tamanhos da caixa (opcional)</label>
-              <p className="text-[11px] text-gray-400 mb-2">
+              <p className="text-[12.5px] text-gray-400 mb-2">
                 Marque os tamanhos que esta caixa tem. Cada um vira uma opção no “Monte sua Caixa”, com o
                 próprio preço e estoque — e a capacidade é o limite de produtos que o cliente consegue colocar
                 dentro. Sem nenhum marcado, a caixa fica de tamanho único.
@@ -573,17 +619,17 @@ export function FormularioProduto({
                           onChange={() => alternarTamanho(def.tamanho, def.capacidadeSugerida)}
                           className="w-4 h-4 accent-[#C8102E]"
                         />
-                        <span className="w-7 h-7 rounded-lg bg-[#4A1218] text-white text-[12px] font-black flex items-center justify-center">
+                        <span className="w-7 h-7 rounded-lg bg-[#4A1218] text-white text-[12px] font-bold flex items-center justify-center">
                           {def.tamanho}
                         </span>
                         <span className="text-[13px] font-bold text-gray-700">{def.nome}</span>
-                        <span className="text-[11px] text-gray-400">— {def.descricao}</span>
+                        <span className="text-[12.5px] text-gray-400">— {def.descricao}</span>
                       </label>
 
                       {ativo && t && (
                         <div className="grid grid-cols-3 gap-2 mt-2.5">
                           <div>
-                            <label className="text-[10px] font-bold text-gray-500 block mb-1">Preço *</label>
+                            <label className="text-[12px] font-bold text-gray-500 block mb-1">Preço *</label>
                             <input
                               className={estiloInput}
                               value={t.price || ""}
@@ -593,7 +639,7 @@ export function FormularioProduto({
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] font-bold text-gray-500 block mb-1">Estoque</label>
+                            <label className="text-[12px] font-bold text-gray-500 block mb-1">Estoque</label>
                             <input
                               className={estiloInput}
                               value={t.estoque || ""}
@@ -603,7 +649,7 @@ export function FormularioProduto({
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] font-bold text-gray-500 block mb-1">Cabe *</label>
+                            <label className="text-[12px] font-bold text-gray-500 block mb-1">Cabe *</label>
                             <input
                               className={estiloInput}
                               value={t.capacidade || ""}
@@ -619,7 +665,7 @@ export function FormularioProduto({
                 })}
               </div>
               {tamanhosValidos.length > 0 && (
-                <p className="text-[11px] text-gray-400 mt-2">
+                <p className="text-[12.5px] text-gray-400 mt-2">
                   O preço mostrado na caixa será o do menor tamanho ({formatarMoeda(Math.min(...tamanhosValidos.map((t) => t.price)))}),
                   e o estoque geral, a soma dos tamanhos ({tamanhosValidos.reduce((soma, t) => soma + t.estoque, 0)} un.).
                 </p>
@@ -629,7 +675,7 @@ export function FormularioProduto({
 
           <div>
             <label className={estiloRotulo}>Cores / modelos (opcional)</label>
-            <p className="text-[11px] text-gray-400 mb-2">
+            <p className="text-[12.5px] text-gray-400 mb-2">
               Cadastre as variações para o cliente escolher, ex.: "Prata", "Dourado", "Preto" — cada uma pode ter sua própria foto.
             </p>
             <div className="space-y-2">
@@ -664,7 +710,7 @@ export function FormularioProduto({
                           className="w-8 h-8 rounded cursor-pointer border border-gray-200"
                           title="Cor aproximada (mostrada como bolinha)"
                         />
-                        <label className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[11px] px-3 py-1.5 rounded-lg cursor-pointer transition-colors">
+                        <label className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[12.5px] px-3 py-1.5 rounded-lg cursor-pointer transition-colors">
                           <Upload size={12} />
                           Foto desta cor
                           <input
@@ -673,30 +719,14 @@ export function FormularioProduto({
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              if (!file) return;
-                              const reader = new FileReader();
-                              reader.onload = () => {
-                                const img = new Image();
-                                img.onload = () => {
-                                  const scale = Math.min(1, 600 / Math.max(img.width, img.height));
-                                  const canvas = document.createElement("canvas");
-                                  canvas.width = Math.round(img.width * scale);
-                                  canvas.height = Math.round(img.height * scale);
-                                  canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                  const novo = [...colors];
-                                  novo[i] = { ...novo[i], image: canvas.toDataURL("image/jpeg", 0.85) };
-                                  setColors(novo);
-                                };
-                                img.src = reader.result as string;
-                              };
-                              reader.readAsDataURL(file);
+                              if (file) lerFoto(file, (foto) => setColors((atuais) => atuais.map((c, idx) => (idx === i ? { ...c, image: foto } : c))));
                               e.target.value = "";
                             }}
                           />
                         </label>
                       </div>
                       <div>
-                        <label className="text-[11px] font-bold text-gray-500 block mb-1">Estoque desta cor</label>
+                        <label className="text-[12.5px] font-bold text-gray-500 block mb-1">Estoque desta cor</label>
                         <input
                           className={estiloInput}
                           value={c.estoque ?? ""}
@@ -723,7 +753,7 @@ export function FormularioProduto({
               ))}
             </div>
             {colors.length > 0 && (
-              <p className="text-[11px] text-gray-400 mt-2">
+              <p className="text-[12.5px] text-gray-400 mt-2">
                 Se o estoque de uma cor ficar vazio, o cliente vê essa cor como disponível seguindo o estoque geral do produto.
               </p>
             )}
@@ -762,9 +792,10 @@ export function FormularioProduto({
             </button>
             <button
               type="submit"
-              className="flex-1 bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-3 rounded-xl transition-colors text-[14px]"
+              disabled={salvando}
+              className="flex-1 bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-70 text-white font-bold py-3 rounded-xl transition-colors text-[14px]"
             >
-              {inicial ? "Salvar Alterações" : "Cadastrar Produto"}
+              {salvando ? "Salvando..." : inicial ? "Salvar alterações" : "Cadastrar produto"}
             </button>
           </div>
         </form>

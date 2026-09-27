@@ -70,24 +70,24 @@ export function PaginaEntregadoresAdmin({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+        <div className="painel p-4 flex items-center gap-3">
           <Truck size={22} className="text-[#C8102E] flex-shrink-0" />
           <div className="min-w-0">
-            <div className="text-xl font-black text-gray-900">{entregadores.length}</div>
-            <div className="text-[11px] text-gray-400 font-semibold truncate">Entregadores ativos</div>
+            <div className="text-xl font-bold text-gray-900">{entregadores.length}</div>
+            <div className="text-[12.5px] text-gray-400 font-semibold truncate">Entregadores ativos</div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+        <div className="painel p-4 flex items-center gap-3">
           <Package size={22} className="text-amber-500 flex-shrink-0" />
           <div className="min-w-0">
-            <div className="text-xl font-black text-gray-900">{semEntregador}</div>
-            <div className="text-[11px] text-gray-400 font-semibold truncate">Pedidos sem entregador</div>
+            <div className="text-xl font-bold text-gray-900">{semEntregador}</div>
+            <div className="text-[12.5px] text-gray-400 font-semibold truncate">Pedidos sem entregador</div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="font-black text-gray-900 text-[15px] mb-1">Tornar entregador</h3>
+      <div className="painel p-5">
+        <h3 className="font-bold text-gray-900 text-[15px] mb-1">Tornar entregador</h3>
         <p className="text-[12px] text-gray-400 mb-3">
           Dá o cargo de Entregador a uma conta já cadastrada na loja. Ela passa a ver o painel
           "Minhas Entregas" com os pedidos que você designar: produto, cliente, endereço com atalho
@@ -105,7 +105,7 @@ export function PaginaEntregadoresAdmin({
           />
           <button
             onClick={tornarEntregador}
-            className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-black px-5 py-3 rounded-xl transition-colors text-sm"
+            className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold px-5 py-3 rounded-xl transition-colors text-sm"
           >
             Tornar Entregador
           </button>
@@ -117,9 +117,9 @@ export function PaginaEntregadoresAdmin({
         )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Entregadores cadastrados</h3>
+          <h3 className="font-bold text-gray-900 text-[15px]">Entregadores cadastrados</h3>
           <p className="text-[12px] text-gray-400 mt-0.5">
             Para dar um pedido a alguém, abra Pedidos → detalhes da compra → "Entregador
             responsável".
@@ -136,24 +136,24 @@ export function PaginaEntregadoresAdmin({
               return (
                 <div key={e.email} className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-black flex items-center justify-center flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-bold flex items-center justify-center flex-shrink-0">
                       {e.name[0]}
                     </div>
                     <div className="min-w-0">
                       <div className="text-[13px] font-bold text-gray-800 truncate">{e.name}</div>
-                      <div className="text-[11px] text-gray-400 truncate">{e.email}</div>
+                      <div className="text-[12.5px] text-gray-400 truncate">{e.email}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 flex items-center gap-1">
+                    <span className="text-[12px] font-bold px-2.5 py-1 rounded-sm bg-amber-50 text-amber-600 flex items-center gap-1">
                       <Package size={11} /> {pendentes} na fila
                     </span>
-                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 flex items-center gap-1">
+                    <span className="text-[12px] font-bold px-2.5 py-1 rounded-sm bg-emerald-50 text-emerald-600 flex items-center gap-1">
                       <Check size={11} /> {entregues} entregues
                     </span>
                     <button
                       onClick={() => aoDefinirCargo(e.email, null)}
-                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold border-2 border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600 transition-all"
+                      className="px-3 py-1.5 rounded-lg text-[12.5px] font-bold border-2 border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600 transition-all"
                     >
                       Remover cargo
                     </button>

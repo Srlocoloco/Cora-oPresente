@@ -2,7 +2,7 @@
 
 import { Award } from "lucide-react";
 import type { Cargo, Cliente } from "../types";
-import { COMISSAO_MASTER_PROPRIA } from "../constantes";
+import { type RegrasComissao, pct } from "../comissoes";
 
 // ─── Página Masters (somente Admin, somente leitura) ──────────────────────────
 
@@ -17,13 +17,13 @@ export function PaginaMastersAdmin({
   cargos,
   aoDefinirCargo,
   vinculosMasterPlus,
-  comissaoEquipePct,
+  regras,
 }: {
   clientes: Cliente[];
   cargos: Record<string, Cargo>;
   aoDefinirCargo: (email: string, cargo: Cargo | null) => void;
   vinculosMasterPlus: Record<string, string>;
-  comissaoEquipePct: number;
+  regras: RegrasComissao;
 }) {
   const emailsMasters = Object.keys(cargos).filter((e) => cargos[e] === "master");
   const masters = clientes.filter((c) => emailsMasters.includes(c.email.toLowerCase()));
@@ -31,25 +31,25 @@ export function PaginaMastersAdmin({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+      <div className="painel p-4 flex items-center gap-3">
         <Award size={22} className="text-[#C8102E] flex-shrink-0" />
         <div>
-          <div className="text-xl font-black text-gray-900">{masters.length}</div>
-          <div className="text-[11px] text-gray-400 font-semibold">Masters ativos</div>
+          <div className="text-xl font-bold text-gray-900">{masters.length}</div>
+          <div className="text-[12.5px] text-gray-400 font-semibold">Masters ativos</div>
         </div>
       </div>
 
       <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-[12.5px] text-purple-700 leading-relaxed">
         Todo Master é promovido pelo próprio MasterPlus, a partir de um vendedor de destaque da
-        equipe dele (página "Promover a Master"). O Master ganha{" "}
-        {(COMISSAO_MASTER_PROPRIA * 100).toFixed(0)}% sobre as vendas próprias e{" "}
-        {comissaoEquipePct}% sobre as vendas da sua equipe — se o MasterPlus que o promoveu perder
-        o cargo, o Master perde o cargo junto.
+        equipe dele (página "Promover a Master"). O Master ganha {pct(regras.masterPropria)} sobre as
+        próprias vendas e {pct(regras.masterRede)} sobre as vendas da rede dele (percentuais em
+        Configurações → Comissões). Se o MasterPlus que o promoveu perder o cargo, o Master perde o
+        cargo junto.
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Masters cadastrados</h3>
+          <h3 className="font-bold text-gray-900 text-[15px]">Masters cadastrados</h3>
         </div>
         {masters.length === 0 ? (
           <div className="px-5 py-12 text-center text-gray-400 text-[13px]">
@@ -62,12 +62,12 @@ export function PaginaMastersAdmin({
               return (
                 <div key={m.email} className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-black flex items-center justify-center flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-bold flex items-center justify-center flex-shrink-0">
                       {m.name[0]}
                     </div>
                     <div className="min-w-0">
                       <div className="text-[13px] font-bold text-gray-800 truncate">{m.name}</div>
-                      <div className="text-[11px] text-gray-400 truncate">
+                      <div className="text-[12.5px] text-gray-400 truncate">
                         {m.email}
                         {masterPlusDele && ` · equipe de ${nomeDe(masterPlusDele)}`}
                       </div>
@@ -75,7 +75,7 @@ export function PaginaMastersAdmin({
                   </div>
                   <button
                     onClick={() => aoDefinirCargo(m.email, null)}
-                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold border-2 border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600 transition-all flex-shrink-0"
+                    className="px-3 py-1.5 rounded-lg text-[12.5px] font-bold border-2 border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600 transition-all flex-shrink-0"
                   >
                     Remover cargo
                   </button>

@@ -14,7 +14,7 @@
 // produto sem precisar ler.
 
 import { useEffect, useState } from "react";
-import { X, ChevronRight, Sparkles } from "lucide-react";
+import { X, ChevronRight } from "lucide-react";
 import type { Produto } from "../types";
 import { formatarMoeda } from "../utils";
 import { descontoDe } from "../recomendacoes";
@@ -49,43 +49,22 @@ export function PopupRecomendacao({
         visivel ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
       }`}
     >
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-3.5 py-2 bg-[#FBF4EA] border-b border-gray-100">
-          <span className="flex items-center gap-1.5 text-[10.5px] font-black text-[#A8102A] uppercase tracking-wide">
-            <Sparkles size={12} />
-            Você também pode gostar
-          </span>
-          <button
-            onClick={aoFechar}
-            aria-label="Fechar sugestão"
-            className="p-1 -mr-1 text-gray-400 hover:text-gray-700 transition-colors"
-          >
-            <X size={15} />
+      <div className="bg-white rounded-md shadow-[0_4px_18px_rgba(0,0,0,0.2)]">
+        <div className="flex items-center justify-between pl-4 pr-2 pt-2.5">
+          <span className="text-[13px] text-gray-500">{motivo}</span>
+          <button onClick={aoFechar} aria-label="Fechar sugestão" className="p-1.5 text-gray-400 hover:text-gray-700">
+            <X size={16} />
           </button>
         </div>
-
-        <button
-          onClick={() => aoAbrir(produto)}
-          className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 transition-colors"
-        >
-          <div className="w-16 h-16 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1 flex-shrink-0">
+        <button onClick={() => aoAbrir(produto)} className="w-full flex items-center gap-3 px-4 pb-3.5 pt-1 text-left">
+          <div className="w-16 h-16 rounded border border-black/10 p-1 flex-shrink-0 bg-white">
             <ImagemProduto src={produto.image} alt={produto.name} className="w-full h-full object-contain" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[10.5px] font-bold text-[#A8102A] truncate">{motivo}</p>
-            <p className="text-[13px] font-bold text-gray-800 leading-snug line-clamp-2">{produto.name}</p>
-            <p className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-[14px] font-black text-gray-900">{formatarMoeda(produto.price)}</span>
-              {desconto > 0 && (
-                <>
-                  <span className="text-[11px] text-gray-400 line-through">
-                    {formatarMoeda(produto.originalPrice as number)}
-                  </span>
-                  <span className="text-[10px] font-black text-emerald-600">
-                    -{Math.round(desconto * 100)}%
-                  </span>
-                </>
-              )}
+            <p className="text-[14px] text-gray-800 leading-snug line-clamp-2">{produto.name}</p>
+            <p className="flex items-baseline gap-2 mt-0.5">
+              <span className="text-[16px] text-gray-900">{formatarMoeda(produto.price)}</span>
+              {desconto > 0 && <span className="text-[13px] text-[#00A650]">{Math.round(desconto * 100)}% OFF</span>}
             </p>
           </div>
           <ChevronRight size={18} className="text-gray-300 flex-shrink-0" />

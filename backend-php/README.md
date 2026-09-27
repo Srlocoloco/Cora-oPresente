@@ -1,5 +1,92 @@
 # Backend PHP — versão para a KingHost (hospedagem compartilhada)
 
+## ⚠️ Atualização de setembro/2026 — leia antes de publicar
+
+Esta versão muda o fluxo de compra, o cadastro de produtos e as comissões. O
+banco é migrado **sozinho** na primeira chamada à API (tabelas novas e colunas
+novas; nenhuma tabela é apagada), mas faça o passo 1 mesmo assim.
+
+### O que mudou (e por quê)
+
+| Antes | Agora |
+|---|---|
+| O pedido era gravado como "Pago" pelo navegador — dava para chamar `/api/checkout` direto e ganhar um pedido pago sem pagar. A cobrança PIX usava o valor que o navegador mandasse. | A compra nasce **"Aguardando pagamento"**, com preço, frete, cupom e desconto PIX calculados no servidor, e o estoque fica reservado. Só vira "Pago" quando o banco confirma (ou quando o Admin confirma o PIX). Compra não paga vence sozinha e devolve o estoque. |
+| O painel gravava o catálogo INTEIRO a cada "Salvar": duas pessoas cadastrando juntas apagavam o produto uma da outra; editar regravava o estoque antigo. | Cada produto é salvo sozinho (`/api/produtos`), com **trava de versão** e estoque aplicado como diferença. Código do produto (BEL-001) fixo, dado pelo servidor. |
+| Produto com foto por link (https) nunca salvava. | Aceita link https (a capa) além do upload. |
+| Cancelar pedido não devolvia estoque; o estoque geral podia divergir da soma das cores/tamanhos. | Cancelar devolve as unidades; geral = soma das cores/tamanhos. |
+| Comissão calculada por semana, com 7% para Master. | **Comissão por venda**, congelada no pagamento: MasterPlus 7% (+2% equipe, +1% rede dos Masters dele); Master 2% nas próprias vendas + 1% da rede; vendedor 4–10%. Percentuais editáveis em Configurações. |
+| Pagamento aos associados marcado à mão. | **Repasses**: o site junta as comissões liberadas e gera o **arquivo CNAB 240 do Sicredi** (PIX, crédito em conta Sicredi e folha para conta salário). O arquivo de retorno do banco dá baixa sozinho. |
+| Senhas em SHA-256 simples. | bcrypt (cada conta migra no próximo login). |
+| Gravações de "pedidos"/"clientes" apagavam e regravavam a tabela inteira. | Desativadas. |
+
+### Como publicar
+
+1. **Backup do banco**: Painel KingHost → Bancos MySQL → phpMyAdmin → Exportar
+   (formato SQL). Guarde o arquivo.
+2. Envie **todos** os arquivos de `backend-php/api/` para `/www/api/`
+   (inclusive os novos: `lib_compras.php`, `lib_comissoes.php`,
+   `lib_estoque.php`, `lib_pix.php`, `lib_cnab240.php`, `produtos.php`,
+   `compras.php`, `repasses.php`, `vitrine.php` e o `.htaccess` atualizado). **Não** envie
+   `config.local.php` por cima do que está no servidor.
+3. Acrescente ao `config.local.php` do servidor (gere cada valor com
+   `php -r "echo bin2hex(random_bytes(24));"`):
+   ```php
+   define('WEBHOOK_SEGREDO_REAL', 'valor-gerado-1');
+   define('REPASSE_SEGREDO_CRON_REAL', 'valor-gerado-2');
+   ```
+   Ou rode de novo `C:\xampp\php\php.exe backend-php\gerar-config-local.php`,
+   que já gera os dois e grava a senha do Admin em bcrypt.
+4. No seu computador: `npm install` (há uma dependência nova, o gerador de QR
+   Code) e `npm run build`; envie o conteúdo de `dist/` como sempre. Publique
+   site e API **juntos** — o site antigo usa rotas que foram desativadas (ele
+   mostra "atualize a página").
+5. Abra o painel → **Configurações** e confira: chave PIX, comissões, prazo de
+   liberação, e preencha a **conta da empresa no Sicredi** (CNPJ, agência,
+   conta, dígito e código do convênio de Pagamentos).
+6. **Google**: a descrição antiga da loja (com "frete grátis" e "todo o Brasil")
+   continua no Google até ele visitar o site de novo. Depois de publicar, abra
+   o Google Search Console → **Inspeção de URL** → `https://coracaopresente.com.br/`
+   → **Solicitar indexação**. O texto novo aparece em alguns dias.
+
+### PIX
+
+- **Sem a API Pix configurada** (situação atual): o cliente recebe o QR/copia e
+  cola da chave da loja **com o valor exato**; o pedido fica "Aguardando
+  pagamento" e você confirma em **Pedidos → Conferir e confirmar** depois de
+  ver o PIX no extrato. A compra fica reservada por 24 h.
+- **Com a API Pix do Sicredi** (itens 6 abaixo): a confirmação é automática.
+  Cadastre no Sicredi o webhook `https://coracaopresente.com.br/api/webhook/pix/SEU_WEBHOOK_SEGREDO`.
+
+### Repasses (pagar a comissão dos associados)
+
+1. Cada associado cadastra a conta em **Meus ganhos → Conta para receber**:
+   - **conta salário Sicredi** → paga pela **Folha de Pagamento** (conta
+     salário só recebe crédito da empresa pela folha; o Banco Central proíbe
+     PIX de terceiros nela). A conta salário é aberta pela empresa junto à
+     cooperativa;
+   - **conta corrente Sicredi** → crédito direto;
+   - **outro banco / poupança** → PIX (a chave é obrigatória).
+2. Peça ao gerente da cooperativa o convênio de **Pagamento a Fornecedores**
+   e de **Folha de Pagamento** por **arquivo CNAB 240** e o **código do
+   convênio**. Faça o primeiro envio com um valor pequeno.
+3. No painel → **Repasses**: "Fechar repasses" → "Gerar arquivo do banco" →
+   envie o arquivo no Internet Banking do Sicredi e autorize → quando o banco
+   devolver o arquivo de retorno (.RET), envie em "Enviar retorno do banco".
+4. Para fechar os repasses sozinho, ligue em Configurações "Fechar os repasses
+   automaticamente" e crie no **Agendador de Tarefas (cron)** da KingHost uma
+   tarefa diária chamando:
+   `https://coracaopresente.com.br/api/repasses/automatico/SEU_REPASSE_SEGREDO_CRON`
+
+A comissão é liberada N dias depois que o pedido é marcado **Entregue**
+(padrão 7, o prazo de arrependimento). Pedido cancelado depois de pago gera um
+estorno que é descontado do próximo repasse.
+
+### Testar no seu computador antes de publicar
+
+`backend-php/servidor-local.php` roda a API com o PHP do XAMPP, aplicando as
+mesmas regras do `.htaccess` (instruções no topo do arquivo). O backend Node da
+pasta `backend/` está desatualizado e não deve mais ser usado.
+
 Mesmo papel do backend Node da pasta `backend`, mas em PHP puro: roda
 nativamente na hospedagem da KingHost, sem instalar nada. Guarda todos os
 dados no MySQL da hospedagem e cria as cobranças PIX oficiais do Sicredi.
@@ -161,6 +248,17 @@ uma limitação do site.
 - `POST /api/recrutamentos` — Master/MasterPlus cadastra um vendedor na própria equipe: quem já tem conta na loja entra ativado, com o cargo dado; quem não tem recebe o código gerado aqui
 - `POST /api/recrutamentos/{codigo}/ativar` — o cliente ativa, no perfil dele, o código recebido
 - `POST /api/equipe/cargo` — Master/MasterPlus dá (`vendedor`), promove (`master`) ou tira (`null`) o cargo de alguém da própria equipe
+- `POST /api/admin/cargo` — Admin dá `masterplus`, `entregador`, `vendedor` ou tira o cargo de UMA conta
+- `POST /api/checkout` — cria a compra "Aguardando pagamento" (valor calculado no servidor)
+- `GET  /api/compras` · `GET /api/compras/{id}` — compras do cliente / situação de uma compra
+- `POST /api/compras/{id}/cancelar` · `POST /api/compras/{id}/confirmar` (Admin) — desistir / confirmar PIX recebido
+- `POST /api/produtos` · `PUT /api/produtos/{id}` · `DELETE /api/produtos/{id}` — um produto por vez (PUT exige `versao`)
+- `PATCH /api/produtos/{id}/estoque` — `{delta | definir, cor?, tamanho?}`
+- `GET|PUT /api/recebimento` — conta do associado para receber
+- `GET  /api/ganhos` — saldo e comissões do associado
+- `GET  /api/repasses` · `POST /api/repasses/gerar` · `POST /api/repasses/remessa` · `GET /api/repasses/remessa/{id}` · `POST /api/repasses/retorno` · `POST /api/repasses/{id}/pagar|cancelar` — Admin
+- `GET  /api/repasses/automatico/{segredo}` — agendador de tarefas
+- `PUT /api/dados/{colecao}` agora só aceita `banners`, `cupons` e `config`
 
 ## Segurança
 

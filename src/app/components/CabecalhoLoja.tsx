@@ -1,13 +1,14 @@
 // Componente CabecalhoLoja
+//
+// Cabeçalho da vitrine, no molde dos grandes marketplaces: na primeira linha a
+// marca e a busca (o que a pessoa mais usa); na segunda, as categorias como
+// links de texto à esquerda e a conta/carrinho à direita. No celular a busca
+// divide a linha com a marca e as categorias rolam de lado — carrinho, conta e
+// favoritos ficam na barra de baixo (BarraInferiorMobile).
 
-import { ShoppingCart, Search, User, Settings, Heart } from "lucide-react";
+import { ShoppingCart, Search, Heart, ChevronDown } from "lucide-react";
 import type { Usuario } from "../types";
 import { Logo } from "./Logo";
-
-// ─── Store Header ─────────────────────────────────────────────────────────────
-// Fixo no topo (sticky) para a busca e o carrinho estarem sempre à mão. Cor
-// sólida (sem gradiente) e sombra mínima, por pedido: aparência limpa e
-// profissional em vez de decorativa.
 
 export function CabecalhoLoja({
   qtdCarrinho,
@@ -18,9 +19,14 @@ export function CabecalhoLoja({
   rotuloPainel,
   aoClicarEntrar,
   aoAbrirPerfil,
+  aoIrInicio,
   busca,
   aoBuscar,
   usuario,
+  categorias,
+  categoriaSelecionada,
+  aoSelecionarCategoria,
+  aoMontarCaixa,
 }: {
   qtdCarrinho: number;
   qtdFavoritos?: number;
@@ -30,101 +36,109 @@ export function CabecalhoLoja({
   rotuloPainel: string | null;
   aoClicarEntrar: () => void;
   aoAbrirPerfil: () => void;
+  aoIrInicio: () => void;
   busca: string;
   aoBuscar: (v: string) => void;
   usuario: Usuario | null;
+  categorias: string[];
+  categoriaSelecionada: string;
+  aoSelecionarCategoria: (c: string) => void;
+  aoMontarCaixa?: () => void;
 }) {
+  const linkTopo = "text-white/85 hover:text-white whitespace-nowrap transition-colors";
 
   return (
-    <header>
-      <div className="bg-[#A8102A] py-3.5 px-4 shadow-sm">
-        <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-3 md:gap-x-4">
-          <div className="flex-shrink-0 basis-full flex justify-center md:basis-auto md:justify-start">
+    <header className="bg-[#A8102A] text-white">
+      <div className="max-w-[1200px] mx-auto px-4">
+        {/* Marca + busca */}
+        <div className="flex items-center gap-3 md:gap-8 h-[56px] md:h-[60px]">
+          <button onClick={aoIrInicio} aria-label="Coração Presente — página inicial" className="flex-shrink-0">
             <Logo claro />
-          </div>
+          </button>
 
-          {/* Busca: linha própria no mobile, centralizada e em destaque no desktop */}
-          <div className="order-last md:order-none basis-full md:basis-0 md:flex-1 max-w-2xl md:mx-auto">
-            <div className="flex bg-white rounded-xl overflow-hidden ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-white transition-shadow">
-              <input
-                type="text"
-                value={busca}
-                onChange={(e) => aoBuscar(e.target.value)}
-                placeholder="Buscar produto, marca ou categoria"
-                aria-label="Buscar produto, marca ou categoria"
-                className="flex-1 pl-5 pr-4 py-3 text-[15px] text-gray-800 outline-none placeholder:text-gray-400 min-w-0"
-              />
-              <button
-                aria-label="Buscar"
-                className="bg-[#232323] px-5 flex items-center hover:bg-black transition-colors"
-              >
-                <Search size={19} className="text-white" strokeWidth={2.25} />
-              </button>
-            </div>
-          </div>
-
-          {/* No celular, Favoritos/Carrinho/Perfil/Painel vivem só na barra de
-              baixo (BarraInferiorMobile) — aqui em cima ficaria redundante */}
-          <div className="hidden md:flex items-center gap-1 sm:gap-2">
-            {/* Botão de painel: Admin, Master ou Vendedor */}
-            {rotuloPainel && (
-              <button
-                onClick={aoAbrirPainel}
-                className="flex flex-col items-center gap-1 px-2.5 md:px-3 py-1.5 rounded-lg text-white hover:bg-white/10 transition-colors min-w-[52px]"
-              >
-                <Settings size={20} />
-                <span className="text-[10px] font-semibold">{rotuloPainel}</span>
-              </button>
-            )}
-
-            {aoAbrirFavoritos && (
-              <button
-                onClick={aoAbrirFavoritos}
-                aria-label="Favoritos"
-                className="flex flex-col items-center gap-1 px-2.5 md:px-3 py-1.5 rounded-lg text-white hover:bg-white/10 transition-colors relative min-w-[52px]"
-              >
-                <div className="relative">
-                  <Heart size={20} />
-                  {!!qtdFavoritos && (
-                    <span className="absolute -top-1.5 -right-1.5 bg-white text-[#A8102A] text-[9px] font-black rounded-full w-4 h-4 flex items-center justify-center">
-                      {qtdFavoritos}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] font-semibold">Favoritos</span>
-              </button>
-            )}
-
-            {/* Perfil: leva direto para a tela de perfil (pedidos, cupons,
-                categorias etc.) — igual no mobile e no desktop */}
-            <button
-              onClick={() => (usuario ? aoAbrirPerfil() : aoClicarEntrar())}
-              className="flex flex-col items-center gap-1 px-2.5 md:px-3 py-1.5 rounded-lg text-white hover:bg-white/10 transition-colors min-w-[52px]"
-            >
-              <User size={20} />
-              <span className="text-[10px] font-semibold max-w-[64px] truncate">
-                {usuario ? usuario.name.split(" ")[0] : "Entrar"}
-              </span>
+          <form
+            role="search"
+            onSubmit={(e) => e.preventDefault()}
+            className="flex-1 max-w-[620px] flex bg-white rounded-sm shadow-[0_1px_2px_rgba(0,0,0,0.25)] h-10"
+          >
+            <input
+              type="search"
+              value={busca}
+              onChange={(e) => aoBuscar(e.target.value)}
+              placeholder="Buscar produtos, marcas e muito mais…"
+              aria-label="Buscar produtos"
+              className="flex-1 min-w-0 pl-4 pr-2 text-[15px] text-gray-800 outline-none placeholder:text-gray-400 bg-transparent"
+            />
+            <button type="submit" aria-label="Buscar" className="px-3.5 flex items-center border-l border-gray-200 text-gray-500 hover:text-gray-800">
+              <Search size={18} />
             </button>
+          </form>
+        </div>
 
+        {/* Categorias + conta */}
+        <div className="flex items-center justify-between gap-6 h-9 text-[13.5px] -mt-1 md:mt-0">
+          <nav aria-label="Categorias" className="relative min-w-0 flex-1">
+            <ul className="flex items-center gap-5 overflow-x-auto scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+              {aoMontarCaixa && (
+                <li>
+                  <button onClick={aoMontarCaixa} className={`${linkTopo} font-semibold text-white`}>
+                    Monte sua Caixa
+                  </button>
+                </li>
+              )}
+              {categorias.map((c) => {
+                const ativa = categoriaSelecionada === c;
+                return (
+                  <li key={c}>
+                    <button
+                      onClick={() => aoSelecionarCategoria(c)}
+                      aria-current={ativa ? "page" : undefined}
+                      className={`${linkTopo} ${ativa ? "!text-white underline underline-offset-[6px] decoration-2" : ""}`}
+                    >
+                      {c === "Outros" ? "Todos os produtos" : c}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          <div className="hidden md:flex items-center gap-5 flex-shrink-0">
+            {rotuloPainel && (
+              <button onClick={aoAbrirPainel} className={linkTopo}>
+                Painel {rotuloPainel}
+              </button>
+            )}
+            {usuario ? (
+              <button onClick={aoAbrirPerfil} className={`${linkTopo} flex items-center gap-1`}>
+                {usuario.name.split(" ")[0]} <ChevronDown size={14} />
+              </button>
+            ) : (
+              <button onClick={aoClicarEntrar} className={linkTopo}>
+                Entre ou cadastre-se
+              </button>
+            )}
+            {aoAbrirFavoritos && (
+              <button onClick={aoAbrirFavoritos} className={`${linkTopo} flex items-center gap-1.5`}>
+                <Heart size={15} />
+                Favoritos{qtdFavoritos ? ` (${qtdFavoritos})` : ""}
+              </button>
+            )}
             <button
               onClick={aoAbrirCarrinho}
               aria-label={`Carrinho${qtdCarrinho > 0 ? `, ${qtdCarrinho} itens` : ""}`}
-              className="flex flex-col items-center gap-1 px-2.5 md:px-3 py-1.5 rounded-lg text-white hover:bg-white/10 transition-colors relative min-w-[52px]"
+              className="relative text-white/90 hover:text-white p-1"
             >
-              <div className="relative">
-                <ShoppingCart size={20} />
-                {qtdCarrinho > 0 && (
-                  <span
-                    key={qtdCarrinho}
-                    className="absolute -top-1.5 -right-1.5 bg-white text-[#A8102A] text-[9px] font-black rounded-full w-4 h-4 flex items-center justify-center"
-                    style={{ animation: "puloCarrinho 0.3s ease" }}
-                  >
-                    {qtdCarrinho}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] font-semibold">Carrinho</span>
+              <ShoppingCart size={21} />
+              {qtdCarrinho > 0 && (
+                <span
+                  key={qtdCarrinho}
+                  className="absolute -top-1 -right-2 bg-white text-[#A8102A] text-[10.5px] font-bold rounded-full min-w-[17px] h-[17px] px-1 flex items-center justify-center"
+                  style={{ animation: "puloCarrinho 0.3s ease" }}
+                >
+                  {qtdCarrinho}
+                </span>
+              )}
             </button>
           </div>
         </div>

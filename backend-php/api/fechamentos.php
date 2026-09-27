@@ -14,6 +14,11 @@
 //
 // A semana vai de SEGUNDA a DOMINGO (mesma convenção já usada no Dashboard).
 // A semana corrente nunca fecha — ela ainda está somando.
+//
+// SISTEMA ANTERIOR: desde a comissão por venda (comissoes/repasses, ver
+// lib_comissoes.php), toda venda nova é paga por lá. Aqui só entram os
+// pedidos antigos (comissaoPorVenda = 0), para os recibos semanais que ainda
+// estavam em aberto fecharem direito — nenhuma venda conta nos dois lugares.
 
 require_once __DIR__ . "/lib.php";
 cors();
@@ -102,7 +107,7 @@ function vendido_por_no_periodo(PDO $pdo, array $emails, string $de, string $ate
     $stmt = $pdo->prepare(
         "SELECT COALESCE(SUM(total),0) FROM pedidos
           WHERE LOWER(vendedor) IN ($marcas)
-            AND status <> 'Cancelado'
+            AND status NOT IN ('Cancelado', 'Aguardando pagamento') AND comissaoPorVenda = 0
             AND STR_TO_DATE(`date`, '%d/%m/%Y') BETWEEN ? AND ?"
     );
     $stmt->execute([...$emails, $de, $ate]);
@@ -187,7 +192,7 @@ function fechar_semanas_vencidas(PDO $pdo, string $vendedor, ?string $cargo = nu
             COUNT(DISTINCT COALESCE(compraId, id)) AS qtd
          FROM pedidos
          WHERE LOWER(vendedor) = ?
-           AND status <> 'Cancelado'
+           AND status NOT IN ('Cancelado', 'Aguardando pagamento') AND comissaoPorVenda = 0
            AND STR_TO_DATE(`date`, '%d/%m/%Y') IS NOT NULL
          GROUP BY semana
          HAVING semana < ?
@@ -221,7 +226,7 @@ function fechar_semanas_vencidas(PDO $pdo, string $vendedor, ?string $cargo = nu
                          INTERVAL WEEKDAY(STR_TO_DATE(`date`, '%d/%m/%Y')) DAY)) AS semana
                  FROM pedidos
                  WHERE LOWER(vendedor) IN ($marcas)
-                   AND status <> 'Cancelado'
+                   AND status NOT IN ('Cancelado', 'Aguardando pagamento') AND comissaoPorVenda = 0
                    AND STR_TO_DATE(`date`, '%d/%m/%Y') IS NOT NULL
                  HAVING semana < ?"
             );
@@ -288,7 +293,7 @@ function semana_em_aberto(PDO $pdo, string $vendedor, ?string $cargo = null): ar
                 COUNT(DISTINCT COALESCE(compraId, id)) AS qtd
            FROM pedidos
           WHERE LOWER(vendedor) = ?
-            AND status <> 'Cancelado'
+            AND status NOT IN ('Cancelado', 'Aguardando pagamento') AND comissaoPorVenda = 0
             AND STR_TO_DATE(`date`, '%d/%m/%Y') BETWEEN ? AND ?"
     );
     $stmt->execute([$vendedor, $segunda, $domingo]);
@@ -296,7 +301,7 @@ function semana_em_aberto(PDO $pdo, string $vendedor, ?string $cargo = null): ar
 
     // Total vendido na vida — é ele que define a faixa do VENDEDOR
     $stmtTotal = $pdo->prepare(
-        "SELECT COALESCE(SUM(total),0) FROM pedidos WHERE LOWER(vendedor) = ? AND status <> 'Cancelado'"
+        "SELECT COALESCE(SUM(total),0) FROM pedidos WHERE LOWER(vendedor) = ? AND status NOT IN ('Cancelado', 'Aguardando pagamento') AND comissaoPorVenda = 0"
     );
     $stmtTotal->execute([$vendedor]);
     $vendasTotais = (float) $stmtTotal->fetchColumn();

@@ -1,13 +1,8 @@
 // Pagina Admin: PaginaRede (Master e MasterPlus)
 
 import type { Cargo, Recrutamento, Cliente, Pedido } from "../types";
-import {
-  COMISSAO_MASTERPLUS_PROPRIA,
-  COMISSAO_MASTERPLUS_EQUIPE,
-  COMISSAO_MASTERPLUS_OVERRIDE,
-  COMISSAO_MASTER_PROMOVIDO_EQUIPE,
-} from "../constantes";
 import { totalVendidoPor } from "../utils";
+import { type RegrasComissao, explicacaoDoCargo } from "../comissoes";
 import { GraficoRede, type NoRede } from "../components/GraficoRede";
 
 // ─── Página Rede (gráfico de rede do Master e do MasterPlus) ──────────────────
@@ -24,7 +19,7 @@ export function PaginaRede({
   clientes,
   pedidos,
   vinculosMasterPlus,
-  comissaoEquipePct,
+  regras,
 }: {
   modo: "master" | "masterplus";
   usuario: { name: string; email: string };
@@ -33,9 +28,8 @@ export function PaginaRede({
   clientes: Cliente[];
   pedidos: Pedido[];
   vinculosMasterPlus: Record<string, string>;
-  // Fração que o Master ganha sobre a própria equipe (2% padrão, ou 1% se
-  // foi promovido por um MasterPlus) — só usada no modo "master"
-  comissaoEquipePct: number;
+  // Percentuais em vigor (Configurações → Comissões)
+  regras: RegrasComissao;
 }) {
   const meuEmail = usuario.email.toLowerCase();
   const nomeDe = (email: string) =>
@@ -58,12 +52,13 @@ export function PaginaRede({
   if (modo === "master") {
     const filhos = recrutamentos
       .filter((r) => r.recrutador === meuEmail && r.ativado)
-      .map((r) => noVendedor(r.email.toLowerCase(), comissaoEquipePct));
+      .map((r) => noVendedor(r.email.toLowerCase(), regras.masterRede));
     raiz = {
       nome: usuario.name,
       email: meuEmail,
       papel: "master",
       vendas: totalVendidoPor(meuEmail, pedidos),
+      comissaoParaVoce: totalVendidoPor(meuEmail, pedidos) * regras.masterPropria,
       filhos,
     };
   } else {
@@ -77,7 +72,7 @@ export function PaginaRede({
       .map((r) => r.email.toLowerCase())
       .sort((a, b) => totalVendidoPor(b, pedidos) - totalVendidoPor(a, pedidos));
     const equipePropria = propriosOrdenados.map((email, i) =>
-      noVendedor(email, COMISSAO_MASTERPLUS_EQUIPE, i < 3 && totalVendidoPor(email, pedidos) > 0)
+      noVendedor(email, regras.masterPlusEquipe, i < 3 && totalVendidoPor(email, pedidos) > 0)
     );
 
     // Master(es) promovidos por este MasterPlus, cada um com a própria
@@ -88,14 +83,15 @@ export function PaginaRede({
       .map((masterEmail) => {
         const filhosDoMaster = recrutamentos
           .filter((r) => r.recrutador === masterEmail && r.ativado)
-          .map((r) => noVendedor(r.email.toLowerCase(), COMISSAO_MASTER_PROMOVIDO_EQUIPE));
+          // "Para você" = o repasse que VOCÊ (MasterPlus) ganha sobre cada vendedor
+          .map((r) => noVendedor(r.email.toLowerCase(), regras.masterPlusRepasse));
         const vendasEquipeDoMaster = filhosDoMaster.reduce((acum, f) => acum + f.vendas, 0);
         const no: NoRede = {
           nome: nomeDe(masterEmail),
           email: masterEmail,
           papel: "master",
           vendas: totalVendidoPor(masterEmail, pedidos),
-          comissaoParaVoce: vendasEquipeDoMaster * COMISSAO_MASTERPLUS_OVERRIDE,
+          comissaoParaVoce: vendasEquipeDoMaster * regras.masterPlusRepasse,
           filhos: filhosDoMaster,
         };
         return no;
@@ -107,24 +103,17 @@ export function PaginaRede({
       email: meuEmail,
       papel: "masterplus",
       vendas: vendasProprias,
-      // Comissão própria (7% fixo) sobre as vendas com o próprio código
-      comissaoParaVoce: vendasProprias * COMISSAO_MASTERPLUS_PROPRIA,
+      // Comissão própria sobre as vendas com o próprio código
+      comissaoParaVoce: vendasProprias * regras.masterPlusPropria,
       filhos: [...equipePropria, ...mastersPromovidos],
     };
   }
 
   return (
     <div className="space-y-4">
-      {modo === "masterplus" && (
-        <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-[12.5px] text-purple-700 leading-relaxed">
-          Você ganha <span className="font-black">{(COMISSAO_MASTERPLUS_PROPRIA * 100).toFixed(0)}%</span> fixo
-          sobre as vendas com o seu próprio código, mais{" "}
-          <span className="font-black">{(COMISSAO_MASTERPLUS_EQUIPE * 100).toFixed(0)}%</span> sobre
-          as vendas da sua própria equipe de vendedores e mais{" "}
-          <span className="font-black">{(COMISSAO_MASTERPLUS_OVERRIDE * 100).toFixed(0)}%</span> de repasse
-          sobre a equipe de cada Master que você promoveu.
-        </div>
-      )}
+      <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-[12.5px] text-purple-800 leading-relaxed">
+        {explicacaoDoCargo(modo, regras)} Os valores abaixo contam só vendas pagas e não canceladas.
+      </div>
       <GraficoRede raiz={raiz} />
     </div>
   );

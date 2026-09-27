@@ -1,7 +1,6 @@
 // Pagina Admin: PaginaDashboard
 
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { ShoppingBag, Users, TrendingUp, Tag } from "lucide-react";
 import type { Produto, Pedido, Cliente } from "../types";
 import { NOMES_MESES, CORES_CATEGORIA, EMAIL_ADMIN } from "../constantes";
 import { categoriaExibida, formatarMoeda, pedidoNoMes } from "../utils";
@@ -30,7 +29,8 @@ export function PaginaDashboard({
 }) {
   const agora = new Date();
   const mesAtual = NOMES_MESES[agora.getMonth()];
-  const pedidosValidos = pedidos.filter((o) => o.status !== "Cancelado");
+  // Só venda paga: compra "Aguardando pagamento" ainda não é faturamento
+  const pedidosValidos = pedidos.filter((o) => o.status !== "Cancelado" && o.status !== "Aguardando pagamento");
   const anoAtual = agora.getFullYear();
   // Mês E ano — ver pedidoNoMes em utils.ts. Comparar só "Set" somaria
   // setembro de todos os anos no faturamento deste mês.
@@ -119,55 +119,49 @@ export function PaginaDashboard({
     .slice(0, 5);
 
   const metricas = [
-    { label: `Faturamento (${mesAtual})`, value: formatarMoeda(vendasDoMes), icon: <TrendingUp size={18} />, bg: "bg-red-50", color: "text-[#C8102E]" },
-    { label: `Pedidos (${mesAtual})`, value: String(pedidosDoMes.length), icon: <ShoppingBag size={18} />, bg: "bg-emerald-50", color: "text-emerald-600" },
-    { label: "Clientes Novos (semana)", value: String(clientesNovosSemana), icon: <Users size={18} />, bg: "bg-purple-50", color: "text-purple-600" },
-    { label: "Ticket Médio", value: formatarMoeda(ticketMedio), icon: <Tag size={18} />, bg: "bg-orange-50", color: "text-orange-500" },
+    { label: `Faturamento em ${mesAtual}`, value: formatarMoeda(vendasDoMes) },
+    { label: `Pedidos em ${mesAtual}`, value: String(pedidosDoMes.length) },
+    { label: "Clientes novos na semana", value: String(clientesNovosSemana) },
+    { label: "Ticket médio", value: formatarMoeda(ticketMedio) },
   ];
 
   return (
     <div className="space-y-5">
-      {/* Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Números do mês numa faixa só, sem enfeite: o valor é o que importa */}
+      <div className="painel overflow-hidden grid grid-cols-2 lg:grid-cols-4 gap-px bg-black/[0.08]">
         {metricas.map((m) => (
-          <div key={m.label} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-            <div className="flex items-start justify-between mb-3">
-              <div className={`p-2 ${m.bg} ${m.color} rounded-xl`}>{m.icon}</div>
-            </div>
-            <div className="text-[22px] font-black text-gray-900">{m.value}</div>
-            <div className="text-[11px] text-gray-500 font-medium mt-0.5">{m.label}</div>
+          <div key={m.label} className="bg-white px-5 py-4">
+            <div className="text-[13px] text-gray-500">{m.label}</div>
+            <div className="text-[24px] text-gray-900 mt-1 tabular-nums">{m.value}</div>
           </div>
         ))}
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+        <div className="lg:col-span-2 painel p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-black text-gray-800">{titulo} — {agora.getFullYear()}</h3>
-            <div className="flex items-center gap-4 text-[11px] font-semibold">
-              <span className="flex items-center gap-1.5"><span className="w-3 h-1 bg-[#C8102E] rounded inline-block" />Vendas</span>
-            </div>
+            <h3 className="text-[16px] font-semibold text-gray-900">{titulo} em {agora.getFullYear()}</h3>
           </div>
 
           {/* Destaques rápidos: melhor mês, total do período, média mensal e
               variação em relação ao mês anterior */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-4">
-            <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Melhor mês</div>
-              <div className="text-[13px] font-black text-gray-900 mt-0.5">{melhorMes.month} · {formatarMoeda(melhorMes.vendas)}</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5 pb-4 border-b border-black/[0.08]">
+            <div>
+              <div className="text-[12.5px] text-gray-500">Melhor mês</div>
+              <div className="text-[15px] text-gray-900 mt-0.5">{melhorMes.month} · {formatarMoeda(melhorMes.vendas)}</div>
             </div>
-            <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Total no período</div>
-              <div className="text-[13px] font-black text-gray-900 mt-0.5">{formatarMoeda(totalPeriodo)}</div>
+            <div>
+              <div className="text-[12.5px] text-gray-500">Total no período</div>
+              <div className="text-[15px] text-gray-900 mt-0.5">{formatarMoeda(totalPeriodo)}</div>
             </div>
-            <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Média mensal</div>
-              <div className="text-[13px] font-black text-gray-900 mt-0.5">{formatarMoeda(mediaMensal)}</div>
+            <div>
+              <div className="text-[12.5px] text-gray-500">Média mensal</div>
+              <div className="text-[15px] text-gray-900 mt-0.5">{formatarMoeda(mediaMensal)}</div>
             </div>
-            <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Vs. mês anterior</div>
-              <div className={`text-[13px] font-black mt-0.5 ${crescimentoMensal === null ? "text-gray-400" : crescimentoMensal >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+            <div>
+              <div className="text-[12.5px] text-gray-500">Vs. mês anterior</div>
+              <div className={`text-[15px] mt-0.5 ${crescimentoMensal === null ? "text-gray-400" : crescimentoMensal >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                 {crescimentoMensal === null ? "—" : `${crescimentoMensal >= 0 ? "+" : ""}${crescimentoMensal.toFixed(0)}%`}
               </div>
             </div>
@@ -189,13 +183,13 @@ export function PaginaDashboard({
                 contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)", fontSize: 12 }}
               />
               <Area
-                type="natural"
+                type="monotone"
                 dataKey="vendas"
                 stroke="#C8102E"
-                strokeWidth={2.5}
+                strokeWidth={2}
                 fill="url(#gradVendas)"
                 name="Vendas"
-                dot={{ r: 4, fill: "#fff", stroke: "#C8102E", strokeWidth: 2 }}
+                dot={{ r: 3, fill: "#C8102E", strokeWidth: 0 }}
                 activeDot={{ r: 6, fill: "#C8102E", stroke: "#fff", strokeWidth: 2 }}
               />
             </AreaChart>
@@ -205,12 +199,12 @@ export function PaginaDashboard({
               (não aparece para o Admin — ele não participa do ranking) */}
           {modo !== "admin" && topVendedores.length > 0 && (
             <div className="mt-5 pt-4 border-t border-gray-100">
-              <h4 className="text-[12px] font-black text-gray-700 mb-3">🏆 Quem mais vende</h4>
+              <h4 className="text-[14px] font-semibold text-gray-900 mb-3">Quem mais vende</h4>
               <div className="space-y-2">
                 {topVendedores.map((v, i) => (
                   <div key={v.email} className="flex items-center gap-3">
                     <span
-                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black flex-shrink-0 ${
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[12.5px] font-bold flex-shrink-0 ${
                         i === 0
                           ? "bg-amber-100 text-amber-700"
                           : i === 1
@@ -223,7 +217,7 @@ export function PaginaDashboard({
                       {i + 1}
                     </span>
                     <span className="text-[13px] font-bold text-gray-800 truncate flex-1">{v.nome}</span>
-                    <span className="text-[13px] font-black text-emerald-600 flex-shrink-0">{formatarMoeda(v.total)}</span>
+                    <span className="text-[13px] font-bold text-emerald-600 flex-shrink-0">{formatarMoeda(v.total)}</span>
                   </div>
                 ))}
               </div>
@@ -231,8 +225,8 @@ export function PaginaDashboard({
           )}
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-          <h3 className="font-black text-gray-800 mb-5">Por Categoria</h3>
+        <div className="painel p-5">
+          <h3 className="text-[16px] font-semibold text-gray-900 mb-5">Vendas por categoria</h3>
           {dadosCategoria.length === 0 && (
             <p className="text-[12px] text-gray-400 text-center py-8">
               Nenhuma venda registrada ainda
@@ -243,9 +237,9 @@ export function PaginaDashboard({
               <div key={c.name}>
                 <div className="flex justify-between text-[12px] font-semibold text-gray-700 mb-1.5">
                   <span>{c.name}</span>
-                  <span className="font-black">{c.value}%</span>
+                  <span className="tabular-nums">{c.value}%</span>
                 </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
                   <div className="h-full rounded-full transition-all duration-700" style={{ width: `${c.value}%`, backgroundColor: c.color }} />
                 </div>
               </div>
@@ -255,21 +249,21 @@ export function PaginaDashboard({
       </div>
 
       {/* Recent Orders */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="font-black text-gray-800">Pedidos Recentes</h3>
+          <h3 className="text-[16px] font-semibold text-gray-900">Pedidos recentes</h3>
           {aoVerTodosPedidos && (
             <button
               onClick={aoVerTodosPedidos}
-              className="text-[12px] text-[#C8102E] font-bold hover:underline"
+              className="text-[14px] text-[#C8102E] hover:underline"
             >
-              Ver todos →
+              Ver todos
             </button>
           )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
-            <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
+            <thead className="text-[12.5px] text-gray-500 border-b border-black/[0.08]">
               <tr>
                 <th className="text-left px-5 py-3 font-semibold">Pedido</th>
                 <th className="text-left px-5 py-3 font-semibold">Cliente</th>
@@ -288,10 +282,10 @@ export function PaginaDashboard({
               )}
               {pedidos.slice(0, 5).map((o) => (
                 <tr key={o.id} className="hover:bg-gray-50/70 transition-colors">
-                  <td className="px-5 py-3.5 font-mono text-[12px] text-[#C8102E] font-bold">{o.id}</td>
-                  <td className="px-5 py-3.5 font-semibold text-gray-800">{o.customer}</td>
+                  <td className="px-5 py-3.5 font-mono text-[12.5px] text-gray-600">{o.id}</td>
+                  <td className="px-5 py-3.5 text-gray-900">{o.customer}</td>
                   <td className="px-5 py-3.5 text-gray-500 hidden md:table-cell text-[12px]">{o.items}</td>
-                  <td className="px-5 py-3.5 font-black text-gray-900">{formatarMoeda(o.total)}</td>
+                  <td className="px-5 py-3.5 text-gray-900 tabular-nums">{formatarMoeda(o.total)}</td>
                   <td className="px-5 py-3.5"><SeloStatus status={o.status} /></td>
                 </tr>
               ))}

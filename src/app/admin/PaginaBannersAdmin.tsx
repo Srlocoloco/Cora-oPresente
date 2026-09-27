@@ -57,7 +57,7 @@ export function FormularioBanner({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
-          <h3 className="font-black text-gray-900">{inicial ? "Editar Banner" : "Novo Banner"}</h3>
+          <h3 className="font-bold text-gray-900">{inicial ? "Editar Banner" : "Novo Banner"}</h3>
           <button onClick={aoFechar} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 transition-colors">
             <X size={17} />
           </button>
@@ -103,7 +103,7 @@ export function FormularioBanner({
                 />
               </label>
             </div>
-            <p className="text-[11px] text-gray-400 mt-1">Formato ideal: imagem larga, tipo 1200×400.</p>
+            <p className="text-[12.5px] text-gray-400 mt-1">Formato ideal: imagem larga, tipo 1200×400.</p>
             {image.trim() && (
               <div className="mt-2 relative rounded-xl overflow-hidden border border-gray-100 bg-gray-900">
                 <img
@@ -115,7 +115,7 @@ export function FormularioBanner({
                 <button
                   type="button"
                   onClick={() => setImage("")}
-                  className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[10px] font-bold px-2 py-1 rounded-lg hover:bg-black/70 transition-colors"
+                  className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[12px] font-bold px-2 py-1 rounded-lg hover:bg-black/70 transition-colors"
                 >
                   Remover
                 </button>
@@ -125,7 +125,7 @@ export function FormularioBanner({
 
           <div>
             <label className={estiloRotulo}>Imagem para celular (opcional)</label>
-            <p className="text-[11px] text-gray-400 mb-2">
+            <p className="text-[12.5px] text-gray-400 mb-2">
               A imagem larga acima fica baixinha no celular. Envie uma versão mais alta/quadrada
               (ex.: 800×900) pensada pro formato do celular — sem cortar nada e ocupando o espaço
               todo. Sem essa imagem, o celular usa a mesma imagem larga de cima.
@@ -178,7 +178,7 @@ export function FormularioBanner({
                 <button
                   type="button"
                   onClick={() => setMobileImage("")}
-                  className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[10px] font-bold px-2 py-1 rounded-lg hover:bg-black/70 transition-colors"
+                  className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[12px] font-bold px-2 py-1 rounded-lg hover:bg-black/70 transition-colors"
                 >
                   Remover
                 </button>
@@ -232,7 +232,7 @@ export function FormularioBanner({
             </button>
             <button
               type="submit"
-              className="flex-1 bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-3 rounded-xl transition-colors text-sm"
+              className="flex-1 bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold py-3 rounded-xl transition-colors text-sm"
             >
               Salvar
             </button>
@@ -259,25 +259,25 @@ export function PaginaBannersAdmin({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between gap-3 flex-wrap">
+      <div className="painel p-5 flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h3 className="font-black text-gray-900 text-[15px] mb-1">Banners da vitrine</h3>
+          <h3 className="font-bold text-gray-900 text-[15px] mb-1">Banners da vitrine</h3>
           <p className="text-[12px] text-gray-400">
             Aparecem em rotação no topo da loja. Troque imagens e textos por aqui, sem mexer em código.
           </p>
         </div>
         <button
           onClick={() => setCriando(true)}
-          className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-black px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2 flex-shrink-0"
+          className="bg-[#C8102E] hover:bg-[#8C1626] text-white font-bold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2 flex-shrink-0"
         >
           <Plus size={15} />
           Novo banner
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Banners cadastrados ({banners.length})</h3>
+          <h3 className="font-bold text-gray-900 text-[15px]">Banners cadastrados ({banners.length})</h3>
         </div>
         {banners.length === 0 ? (
           <div className="px-5 py-12 text-center text-gray-400 text-[13px]">
@@ -296,9 +296,9 @@ export function PaginaBannersAdmin({
                   />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[10px] font-black text-[#C8102E] uppercase tracking-wide">{b.tag}</div>
+                  <div className="text-[12px] font-bold text-[#C8102E]">{b.tag}</div>
                   <div className="text-[13px] font-bold text-gray-800 truncate">{b.title}</div>
-                  <div className="text-[11px] text-gray-400 truncate">{b.subtitle} · categoria: {b.category}</div>
+                  <div className="text-[12.5px] text-gray-400 truncate">{b.subtitle} · categoria: {b.category}</div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   <button

@@ -31,14 +31,12 @@ export function ProdutoDoPedido({
         <ImagemProduto
           src={produto.image}
           alt={produto.name}
-          className={`${tamanhoFoto} rounded-lg object-cover border border-gray-100 flex-shrink-0 bg-gray-50`}
+          className={`${tamanhoFoto} rounded object-contain border border-black/10 flex-shrink-0 bg-white p-0.5`}
         />
       )}
-      <span className="min-w-0 text-left">
-        <span className="block truncate">{descricao}</span>
-        {produto && aoAbrir && (
-          <span className="block text-[11px] font-bold text-[#A8102A]">Ver na loja</span>
-        )}
+      <span className="min-w-0 flex-1 overflow-hidden text-left">
+        <span className="block truncate" title={descricao}>{descricao}</span>
+        {produto && aoAbrir && <span className="block text-[12px] text-[#C8102E]">Ver na loja</span>}
       </span>
     </>
   );

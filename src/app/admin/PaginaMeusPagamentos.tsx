@@ -93,7 +93,9 @@ export function dataBr(iso: string): string {
   return `${d}/${m}/${a}`;
 }
 
-export function PaginaMeusPagamentos() {
+// somenteHistorico: usado dentro de "Meus ganhos" depois da comissão por venda.
+// Mostra só os recibos semanais antigos (e nada, se não houver nenhum).
+export function PaginaMeusPagamentos({ somenteHistorico = false }: { somenteHistorico?: boolean } = {}) {
   const [semana, setSemana] = useState<SemanaAberta | null>(null);
   const [fechamentos, setFechamentos] = useState<FechamentoSemana[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -117,6 +119,8 @@ export function PaginaMeusPagamentos() {
   const totalAReceber = aReceber.reduce((soma, f) => soma + f.comissao, 0);
   const jaRecebido = fechamentos.filter((f) => f.pago).reduce((soma, f) => soma + f.comissao, 0);
 
+  if (somenteHistorico && (carregando || erro || fechamentos.length === 0)) return null;
+
   if (carregando) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -136,29 +140,29 @@ export function PaginaMeusPagamentos() {
   return (
     <div className="space-y-4">
       {/* Semana em andamento — o contador que zera toda segunda */}
-      {semana && (
+      {semana && !somenteHistorico && (
         <div className="bg-white rounded-2xl border-2 border-[#C8102E]/15 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2.5">
               <Wallet size={20} className="text-[#C8102E]" />
               <div>
-                <h3 className="font-black text-gray-900 text-[15px]">Esta semana</h3>
+                <h3 className="font-bold text-gray-900 text-[15px]">Esta semana</h3>
                 <p className="text-[12px] text-gray-400">
                   {diaMes(semana.semanaInicio)} a {diaMes(semana.semanaFim)} · fecha domingo
                 </p>
               </div>
             </div>
-            <span className="text-[11px] font-bold text-gray-500 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-full">
+            <span className="text-[12.5px] font-bold text-gray-500 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-sm">
               {ROTULO_CARGO[semana.cargo] ?? "Vendedor"}
             </span>
           </div>
 
           <div className="p-5">
-            <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">A receber desta semana</div>
-            <div className="text-3xl font-black text-[#A8102A] mt-1 leading-none">
+            <div className="text-[12.5px] font-bold text-gray-500">A receber desta semana</div>
+            <div className="text-3xl font-bold text-[#A8102A] mt-1 leading-none">
               {formatarMoeda(semana.comissao)}
             </div>
-            <div className="text-[11px] text-gray-400 mt-1.5">entra no histórico quando a semana fechar</div>
+            <div className="text-[12.5px] text-gray-400 mt-1.5">entra no histórico quando a semana fechar</div>
           </div>
 
           {/* De onde vem o valor. O vendedor vê uma linha só; o Master vê as
@@ -174,7 +178,7 @@ export function PaginaMeusPagamentos() {
                   <span className="text-gray-400 text-[12px] flex-1 text-right truncate">
                     {formatarMoeda(p.base)} × {(p.pct * 100).toFixed(0)}%
                   </span>
-                  <span className="font-black text-gray-900 tabular-nums">{formatarMoeda(p.valor)}</span>
+                  <span className="font-bold text-gray-900 tabular-nums">{formatarMoeda(p.valor)}</span>
                 </div>
               ))}
             </div>
@@ -182,16 +186,16 @@ export function PaginaMeusPagamentos() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 border-t border-gray-100">
             <div className="p-4">
-              <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Suas vendas na semana</div>
-              <div className="text-lg font-black text-gray-900 mt-1">{formatarMoeda(semana.totalVendido)}</div>
-              <div className="text-[11px] text-gray-400 mt-0.5">
+              <div className="text-[12.5px] font-bold text-gray-500">Suas vendas na semana</div>
+              <div className="text-lg font-bold text-gray-900 mt-1">{formatarMoeda(semana.totalVendido)}</div>
+              <div className="text-[12.5px] text-gray-400 mt-0.5">
                 {semana.qtdVendas} {semana.qtdVendas === 1 ? "compra" : "compras"}
               </div>
             </div>
             <div className="p-4">
-              <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Suas vendas totais</div>
-              <div className="text-lg font-black text-gray-900 mt-1">{formatarMoeda(semana.vendasTotais)}</div>
-              <div className="text-[11px] text-gray-400 mt-0.5">
+              <div className="text-[12.5px] font-bold text-gray-500">Suas vendas totais</div>
+              <div className="text-lg font-bold text-gray-900 mt-1">{formatarMoeda(semana.vendasTotais)}</div>
+              <div className="text-[12.5px] text-gray-400 mt-0.5">
                 {semana.cargo === "vendedor" ? "é o que define sua faixa" : "percentual fixo no seu cargo"}
               </div>
             </div>
@@ -200,30 +204,30 @@ export function PaginaMeusPagamentos() {
       )}
 
       {/* Resumo do que a loja deve e do que já pagou */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${somenteHistorico ? "hidden" : ""}`}>
+        <div className="painel p-4 flex items-center gap-3">
           <Clock size={22} className="text-amber-600 flex-shrink-0" />
           <div className="min-w-0">
-            <div className="text-lg font-black text-gray-900">{formatarMoeda(totalAReceber)}</div>
+            <div className="text-lg font-bold text-gray-900">{formatarMoeda(totalAReceber)}</div>
             <div className="text-[12px] text-gray-400">
               aguardando pagamento
               {aReceber.length > 0 && ` · ${aReceber.length} ${aReceber.length === 1 ? "semana" : "semanas"}`}
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+        <div className="painel p-4 flex items-center gap-3">
           <Check size={22} className="text-emerald-600 flex-shrink-0" />
           <div className="min-w-0">
-            <div className="text-lg font-black text-gray-900">{formatarMoeda(jaRecebido)}</div>
+            <div className="text-lg font-bold text-gray-900">{formatarMoeda(jaRecebido)}</div>
             <div className="text-[12px] text-gray-400">já recebido</div>
           </div>
         </div>
       </div>
 
       {/* Histórico: uma linha por semana fechada */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Semanas fechadas</h3>
+          <h3 className="font-bold text-gray-900 text-[15px]">{somenteHistorico ? "Recibos semanais (sistema anterior)" : "Semanas fechadas"}</h3>
           <p className="text-[12px] text-gray-400 mt-0.5">
             Cada semana encerrada vira um recibo com o valor daquela semana. O valor não muda depois.
           </p>
@@ -245,17 +249,17 @@ export function PaginaMeusPagamentos() {
                     <div className="text-[13px] font-bold text-gray-800">
                       {dataBr(f.semanaInicio)} a {dataBr(f.semanaFim)}
                     </div>
-                    <div className="text-[11px] text-gray-400">
+                    <div className="text-[12.5px] text-gray-400">
                       {f.qtdVendas} {f.qtdVendas === 1 ? "compra sua" : "compras suas"}
                       {f.pago && f.pagoEm && ` · pago em ${dataBr(f.pagoEm.slice(0, 10))}`}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-black text-gray-900 text-[15px] tabular-nums">
+                    <span className="font-bold text-gray-900 text-[15px] tabular-nums">
                       {formatarMoeda(f.comissao)}
                     </span>
                     <span
-                      className={`text-[10px] font-black px-2.5 py-1 rounded-full whitespace-nowrap ${
+                      className={`text-[12px] font-bold px-2.5 py-1 rounded-sm whitespace-nowrap ${
                         f.pago ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
                       }`}
                     >
@@ -271,7 +275,7 @@ export function PaginaMeusPagamentos() {
                     existiu. */}
                 <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
                   {partesDaComissao(f).map((p) => (
-                    <span key={p.rotulo} className="text-[11px] text-gray-400">
+                    <span key={p.rotulo} className="text-[12.5px] text-gray-400">
                       {p.rotulo}: {formatarMoeda(p.base)} × {(p.pct * 100).toFixed(0)}% ={" "}
                       <span className="font-bold text-gray-600">{formatarMoeda(p.valor)}</span>
                     </span>

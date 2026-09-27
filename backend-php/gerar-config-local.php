@@ -32,11 +32,12 @@ $senhaAdm = perguntar("2) Senha do painel Admin (a que voce vai digitar no site)
 $smtpPass = perguntar("3) Senha do e-mail SMTP (deixe vazio se ainda nao usa): ", false);
 $pixChave = perguntar("4) Chave PIX reserva (deixe vazio se nao usa): ", false);
 
-// A senha do Admin nunca é guardada: só o salt aleatório e o hash SHA-256 de
-// (salt + senha). É a mesma conta que o lib.php faz ao conferir o login, então
-// o hash gerado aqui casa exatamente com verificar_senha_admin().
-$salt = bin2hex(random_bytes(16));
-$hash = hash("sha256", $salt . $senhaAdm);
+// A senha do Admin nunca é guardada: só o hash bcrypt (password_hash), que é
+// lento de propósito — com o arquivo vazado, cada tentativa de adivinhar a
+// senha custa ~100 ms em vez dos microssegundos do SHA-256 antigo. O salt vai
+// dentro do próprio hash; a constante de salt fica vazia só por compatibilidade.
+$salt = "";
+$hash = password_hash($senhaAdm, PASSWORD_BCRYPT);
 
 $escapar = fn(string $v) => str_replace(["\\", "'"], ["\\\\", "\\'"], $v);
 
@@ -49,7 +50,12 @@ $conteudo = "<?php\n"
     . "define('ADMIN_PASSWORD_SALT_REAL', '" . $salt . "');\n"
     . "define('ADMIN_PASSWORD_HASH_REAL', '" . $hash . "');\n\n"
     . "define('SMTP_SENHA_REAL', '" . $escapar($smtpPass) . "');\n"
-    . "define('PIX_CHAVE_RESERVA_REAL', '" . $escapar($pixChave) . "');\n";
+    . "define('PIX_CHAVE_RESERVA_REAL', '" . $escapar($pixChave) . "');\n\n"
+    . "// Segredos dos endereços automáticos (gerados ao acaso — não precisa decorar).\n"
+    . "// Webhook do banco:    /api/webhook/pix/<WEBHOOK_SEGREDO_REAL>\n"
+    . "// Agendador (cron):    /api/repasses/automatico/<REPASSE_SEGREDO_CRON_REAL>\n"
+    . "define('WEBHOOK_SEGREDO_REAL', '" . bin2hex(random_bytes(24)) . "');\n"
+    . "define('REPASSE_SEGREDO_CRON_REAL', '" . bin2hex(random_bytes(24)) . "');\n";
 
 $destino = __DIR__ . "/api/config.local.php";
 if (file_put_contents($destino, $conteudo) === false) {

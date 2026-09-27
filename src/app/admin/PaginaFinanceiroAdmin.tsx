@@ -1,314 +1,185 @@
 // Pagina Admin: PaginaFinanceiroAdmin
 
-import { ShoppingBag, Users, TrendingUp, Crown } from "lucide-react";
+import type { ReactNode } from "react";
+import { ShoppingBag, Users, TrendingUp, Crown, Award, Wallet, Info } from "lucide-react";
 import type { Cargo, Recrutamento, Pedido, Cliente } from "../types";
-import {
-  COMISSAO_MASTER_PROPRIA,
-  COMISSAO_MASTERPLUS_PROPRIA,
-  COMISSAO_MASTERPLUS_EQUIPE,
-  COMISSAO_MASTERPLUS_OVERRIDE,
-  COMISSAO_MASTER_PROMOVIDO_EQUIPE,
-  NOMES_MESES,
-} from "../constantes";
-import { comissaoFracaoPorNivel, totalVendidoPor, formatarMoeda, pedidoNoMes } from "../utils";
+import { NOMES_MESES } from "../constantes";
+import { formatarMoeda, pedidoNoMes } from "../utils";
+import { type RegrasComissao, pct, pedidoGeraComissao, vendidoPor, resumoComissoes } from "../comissoes";
 
 // ─── Página Financeiro (Admin) ────────────────────────────────────────────────
+//
+// Faturamento e o custo de comissão de cada pessoa da rede, calculados com as
+// regras de Configurações → Comissões. Pedido "Aguardando pagamento" não é
+// venda ainda e não entra em nada aqui. O valor que é PAGO de fato a cada um
+// está em Repasses (comissão lançada venda a venda no momento do pagamento).
 
-// Faturamento por período e forma de pagamento + comissões dos vendedores
+interface LinhaFinanceiro {
+  email: string;
+  nome: string;
+  vendeu: number;
+  tamanhoEquipe: number;
+  propria: number;
+  equipe: number;
+  repasse: number;
+  total: number;
+}
+
+type Coluna = "propria" | "equipe" | "repasse";
+
+function TabelaCargo({ titulo, icone, regra, linhas, colunas }: {
+  titulo: string;
+  icone: ReactNode;
+  regra: string;
+  linhas: LinhaFinanceiro[];
+  colunas: Coluna[];
+}) {
+  const rotulos: Record<Coluna, string> = { propria: "Vendas próprias", equipe: "Equipe / rede", repasse: "Rede dos Masters" };
+  return (
+    <section className="painel overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h3 className="font-bold text-gray-900 text-[15px] flex items-center gap-2">{icone}{titulo}</h3>
+        <p className="text-[12px] text-gray-500 mt-0.5">{regra}</p>
+      </div>
+      {linhas.length === 0 ? (
+        <div className="px-5 py-8 text-center text-gray-400 text-[13px]">Ninguém com este cargo ainda.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead className="bg-gray-50 text-[12.5px] text-gray-500">
+              <tr>
+                <th className="text-left px-5 py-2.5 font-semibold">Pessoa</th>
+                <th className="text-right px-3 py-2.5 font-semibold">Vendeu</th>
+                {colunas.map((c) => <th key={c} className="text-right px-3 py-2.5 font-semibold">{rotulos[c]}</th>)}
+                <th className="text-right px-5 py-2.5 font-semibold">Comissão total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {linhas.map((l) => (
+                <tr key={l.email}>
+                  <td className="px-5 py-3">
+                    <div className="font-bold text-gray-800">{l.nome}</div>
+                    <div className="text-[12.5px] text-gray-400">
+                      {l.email}{l.tamanhoEquipe > 0 ? ` · ${l.tamanhoEquipe} ${l.tamanhoEquipe === 1 ? "pessoa" : "pessoas"} na equipe` : ""}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-gray-600">{formatarMoeda(l.vendeu)}</td>
+                  {colunas.map((c) => <td key={c} className="px-3 py-3 text-right tabular-nums">{formatarMoeda(l[c])}</td>)}
+                  <td className="px-5 py-3 text-right font-bold text-emerald-700 tabular-nums">{formatarMoeda(l.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Cartao({ label, valor, icone, dica }: { label: string; valor: string; icone: ReactNode; dica?: string }) {
+  return (
+    <div className="painel p-4 flex items-center gap-3">
+      <span className="flex-shrink-0">{icone}</span>
+      <div className="min-w-0">
+        <div className="text-lg font-bold text-gray-900 truncate">{valor}</div>
+        <div className="text-[12.5px] text-gray-500 font-semibold">{label}</div>
+        {dica && <div className="text-[12px] text-gray-400">{dica}</div>}
+      </div>
+    </div>
+  );
+}
+
 export function PaginaFinanceiroAdmin({
   pedidos,
   cargos,
   clientes,
   recrutamentos,
-  comissaoEquipePct,
   vinculosMasterPlus = {},
+  regras,
 }: {
   pedidos: Pedido[];
   cargos: Record<string, Cargo>;
   clientes: Cliente[];
   recrutamentos: Recrutamento[];
-  comissaoEquipePct: number; // fração (ex.: 0.02 = 2%) que o Master padrão ganha sobre a equipe
-  // E-mail do Master (minúsculo) → e-mail do MasterPlus que o promoveu
   vinculosMasterPlus?: Record<string, string>;
+  regras: RegrasComissao;
 }) {
-  const validos = pedidos.filter((o) => o.status !== "Cancelado");
+  const validos = pedidos.filter(pedidoGeraComissao);
   const faturamentoTotal = validos.reduce((acum, o) => acum + o.total, 0);
   const agora = new Date();
   const mesAtual = NOMES_MESES[agora.getMonth()];
-  // Mês E ano (ver pedidoNoMes em utils.ts): o pedido guarda só "Set", então
-  // comparar por esse campo somaria setembro de todos os anos aqui dentro.
   const faturamentoMes = validos
     .filter((o) => pedidoNoMes(o, agora.getMonth(), agora.getFullYear(), mesAtual))
     .reduce((acum, o) => acum + o.total, 0);
+  const aguardando = pedidos.filter((o) => o.status === "Aguardando pagamento");
+  const rede = { cargos, recrutamentos, vinculosMasterPlus, pedidos, regras };
+  const nomeDe = (email: string) => clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email;
 
-  // Comissão de cada vendedor, com base nas próprias vendas
-  const vendedoresList = Object.keys(cargos).filter((e) => cargos[e] === "vendedor");
-  const dadosVendedores = vendedoresList.map((email) => {
-    const totalProprio = totalVendidoPor(email, pedidos);
-    const nome = clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email;
-    return {
-      email,
-      nome,
-      totalProprio,
-      comissao: totalProprio * comissaoFracaoPorNivel(totalProprio),
-    };
-  });
-  const comissoesTotal = dadosVendedores.reduce((acum, v) => acum + v.comissao, 0);
+  const linhasDoCargo = (cargo: Cargo): LinhaFinanceiro[] =>
+    Object.keys(cargos)
+      .filter((e) => cargos[e] === cargo)
+      .map((email) => ({
+        email,
+        nome: nomeDe(email),
+        vendeu: vendidoPor(email, pedidos),
+        tamanhoEquipe: recrutamentos.filter((x) => x.recrutador.toLowerCase() === email && x.ativado).length,
+        ...resumoComissoes(email, rede),
+      }))
+      .sort((a, b) => b.total - a.total);
 
-  // Comissão de cada Master: 7% fixo sobre as próprias vendas
-  // (código pessoal) + % sobre as vendas da própria equipe de vendedores
-  // (padrão configurável, ou 1% se este Master foi promovido por um
-  // MasterPlus — nesse caso 1% vai de repasse ao MasterPlus). Pode haver
-  // vários Masters, cada um com a
-  // própria equipe isolada.
-  const emailsMasters = Object.keys(cargos).filter((e) => cargos[e] === "master");
-  const dadosMasters = emailsMasters.map((email) => {
-    const nome = clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email;
-    const totalProprio = totalVendidoPor(email, pedidos);
-    const recrutamentosDoMaster = recrutamentos.filter((r) => r.recrutador === email);
-    const emailsEquipe = new Set(
-      recrutamentosDoMaster.filter((r) => r.ativado).map((r) => r.email.toLowerCase())
-    );
-    const totalEquipe = dadosVendedores
-      .filter((v) => emailsEquipe.has(v.email))
-      .reduce((acum, v) => acum + v.totalProprio, 0);
-    const promovidoPorMasterPlus = Boolean(vinculosMasterPlus[email]);
-    const suaComissaoEquipePct = promovidoPorMasterPlus ? COMISSAO_MASTER_PROMOVIDO_EQUIPE : comissaoEquipePct;
-    const comissaoPropria = totalProprio * COMISSAO_MASTER_PROPRIA;
-    const comissaoEquipe = totalEquipe * suaComissaoEquipePct;
-    return {
-      email,
-      nome,
-      totalProprio,
-      totalEquipe,
-      vendedoresAtivos: emailsEquipe.size,
-      comissaoPropria,
-      comissaoEquipe,
-      suaComissaoEquipePct,
-      promovidoPorMasterPlus,
-      total: comissaoPropria + comissaoEquipe,
-    };
-  });
-  const totalMasters = dadosMasters.reduce((acum, m) => acum + m.total, 0);
-
-  // Comissão de cada MasterPlus: 7% fixo sobre as próprias
-  // vendas (código pessoal) + 2% sobre a própria equipe de
-  // vendedores + 1% de repasse sobre a equipe de cada Master que ele
-  // promoveu (não conta a venda pessoal do Master, só a equipe dele).
-  const emailsMasterPlus = Object.keys(cargos).filter((e) => cargos[e] === "masterplus");
-  const dadosMasterPlus = emailsMasterPlus.map((email) => {
-    const nome = clientes.find((c) => c.email.toLowerCase() === email)?.name ?? email;
-    const totalProprio = totalVendidoPor(email, pedidos);
-    const comissaoPropria = totalProprio * COMISSAO_MASTERPLUS_PROPRIA;
-    const recrutamentosProprios = recrutamentos.filter((r) => r.recrutador === email && r.ativado);
-    const totalEquipePropria = recrutamentosProprios.reduce(
-      (acum, r) => acum + totalVendidoPor(r.email, pedidos),
-      0
-    );
-    const comissaoEquipePropria = totalEquipePropria * COMISSAO_MASTERPLUS_EQUIPE;
-
-    const mastersPromovidos = Object.keys(vinculosMasterPlus).filter(
-      (masterEmail) => vinculosMasterPlus[masterEmail] === email && cargos[masterEmail] === "master"
-    );
-    const detalheMasters = mastersPromovidos.map((masterEmail) => {
-      const equipeDoMaster = recrutamentos.filter((r) => r.recrutador === masterEmail && r.ativado);
-      const totalEquipeDoMaster = equipeDoMaster.reduce((acum, r) => acum + totalVendidoPor(r.email, pedidos), 0);
-      return {
-        email: masterEmail,
-        nome: clientes.find((c) => c.email.toLowerCase() === masterEmail)?.name ?? masterEmail,
-        totalEquipe: totalEquipeDoMaster,
-        repasse: totalEquipeDoMaster * COMISSAO_MASTERPLUS_OVERRIDE,
-      };
-    });
-    const comissaoOverride = detalheMasters.reduce((acum, m) => acum + m.repasse, 0);
-
-    return {
-      email,
-      nome,
-      totalProprio,
-      comissaoPropria,
-      totalEquipePropria,
-      vendedoresProprios: recrutamentosProprios.length,
-      comissaoEquipePropria,
-      comissaoOverride,
-      detalheMasters,
-      total: comissaoPropria + comissaoEquipePropria + comissaoOverride,
-    };
-  });
-  const totalMasterPlus = dadosMasterPlus.reduce((acum, m) => acum + m.total, 0);
-
-  const cartoesGerais = [
-    { label: "Faturamento total", valor: formatarMoeda(faturamentoTotal), icone: <TrendingUp size={22} className="text-emerald-600" /> },
-    { label: `Faturamento de ${mesAtual}`, valor: formatarMoeda(faturamentoMes), icone: <TrendingUp size={22} className="text-[#C8102E]" /> },
-    { label: "Pedidos válidos", valor: String(validos.length), icone: <ShoppingBag size={22} className="text-[#C8102E]" /> },
-  ];
-  const cartoesRepasses = [
-    { label: "Comissões dos vendedores a pagar", valor: formatarMoeda(comissoesTotal), icone: <Users size={22} className="text-[#C8102E]" /> },
-  ];
-
-  const cartao = (c: { label: string; valor: string; icone: React.ReactNode }) => (
-    <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-      <span className="flex-shrink-0">{c.icone}</span>
-      <div className="min-w-0">
-        <div className="text-lg font-black text-gray-900 truncate">{c.valor}</div>
-        <div className="text-[11px] text-gray-400 font-semibold">{c.label}</div>
-      </div>
-    </div>
-  );
+  const vendedores = linhasDoCargo("vendedor");
+  const masters = linhasDoCargo("master");
+  const masterPlus = linhasDoCargo("masterplus");
+  const custoTotal = [...vendedores, ...masters, ...masterPlus].reduce((s, l) => s + l.total, 0);
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-2">Visão geral</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {cartoesGerais.map(cartao)}
-        </div>
-      </div>
-      <div>
-        <h3 className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-2">Repasses a pagar</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {cartoesRepasses.map(cartao)}
-        </div>
-      </div>
-      {/* Comissões dos vendedores */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Comissões dos vendedores</h3>
-          <p className="text-[12px] text-gray-400 mt-0.5">Quanto pagar a cada vendedor, pela comissão do próprio nível (4% a 10%) sobre as vendas totais dele.</p>
-        </div>
-        {dadosVendedores.length === 0 ? (
-          <div className="px-5 py-10 text-center text-gray-400 text-[13px]">Nenhum vendedor cadastrado ainda.</div>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {dadosVendedores.map((v) => (
-              <div key={v.email} className="px-5 py-3.5 flex items-center justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
-                  <div className="text-[13px] font-bold text-gray-800 truncate">{v.nome}</div>
-                  <div className="text-[11px] text-gray-400 truncate">
-                    {v.email} · vendeu {formatarMoeda(v.totalProprio)}
-                  </div>
-                </div>
-                <span className="font-black text-emerald-600 text-[14px]">{formatarMoeda(v.comissao)}</span>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <Cartao label="Faturamento total" valor={formatarMoeda(faturamentoTotal)} icone={<TrendingUp size={22} className="text-emerald-600" />} dica="pedidos pagos, sem cancelados" />
+        <Cartao label={`Faturamento de ${mesAtual}`} valor={formatarMoeda(faturamentoMes)} icone={<TrendingUp size={22} className="text-[#C8102E]" />} />
+        <Cartao
+          label="Pedidos pagos"
+          valor={String(validos.length)}
+          icone={<ShoppingBag size={22} className="text-[#C8102E]" />}
+          dica={aguardando.length ? `${aguardando.length} aguardando pagamento` : undefined}
+        />
+        <Cartao
+          label="Custo total de comissões"
+          valor={formatarMoeda(custoTotal)}
+          icone={<Wallet size={22} className="text-amber-600" />}
+          dica={faturamentoTotal > 0 ? `${pct(custoTotal / faturamentoTotal)} do faturamento` : undefined}
+        />
       </div>
 
-      {/* Comissão dos Masters */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Masters</h3>
-          <p className="text-[12px] text-gray-400 mt-0.5">
-            Cada Master ganha {(COMISSAO_MASTER_PROPRIA * 100).toFixed(0)}% fixo sobre as vendas com o próprio código,{" "}
-            {(comissaoEquipePct * 100).toFixed(0)}% sobre as vendas da própria equipe de vendedores
-            (ou {(COMISSAO_MASTER_PROMOVIDO_EQUIPE * 100).toFixed(0)}% se foi promovido por um
-            MasterPlus).
-          </p>
-        </div>
-        {dadosMasters.length === 0 ? (
-          <div className="px-5 py-10 text-center text-gray-400 text-[13px]">Nenhum Master cadastrado ainda.</div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {dadosMasters.map((m) => (
-              <div key={m.email} className="px-5 py-4">
-                <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-gray-800 truncate flex items-center gap-1.5 flex-wrap">
-                      {m.nome}
-                      {m.promovidoPorMasterPlus && (
-                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#4A1218]/10 text-[#4A1218]">
-                          Promovido por MasterPlus
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-gray-400 truncate">{m.email} · {m.vendedoresAtivos} vendedor(es) ativo(s)</div>
-                  </div>
-                  <span className="font-black text-gray-900 text-[15px]">{formatarMoeda(m.total)}</span>
-                </div>
-                <div className="divide-y divide-gray-50 bg-gray-50/60 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                    <span className="text-[12px] text-gray-600">Comissão própria ({(COMISSAO_MASTER_PROPRIA * 100).toFixed(0)}%) · vendeu {formatarMoeda(m.totalProprio)}</span>
-                    <span className="font-black text-emerald-600 text-[13px]">{formatarMoeda(m.comissaoPropria)}</span>
-                  </div>
-                  <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                    <span className="text-[12px] text-gray-600">Comissão da equipe ({(m.suaComissaoEquipePct * 100).toFixed(0)}%) · equipe vendeu {formatarMoeda(m.totalEquipe)}</span>
-                    <span className="font-black text-emerald-600 text-[13px]">{formatarMoeda(m.comissaoEquipe)}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-            <div className="px-5 py-3.5 flex items-center justify-between gap-3 flex-wrap bg-gray-50/60">
-              <span className="text-[13px] font-bold text-gray-800">Total a pagar aos Masters</span>
-              <span className="font-black text-gray-900 text-[15px]">{formatarMoeda(totalMasters)}</span>
-            </div>
-          </div>
-        )}
+      <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 text-[12.5px] text-sky-900 flex gap-2.5 leading-relaxed">
+        <Info size={17} className="flex-shrink-0 mt-0.5" />
+        <span>
+          Estes totais são a comissão acumulada de cada pessoa, pelas regras atuais. O que já foi pago e o que está liberado
+          para pagar fica em <span className="font-bold">Repasses</span> — lá cada venda tem a comissão congelada no dia do pagamento.
+        </span>
       </div>
 
-      {/* Comissão dos MasterPlus */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px] flex items-center gap-2">
-            <Crown size={16} className="text-[#4A1218]" />
-            MasterPlus
-          </h3>
-          <p className="text-[12px] text-gray-400 mt-0.5">
-            Ganha {(COMISSAO_MASTERPLUS_PROPRIA * 100).toFixed(0)}% fixo sobre as vendas com o
-            próprio código, mais {(COMISSAO_MASTERPLUS_EQUIPE * 100).toFixed(0)}%
-            sobre as vendas da própria equipe de vendedores, mais{" "}
-            {(COMISSAO_MASTERPLUS_OVERRIDE * 100).toFixed(0)}% de repasse sobre as vendas da equipe
-            de cada Master que promoveu.
-          </p>
-        </div>
-        {dadosMasterPlus.length === 0 ? (
-          <div className="px-5 py-10 text-center text-gray-400 text-[13px]">Nenhum MasterPlus cadastrado ainda.</div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {dadosMasterPlus.map((m) => (
-              <div key={m.email} className="px-5 py-4">
-                <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-gray-800 truncate">{m.nome}</div>
-                    <div className="text-[11px] text-gray-400 truncate">{m.email} · {m.vendedoresProprios} vendedor(es) próprio(s)</div>
-                  </div>
-                  <span className="font-black text-gray-900 text-[15px]">{formatarMoeda(m.total)}</span>
-                </div>
-                <div className="divide-y divide-gray-50 bg-gray-50/60 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                    <span className="text-[12px] text-gray-600">
-                      Comissão própria ({(COMISSAO_MASTERPLUS_PROPRIA * 100).toFixed(0)}%) · vendeu {formatarMoeda(m.totalProprio)}
-                    </span>
-                    <span className="font-black text-emerald-600 text-[13px]">{formatarMoeda(m.comissaoPropria)}</span>
-                  </div>
-                  <div className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                    <span className="text-[12px] text-gray-600">
-                      Comissão da equipe própria ({(COMISSAO_MASTERPLUS_EQUIPE * 100).toFixed(0)}%) · equipe vendeu {formatarMoeda(m.totalEquipePropria)}
-                    </span>
-                    <span className="font-black text-emerald-600 text-[13px]">{formatarMoeda(m.comissaoEquipePropria)}</span>
-                  </div>
-                  {m.detalheMasters.length === 0 ? (
-                    <div className="px-4 py-2.5 text-[12px] text-gray-400">Ainda não promoveu nenhum Master.</div>
-                  ) : (
-                    m.detalheMasters.map((d) => (
-                      <div key={d.email} className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                        <span className="text-[12px] text-gray-600">
-                          Repasse ({(COMISSAO_MASTERPLUS_OVERRIDE * 100).toFixed(0)}%) sobre a equipe de {d.nome} · equipe vendeu {formatarMoeda(d.totalEquipe)}
-                        </span>
-                        <span className="font-black text-emerald-600 text-[13px]">{formatarMoeda(d.repasse)}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            ))}
-            <div className="px-5 py-3.5 flex items-center justify-between gap-3 flex-wrap bg-gray-50/60">
-              <span className="text-[13px] font-bold text-gray-800">Total a pagar aos MasterPlus</span>
-              <span className="font-black text-gray-900 text-[15px]">{formatarMoeda(totalMasterPlus)}</span>
-            </div>
-          </div>
-        )}
-      </div>
+      <TabelaCargo
+        titulo="Vendedores"
+        icone={<Users size={16} className="text-[#C8102E]" />}
+        regra="Faixa pelo total vendido: 4% (até R$ 500) · 6% (até R$ 1.500) · 8% (até R$ 3.000) · 10% (acima)."
+        linhas={vendedores}
+        colunas={["propria"]}
+      />
+      <TabelaCargo
+        titulo="Masters"
+        icone={<Award size={16} className="text-[#C8102E]" />}
+        regra={`${pct(regras.masterPropria)} sobre as próprias vendas + ${pct(regras.masterRede)} sobre as vendas da rede (vendedores que ele cadastrou).`}
+        linhas={masters}
+        colunas={["propria", "equipe"]}
+      />
+      <TabelaCargo
+        titulo="MasterPlus"
+        icone={<Crown size={16} className="text-[#4A1218]" />}
+        regra={`${pct(regras.masterPlusPropria)} sobre as próprias vendas + ${pct(regras.masterPlusEquipe)} sobre a equipe direta + ${pct(regras.masterPlusRepasse)} sobre a rede de cada Master que promoveu.`}
+        linhas={masterPlus}
+        colunas={["propria", "equipe", "repasse"]}
+      />
     </div>
   );
 }

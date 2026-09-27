@@ -58,9 +58,17 @@ export function pedidoNoMes(pedido: Pedido, mes: number, ano: number, nomeDoMes:
 }
 
 
+// Total vendido por uma conta: só pedidos pagos e não cancelados. Compra
+// "Aguardando pagamento" ainda não é venda — contá-la inflava a faixa do
+// vendedor com compras que nunca foram pagas.
 export function totalVendidoPor(email: string, pedidos: Pedido[]) {
   return pedidos
-    .filter((o) => o.vendedor?.toLowerCase() === email.toLowerCase() && o.status !== "Cancelado")
+    .filter(
+      (o) =>
+        o.vendedor?.toLowerCase() === email.toLowerCase() &&
+        o.status !== "Cancelado" &&
+        o.status !== "Aguardando pagamento"
+    )
     .reduce((acum, o) => acum + o.total, 0);
 }
 
@@ -334,7 +342,7 @@ export function produtoFoiCompradoPor(email: string, produto: Produto, pedidos: 
   return pedidos.some(
     (o) =>
       o.email.trim().toLowerCase() === emailLimpo &&
-      (o.status === "Pago" || o.status === "Entregue") &&
+      ["Pago", "Processando", "Em trânsito", "Entregue"].includes(o.status) &&
       // "Nome", "Nome (2x)", "Nome - Cor" ou "Nome - Cor (2x)" — cobre compras
       // com e sem cor escolhida
       (o.items === produto.name ||
@@ -374,6 +382,32 @@ export function maxParcelasDoCarrinho(items: { installments?: number }[], teto =
     return Math.min(min, n >= 1 ? n : 1);
   }, teto);
   return Math.max(1, Math.min(menor, teto));
+}
+
+
+// ─── Estimativa do valor da compra ───────────────────────────────────────────
+// A mesma conta que o servidor faz em lib_compras.php, para a tela mostrar o
+// valor antes de confirmar. Quem decide o valor cobrado é SEMPRE o servidor —
+// se algo mudou (preço, estoque, cupom), a tela de pagamento mostra o dele.
+export function estimarCompra(
+  itens: { price: number; qty: number; freeShipping?: boolean; pixDesconto?: number }[],
+  config: { freteGratisAcima: number; freteCapital: number; freteInterior: number },
+  opcoes: { metodo: "pix" | "cartao"; cep?: string; cupomPercentual?: number }
+) {
+  const subtotal = itens.reduce((s, i) => s + i.price * i.qty, 0);
+  const todosFreteGratis = itens.length > 0 && itens.every((i) => i.freeShipping);
+  const cep = (opcoes.cep ?? "").replace(/\D/g, "");
+  let frete: number | null;
+  if (todosFreteGratis || subtotal >= config.freteGratisAcima) frete = 0;
+  else if (cep.length !== 8) frete = null; // ainda sem CEP
+  else frete = cep >= "80000000" && cep <= "82999999" ? config.freteCapital : config.freteInterior;
+  const descontoPix =
+    opcoes.metodo === "pix" ? itens.reduce((s, i) => s + i.price * i.qty * ((i.pixDesconto ?? 0) / 100), 0) : 0;
+  const descontoCupom = opcoes.cupomPercentual ? subtotal * (opcoes.cupomPercentual / 100) : 0;
+  const total = Math.max(0, subtotal + (frete ?? 0) - descontoPix - descontoCupom);
+  // Quanto falta para o frete grátis (a barra de progresso do carrinho)
+  const faltaFreteGratis = todosFreteGratis ? 0 : Math.max(0, config.freteGratisAcima - subtotal);
+  return { subtotal, frete, descontoPix, descontoCupom, total, faltaFreteGratis, todosFreteGratis };
 }
 
 

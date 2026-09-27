@@ -1,7 +1,7 @@
 // Tela TelaNotificacoesCliente
 
 import { useEffect, useState } from "react";
-import { Package, Bell, BellRing, Plus, ChevronLeft, Sparkles, ChevronRight, Star } from "lucide-react";
+import { Package, Bell, BellRing, Plus, ChevronLeft, ChevronRight, Star } from "lucide-react";
 import { toast } from "sonner";
 import type { Pedido, Produto } from "../types";
 import { NOTIFICACAO_POR_STATUS } from "../constantes";
@@ -52,7 +52,7 @@ function AvisoNotificacoes() {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-3">
+    <div className="painel p-4 flex items-start gap-3">
       <span className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${ligado ? "bg-green-50" : "bg-red-50"}`}>
         <BellRing size={18} className={ligado ? "text-green-600" : "text-[#C8102E]"} />
       </span>
@@ -60,7 +60,7 @@ function AvisoNotificacoes() {
         <p className="text-[13px] font-semibold text-gray-800">
           {ligado ? "Notificações ligadas neste aparelho" : "Receba avisos no seu celular"}
         </p>
-        <p className="text-[11.5px] text-gray-400 mt-0.5">
+        <p className="text-[13px] text-gray-400 mt-0.5">
           {ligado
             ? "Você é avisado assim que o pedido é despachado ou entregue."
             : "Avisamos quando o pagamento é confirmado, quando o pedido sai para entrega e quando chega."}
@@ -89,6 +89,7 @@ export function TelaNotificacoesCliente({
   aoVerProduto,
   aoVoltar,
   aoAvaliarProduto,
+  aoPagarCompra,
 }: {
   pedidos: Pedido[];
   // Catálogo: de onde sai a foto do produto de cada pedido
@@ -101,17 +102,19 @@ export function TelaNotificacoesCliente({
   aoVoltar: () => void;
   // Só chega preenchido para pedidos já entregues — ver o botão "Avaliar"
   aoAvaliarProduto?: (p: Produto) => void;
+  // Retoma o pagamento de uma compra "Aguardando pagamento"
+  aoPagarCompra?: (compraId: string) => void;
 }) {
   return (
-    <div className="min-h-screen bg-[#FBF4EA] pb-20 md:pb-10" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      <div className="bg-[#C8102E] px-4 py-4">
-        <div className="max-w-[720px] mx-auto flex items-center gap-3">
-          <button onClick={aoVoltar} className="text-white/90 hover:text-white transition-colors">
-            <ChevronLeft size={22} />
+    <div className="min-h-screen bg-[#EDEDED] pb-20 md:pb-10">
+      <header className="bg-[#A8102A] text-white">
+        <div className="max-w-[720px] mx-auto px-4 h-[52px] flex items-center gap-2">
+          <button onClick={aoVoltar} aria-label="Voltar" className="-ml-2 p-2 text-white/90 hover:text-white">
+            <ChevronLeft size={20} />
           </button>
-          <h1 className="text-white font-black text-lg">Notificações</h1>
+          <h1 className="text-[17px]">Avisos</h1>
         </div>
-      </div>
+      </header>
 
       <div className="max-w-[720px] mx-auto px-4 py-5 space-y-2.5">
         <AvisoNotificacoes />
@@ -130,20 +133,28 @@ export function TelaNotificacoesCliente({
             };
             const produtoDoPedido = produtos.find((p) => p.id === o.produtoId);
             return (
-              <div key={o.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-3">
+              <div key={o.id} className="painel p-4 flex items-start gap-3">
                 <span className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${n.cor}`}>
                   {n.icon}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold text-gray-800">{n.texto(o.id)}</p>
-                  <p className="text-[11px] text-gray-400 mt-0.5">{o.items} · {formatarMoeda(o.total)} · {o.date}</p>
+                  <p className="text-[12.5px] text-gray-400 mt-0.5">{o.items} · {formatarMoeda(o.total)} · {o.date}</p>
                   {/* Pedido entregue: é aqui que a pessoa consegue avaliar sem
                       ter que caçar o produto na loja. Só aparece com o produto
                       ainda no catálogo — sem ele não há página de avaliação. */}
+                  {o.status === "Aguardando pagamento" && o.compraId && aoPagarCompra && (
+                    <button
+                      onClick={() => aoPagarCompra(o.compraId!)}
+                      className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-bold text-white bg-[#A8102A] hover:bg-[#7A1220] px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      Pagar agora
+                    </button>
+                  )}
                   {o.status === "Entregue" && produtoDoPedido && aoAvaliarProduto && (
                     <button
                       onClick={() => aoAvaliarProduto(produtoDoPedido)}
-                      className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] font-black text-[#C8102E] border-2 border-[#C8102E]/25 hover:border-[#C8102E] hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                      className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-bold text-[#C8102E] border-2 border-[#C8102E]/25 hover:border-[#C8102E] hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
                     >
                       <Star size={12} strokeWidth={2.5} />
                       Avaliar minha compra
@@ -178,8 +189,7 @@ export function TelaNotificacoesCliente({
         {recomendacoes.length > 0 && aoVerProduto && (
           <div className="pt-3">
             <div className="flex items-center gap-1.5 px-1 pb-2">
-              <Sparkles size={15} className="text-[#C8102E]" />
-              <h2 className="text-[13px] font-black text-gray-800">Ofertas para você</h2>
+              <h2 className="text-[17px] text-gray-900">Para você</h2>
             </div>
             <div className="space-y-2.5">
               {recomendacoes.map((p) => {
@@ -188,24 +198,24 @@ export function TelaNotificacoesCliente({
                   <button
                     key={p.id}
                     onClick={() => aoVerProduto(p)}
-                    className="w-full bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3 text-left hover:border-[#C8102E] transition-colors"
+                    className="w-full painel p-4 flex items-center gap-3 text-left hover:border-[#C8102E] transition-colors"
                   >
                     <div className="w-12 h-12 rounded-xl bg-gray-50 border border-gray-100 p-1 flex-shrink-0">
                       <ImagemProduto src={p.image} alt={p.name} className="w-full h-full object-contain" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[10.5px] font-bold text-[#C8102E] truncate">
+                      <p className="text-[12px] font-bold text-[#C8102E] truncate">
                         {motivoDaRecomendacao(p, compradosPeloCliente)}
                       </p>
                       <p className="text-[13px] font-semibold text-gray-800 leading-snug line-clamp-2">{p.name}</p>
                       <p className="flex items-baseline gap-1.5 mt-0.5">
-                        <span className="text-[13px] font-black text-gray-900">{formatarMoeda(p.price)}</span>
+                        <span className="text-[13px] font-bold text-gray-900">{formatarMoeda(p.price)}</span>
                         {desconto > 0 && (
                           <>
-                            <span className="text-[11px] text-gray-400 line-through">
+                            <span className="text-[12.5px] text-gray-400 line-through">
                               {formatarMoeda(p.originalPrice as number)}
                             </span>
-                            <span className="text-[10px] font-black text-emerald-600">
+                            <span className="text-[12px] font-bold text-emerald-600">
                               -{Math.round(desconto * 100)}%
                             </span>
                           </>

@@ -22,9 +22,9 @@ export function CampoCodigoVenda({
       <div className="flex items-center gap-2 mb-1">
         <Tag size={14} className="text-[#C8102E]" />
         <span className="text-[13px] font-bold text-gray-800">Código de venda</span>
-        <span className="text-[11px] text-[#C8102E] font-bold">(obrigatório)</span>
+        <span className="text-[12.5px] text-[#C8102E] font-bold">(obrigatório)</span>
       </div>
-      <p className="text-[11px] text-gray-400 mb-2">
+      <p className="text-[12.5px] text-gray-400 mb-2">
         Informe o código de quem te atendeu para creditar a venda a essa pessoa. Pedimos isso só na primeira compra: depois a sua conta fica vinculada e este campo não aparece mais.
       </p>
       <input
@@ -35,7 +35,7 @@ export function CampoCodigoVenda({
       />
       {digitado && nomeDono && (
         <div className="mt-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[12px] font-semibold px-3 py-2 rounded-lg">
-          Venda será creditada a <span className="font-black">{nomeDono}</span>
+          Venda será creditada a <span className="font-bold">{nomeDono}</span>
         </div>
       )}
       {digitado && !nomeDono && (

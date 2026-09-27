@@ -1,18 +1,21 @@
 // Tela PaginaProduto
 
 import { useEffect, useMemo, useState } from "react";
-import { ShoppingCart, Star, Package, Heart, Truck, ChevronRight, ChevronLeft, Video } from "lucide-react";
+import { Star, Heart, Truck, ChevronRight, ChevronLeft, Video, ShieldCheck, RotateCcw } from "lucide-react";
 import type { Produto, Usuario, Pedido, Avaliacao, CorProduto, ConfigLoja } from "../types";
-import { CORES_SELO, URL_BACKEND_PIX, LIMITE_VIDEO_AVALIACAO_MB, LIMITE_VIDEO_AVALIACAO_SEGUNDOS } from "../constantes";
-import { categoriaExibida, formatarMoeda, precoParcela, pctDesconto, produtoFoiCompradoPor, mediaAvaliacoes } from "../utils";
+import { URL_BACKEND_PIX, LIMITE_VIDEO_AVALIACAO_MB, LIMITE_VIDEO_AVALIACAO_SEGUNDOS } from "../constantes";
+import { categoriaExibida, formatarMoeda, precoParcela, pctDesconto, produtoFoiCompradoPor, mediaAvaliacoes, textoCidadesAtendidas } from "../utils";
 import { ImagemProduto } from "../components/ImagemProduto";
 import { CartaoProduto } from "../components/CartaoProduto";
+import { Preco } from "../components/Preco";
+import { compradosJuntosCom, recomendarProdutos, type SinaisVitrine } from "../recomendacoes";
 import { cabecalhosAdmin } from "../authToken";
 
 export function PaginaProduto({
   produto,
   produtos,
   aoAdicionarAoCarrinho,
+  aoComprarAgora,
   aoAbrirProduto,
   aoVoltar,
   aoFavoritar,
@@ -22,23 +25,27 @@ export function PaginaProduto({
   config,
   aoAtualizarResumoAvaliacoes,
   focarAvaliacoes = false,
+  sinais,
 }: {
   produto: Produto;
   produtos: Produto[];
   aoAdicionarAoCarrinho: (p: Produto) => void;
+  // Coloca no carrinho e vai direto para o checkout (o "Comprar agora")
+  aoComprarAgora?: (p: Produto) => void;
   aoAbrirProduto: (p: Produto) => void;
   aoVoltar: () => void;
   aoFavoritar: (id: number) => void;
   favoritos: number[];
   usuario: Usuario | null;
   pedidos: Pedido[];
-  // Regras de frete da loja — usadas para o bloco de entrega dizer o mesmo
-  // que o carrinho vai cobrar de verdade
+  // Configurações da loja: cidades atendidas e o limite de "últimas unidades"
   config: ConfigLoja;
   aoAtualizarResumoAvaliacoes: (produtoId: number, rating: number, reviews: number) => void;
   // true quando o cliente chegou aqui pelo convite de avaliar depois da compra:
   // rola direto até a seção de avaliações em vez de abrir no topo da página
   focarAvaliacoes?: boolean;
+  // Mais vendidos e "comprados juntos" somados no servidor (recomendacoes.ts)
+  sinais?: SinaisVitrine;
 }) {
   // ─── Galeria de fotos e cores/modelos ──────────────────────────────────────
   // Todas as fotos disponíveis: capa + galeria + uma foto por cor cadastrada
@@ -197,6 +204,10 @@ export function PaginaProduto({
   // Estoque que vale de verdade: o da cor escolhida (quando ela tem um
   // estoque próprio cadastrado) ou, sem cor selecionada, o estoque geral
   const estoqueEfetivo = corSelecionada?.estoque ?? produto.stock;
+  // Mesmo limite do painel (Configurações → Estoque). Antes era 15 fixo aqui e
+  // outro número no painel — a loja e o Admin falavam de "poucas unidades"
+  // com critérios diferentes.
+  const limiteBaixo = config?.estoqueBaixo ?? 5;
 
   // Monta o produto que vai pro carrinho: com a cor escolhida, a compra é
   // creditada àquela variação específica — foto, estoque e nome da cor
@@ -210,382 +221,367 @@ export function PaginaProduto({
       }
     : produto;
 
+  // Cada cor com estoque próprio: é preciso escolher qual, senão não dá para
+  // saber de onde sai a unidade (e o cliente recebe a cor que não queria)
+  const precisaEscolherCor =
+    !corSelecionada && (produto.colors ?? []).length > 0 && (produto.colors ?? []).every((c) => typeof c.estoque === "number");
   const temDesconto = produto.originalPrice && produto.originalPrice > produto.price;
   // Desconto no PIX definido no próprio produto (0 = sem desconto)
   const pctPix = produto.pixDesconto ?? 0;
   const precoPix = produto.price * (1 - pctPix / 100);
-  const recomendados = produtos.filter((p) => p.id !== produto.id && p.category === produto.category).slice(0, 4);
-  const outrosProdutos = produtos.filter((p) => p.id !== produto.id && p.category !== produto.category).slice(0, 8);
+  // "Quem comprou também comprou" com dados reais de outras compras; com
+  // poucas vendas ainda, vira "Você também pode gostar" (parecidos)
+  const juntos = useMemo(() => compradosJuntosCom(produto, produtos, 5, sinais), [produto, produtos, sinais]);
+  const outrosProdutos = useMemo(
+    () => recomendarProdutos([], produtos, 15, sinais).filter((p) => p.id !== produto.id && !juntos.produtos.some((j) => j.id === p.id)).slice(0, 10),
+    [produto, produtos, sinais, juntos]
+  );
 
   const grid = (items: Produto[]) => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 md:gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-4">
       {items.map((p) => (
         <CartaoProduto
           key={p.id}
           produto={p}
-          aoAdicionarAoCarrinho={aoAdicionarAoCarrinho}
           aoFavoritar={aoFavoritar}
           estaFavoritado={favoritos.includes(p.id)}
           aoAbrirProduto={aoAbrirProduto}
+          estoqueBaixo={limiteBaixo}
         />
       ))}
     </div>
   );
 
+  const favoritado = favoritos.includes(produto.id);
+  const textoEstoque =
+    estoqueEfetivo <= 0
+      ? corSelecionada ? `Esgotado na cor ${corSelecionada.nome}` : "Produto esgotado"
+      : estoqueEfetivo === 1
+      ? "Última unidade disponível"
+      : estoqueEfetivo <= limiteBaixo
+      ? `Restam só ${estoqueEfetivo} unidades`
+      : "Estoque disponível";
+  const podeComprar = estoqueEfetivo > 0 && !precisaEscolherCor;
+
   return (
-    <main className="max-w-[1440px] mx-auto px-4 py-5">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-[12px] text-gray-500 font-medium mb-4 flex-wrap">
-        <button onClick={aoVoltar} className="hover:text-[#C8102E] transition-colors">Início</button>
-        <ChevronRight size={13} />
+    <main className="max-w-[1200px] mx-auto px-4 pt-4 pb-6">
+      <nav aria-label="Você está em" className="flex items-center gap-1.5 text-[13px] text-gray-500 mb-3 flex-wrap">
+        <button onClick={aoVoltar} className="text-[#C8102E] hover:underline flex items-center gap-0.5">
+          <ChevronLeft size={15} /> Voltar
+        </button>
+        <span className="text-gray-300 mx-1">|</span>
+        <button onClick={aoVoltar} className="hover:text-gray-800">Início</button>
+        <ChevronRight size={12} />
         <span>{categoriaExibida(produto.category)}</span>
-        <ChevronRight size={13} />
-        <span className="text-gray-800 font-semibold line-clamp-1">{produto.name}</span>
-      </div>
+      </nav>
 
-      {/* Produto area */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Gallery */}
-          <div>
-            <div className="relative bg-gray-50/70 rounded-2xl p-6 flex items-center justify-center">
-              {produto.badge && (
-                <span className={`absolute top-3 left-3 ${CORES_SELO[produto.badge] || "bg-[#C8102E]"} text-white text-[10px] font-black px-3 py-1 rounded-full tracking-wider z-10`}>
-                  {produto.badge}
-                </span>
-              )}
-              {temDesconto && (
-                <span className="absolute top-3 right-3 bg-red-500 text-white text-[11px] font-black px-2 py-1 rounded-md z-10">
-                  -{pctDesconto(produto.originalPrice!, produto.price)}%
-                </span>
-              )}
-              <ImagemProduto
-                src={fotoSelecionada}
-                alt={produto.name}
-                className="w-full h-[240px] md:h-[380px] object-contain"
-              />
-              {fotosGaleria.length > 1 && (
-                <>
-                  <button
-                    onClick={() => irParaFoto(-1)}
-                    aria-label="Foto anterior"
-                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow"
-                  >
-                    <ChevronLeft size={18} />
-                  </button>
-                  <button
-                    onClick={() => irParaFoto(1)}
-                    aria-label="Próxima foto"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow"
-                  >
-                    <ChevronRight size={18} />
-                  </button>
-                </>
-              )}
-              <button
-                onClick={() => aoFavoritar(produto.id)}
-                className="absolute bottom-3 right-3 p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow"
-              >
-                <Heart size={17} className={favoritos.includes(produto.id) ? "fill-red-500 text-red-500" : "text-gray-300"} />
-              </button>
-            </div>
-
-            {/* Miniaturas: capa + fotos extras + fotos das cores */}
+      <div className="painel">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px_300px] gap-6 lg:gap-8 p-4 md:p-6">
+          {/* ── Fotos ── */}
+          <div className="flex gap-3 min-w-0">
             {fotosGaleria.length > 1 && (
-              <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
-                {fotosGaleria.map((foto, i) => (
+              <div className="hidden md:flex flex-col gap-2 flex-shrink-0">
+                {fotosGaleria.slice(0, 7).map((foto, i) => (
                   <button
                     key={i}
+                    onMouseEnter={() => setFotoSelecionada(foto)}
                     onClick={() => setFotoSelecionada(foto)}
-                    className={`flex-shrink-0 w-16 h-16 rounded-xl border-2 p-1 bg-gray-50 transition-colors ${
-                      fotoSelecionada === foto ? "border-[#C8102E]" : "border-gray-100 hover:border-gray-300"
+                    aria-label={`Foto ${i + 1}`}
+                    className={`w-[52px] h-[52px] rounded p-0.5 bg-white ${
+                      fotoSelecionada === foto ? "border-2 border-[#C8102E]" : "border border-black/15 hover:border-black/40"
                     }`}
                   >
-                    <ImagemProduto src={foto} alt={`${produto.name} - foto ${i + 1}`} className="w-full h-full object-contain" />
+                    <ImagemProduto src={foto} alt="" className="w-full h-full object-contain" />
                   </button>
                 ))}
               </div>
             )}
-
-            {/* Seletor de cor/modelo */}
-            {produto.colors && produto.colors.length > 0 && (
-              <div className="mt-4">
-                <p className="text-[12px] font-bold text-gray-600 mb-2">
-                  Cor{corSelecionada ? `: ${corSelecionada.nome}` : ""}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {produto.colors.map((c, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => aoEscolherCor(c)}
-                      title={c.nome}
-                      className={`flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border-2 text-[12px] font-bold transition-colors ${
-                        corSelecionada?.nome === c.nome ? "border-[#C8102E] text-[#C8102E]" : "border-gray-200 text-gray-600 hover:border-gray-400"
-                      }`}
-                    >
-                      <ImagemProduto
-                        src={c.image || produto.image}
-                        alt={c.nome}
-                        className="w-7 h-7 rounded-full object-cover border border-gray-200 flex-shrink-0 bg-gray-50"
-                      />
-                      <span
-                        className="w-3 h-3 rounded-full border border-gray-200 flex-shrink-0"
-                        style={{ backgroundColor: c.hex || "#cccccc" }}
-                      />
-                      {c.nome}
-                      {typeof c.estoque === "number" && c.estoque <= 0 && (
-                        <span className="text-[10px] text-red-500 font-black">ESGOTADO</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Info */}
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{produto.brand}</span>
-            </div>
-            <h1 className="text-xl md:text-2xl font-black text-gray-900 leading-snug mt-1 mb-3">
-              {produto.name}
-            </h1>
-
-            <div className="flex items-center gap-1.5 mb-5">
-              <div className="flex">
-                {[...Array(5)].map((_, i) => (
-                  <Star key={i} size={14} className={i < Math.floor(produto.rating) ? "fill-[#E8B84B] text-[#E8B84B]" : "fill-gray-200 text-gray-200"} />
-                ))}
-              </div>
-              <span className="text-[12px] text-gray-500 font-medium">
-                {produto.rating > 0 ? produto.rating : "0"}{" "}
-                {produto.reviews > 0 ? `(${produto.reviews.toLocaleString("pt-BR")} avaliações)` : "(novo)"}
-              </span>
-            </div>
-
-            {/* Price block */}
-            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5 mb-5">
-              {temDesconto && (
-                <span className="text-[13px] text-gray-400 line-through">{formatarMoeda(produto.originalPrice!)}</span>
-              )}
-              <div className="flex items-end gap-2 flex-wrap">
-                <span className="text-3xl md:text-4xl font-black text-gray-900">{formatarMoeda(precoPix)}</span>
-                {pctPix > 0 && (
+            <div className="flex-1 min-w-0">
+              <div className="relative aspect-square max-h-[500px] mx-auto flex items-center justify-center">
+                <ImagemProduto src={fotoSelecionada} alt={produto.name} className="w-full h-full object-contain" />
+                {fotosGaleria.length > 1 && (
                   <>
-                    <span className="text-[13px] text-gray-500 font-semibold mb-1.5">no PIX</span>
-                    <span className="bg-emerald-100 text-emerald-700 text-[11px] font-black px-2 py-0.5 rounded-md mb-1.5">{pctPix}% OFF</span>
+                    <button
+                      onClick={() => irParaFoto(-1)}
+                      aria-label="Foto anterior"
+                      className="md:hidden absolute left-0 top-1/2 -translate-y-1/2 w-9 h-9 bg-white/90 rounded-full shadow flex items-center justify-center"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <button
+                      onClick={() => irParaFoto(1)}
+                      aria-label="Próxima foto"
+                      className="md:hidden absolute right-0 top-1/2 -translate-y-1/2 w-9 h-9 bg-white/90 rounded-full shadow flex items-center justify-center"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                    <span className="md:hidden absolute top-0 left-0 text-[12px] bg-[#EDEDED] text-gray-600 rounded-full px-2 py-0.5">
+                      {Math.max(1, fotosGaleria.indexOf(fotoSelecionada) + 1)} / {fotosGaleria.length}
+                    </span>
                   </>
                 )}
               </div>
-              <div className="text-[13px] text-gray-600 mt-2">
-                ou <span className="font-bold">{formatarMoeda(produto.price)}</span> em{" "}
-                <span className="font-bold text-[#C8102E]">
-                  {produto.installments}x de {precoParcela(produto.price, produto.installments)} sem juros
-                </span>{" "}
-                no cartão
-              </div>
-              <div className="flex items-center gap-3 mt-3 flex-wrap">
-                {produto.freeShipping && (
-                  <span className="flex items-center gap-1 text-green-600 text-[12px] font-bold">
-                    <Truck size={13} /> FRETE GRÁTIS
-                  </span>
-                )}
-                <span className={`text-[12px] font-bold ${estoqueEfetivo < 15 ? "text-red-500" : "text-gray-500"}`}>
-                  {estoqueEfetivo <= 0
-                    ? corSelecionada
-                      ? `Esgotado na cor ${corSelecionada.nome}`
-                      : "Produto esgotado"
-                    : estoqueEfetivo === 1
-                    ? `Última unidade!${corSelecionada ? ` na cor ${corSelecionada.nome}` : ""}`
-                    : estoqueEfetivo < 15
-                    ? `Últimas ${estoqueEfetivo} unidades!${corSelecionada ? ` na cor ${corSelecionada.nome}` : ""}`
-                    : `${estoqueEfetivo} em estoque`}
-                </span>
-              </div>
             </div>
+          </div>
 
-            {estoqueEfetivo <= 0 ? (
+          {/* ── Informações ── */}
+          <div className="min-w-0">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[13px] text-gray-500">{produto.brand}</p>
               <button
-                disabled
-                className="w-full bg-gray-200 text-gray-400 font-black py-4 rounded-xl text-base flex items-center justify-center gap-2 mb-3 cursor-not-allowed"
+                onClick={() => aoFavoritar(produto.id)}
+                aria-label={favoritado ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                aria-pressed={favoritado}
+                className="-mt-1 -mr-1 p-1"
               >
-                {corSelecionada ? `Esgotado na cor ${corSelecionada.nome}` : "Produto Esgotado"}
+                <Heart size={22} className={favoritado ? "fill-[#C8102E] text-[#C8102E]" : "text-[#C8102E]"} />
               </button>
-            ) : (
+            </div>
+            {produto.badge && (
+              <span className="inline-block bg-[#FF7733] text-white text-[11px] font-bold px-1.5 py-[1px] rounded-sm mb-1.5">{produto.badge}</span>
+            )}
+            <h1 className="text-[20px] md:text-[22px] font-semibold text-gray-900 leading-tight">{produto.name}</h1>
+
+            {produto.reviews > 0 && (
               <button
-                onClick={() => aoAdicionarAoCarrinho(produtoParaComprar)}
-                className="w-full bg-[#C8102E] hover:bg-[#8C1626] text-white font-black py-4 rounded-xl transition-colors text-base flex items-center justify-center gap-2 mb-3"
+                onClick={() => document.getElementById("avaliacoes-produto")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className="flex items-center gap-1.5 mt-2 text-[14px] text-gray-500 hover:text-gray-800"
               >
-                <ShoppingCart size={17} />
-                Comprar{corSelecionada ? ` — ${corSelecionada.nome}` : ""}
+                <span>{produto.rating.toFixed(1)}</span>
+                <span className="flex" aria-hidden>
+                  {[...Array(5)].map((_, i) => (
+                    <Star key={i} size={13} className={i < Math.round(produto.rating) ? "fill-[#C8102E] text-[#C8102E]" : "fill-gray-300 text-gray-300"} />
+                  ))}
+                </span>
+                <span>({produto.reviews.toLocaleString("pt-BR")})</span>
               </button>
             )}
 
-            {/* Entrega.
-                Aqui estava escrito "Receba amanhã · Grátis" para TODO produto,
-                independente do que o carrinho iria cobrar depois — e o carrinho
-                entrega em 1 a 2 dias úteis em Curitiba, 2 a 4 no interior, com
-                frete pago quando o produto não tem o selo de frete grátis e o
-                carrinho não passa do valor mínimo. Prometer prazo e frete que
-                a loja não vai cumprir gera reclamação, cancelamento e devolução
-                do dinheiro — além de ser propaganda enganosa (CDC art. 37).
-                Agora o bloco repete exatamente a regra que o carrinho aplica. */}
-            <div className="border border-gray-100 rounded-2xl divide-y divide-gray-100">
-              <div className="flex items-center justify-between gap-2 px-4 py-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
-                    <Truck size={15} className="text-[#C8102E]" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-gray-800">Entrega em todo o Paraná</div>
-                    <div className="text-[11px] text-gray-400">
-                      1 a 2 dias úteis em Curitiba · 2 a 4 dias no interior
-                    </div>
-                  </div>
-                </div>
-                <span className="text-emerald-600 text-[12px] font-black flex-shrink-0">
-                  {produto.freeShipping ? "Grátis" : ""}
-                </span>
+            <div className="mt-5">
+              {temDesconto && <s className="block text-[15px] text-gray-400 leading-none mb-1.5">{formatarMoeda(produto.originalPrice!)}</s>}
+              <div className="flex items-start gap-3">
+                <Preco valor={produto.price} tamanho={36} className="text-gray-900" />
+                {temDesconto && (
+                  <span className="text-[18px] text-[#00A650] mt-1">{pctDesconto(produto.originalPrice!, produto.price)}% OFF</span>
+                )}
               </div>
-              <div className="flex items-center justify-between gap-2 px-4 py-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
-                    <Package size={15} className="text-[#C8102E]" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-gray-800">
-                      {produto.freeShipping
-                        ? "Frete grátis neste produto"
-                        : `Frete grátis acima de ${formatarMoeda(config.freteGratisAcima)}`}
-                    </div>
-                    <div className="text-[11px] text-gray-400">
-                      {produto.freeShipping
-                        ? "Sem custo de entrega, qualquer que seja o valor do carrinho"
-                        : "Calcule o valor exato pelo seu CEP no carrinho"}
-                    </div>
-                  </div>
+              {produto.installments > 1 && (
+                <p className="text-[16px] text-[#00A650] mt-1.5">
+                  em {produto.installments}x {precoParcela(produto.price, produto.installments)} sem juros
+                </p>
+              )}
+              {pctPix > 0 && (
+                <p className="text-[15px] text-gray-700 mt-1">
+                  ou <span className="font-semibold">{formatarMoeda(precoPix)}</span> no Pix{" "}
+                  <span className="text-[#00A650]">({pctPix}% de desconto)</span>
+                </p>
+              )}
+            </div>
+
+            {produto.colors && produto.colors.length > 0 && (
+              <div className="mt-6">
+                <p className="text-[14px] text-gray-800">
+                  Cor: <span className="font-semibold">{corSelecionada ? corSelecionada.nome : "escolha uma opção"}</span>
+                </p>
+                <div className="flex flex-wrap gap-2 mt-2" role="radiogroup" aria-label="Cor">
+                  {produto.colors.map((c, i) => {
+                    const semEstoque = typeof c.estoque === "number" && c.estoque <= 0;
+                    const ativa = corSelecionada?.nome === c.nome;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        role="radio"
+                        aria-checked={ativa}
+                        onClick={() => aoEscolherCor(c)}
+                        title={semEstoque ? `${c.nome} (esgotado)` : c.nome}
+                        className={`relative w-[52px] h-[52px] rounded p-0.5 bg-white ${
+                          ativa ? "border-2 border-[#C8102E]" : "border border-black/15 hover:border-black/40"
+                        } ${semEstoque ? "opacity-40" : ""}`}
+                      >
+                        {c.image ? (
+                          <ImagemProduto src={c.image} alt={c.nome} className="w-full h-full object-contain" />
+                        ) : (
+                          <span className="block w-full h-full rounded-sm" style={{ backgroundColor: c.hex || "#cccccc" }} />
+                        )}
+                        <span className="sr-only">{c.nome}{semEstoque ? " (esgotado)" : ""}</span>
+                      </button>
+                    );
+                  })}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Caixa de compra ── */}
+          <aside className="lg:border lg:border-black/10 lg:rounded-md lg:p-5 h-fit border-t border-black/10 pt-5 lg:pt-5">
+            <div className="flex gap-3">
+              <Truck size={20} strokeWidth={1.5} className="text-gray-500 flex-shrink-0 mt-0.5" />
+              <div className="text-[14px] leading-snug">
+                <p className="text-gray-800">Entregamos em {textoCidadesAtendidas(config.cidadesAtendidas)}</p>
+                <p className="text-gray-500 mt-0.5">De 1 a 4 dias úteis. O prazo exato sai com o seu CEP.</p>
               </div>
             </div>
-          </div>
+
+            <p className={`mt-5 text-[15px] font-semibold ${estoqueEfetivo <= 0 ? "text-gray-500" : estoqueEfetivo <= limiteBaixo ? "text-[#C8102E]" : "text-gray-900"}`}>
+              {textoEstoque}
+            </p>
+
+            {precisaEscolherCor && estoqueEfetivo > 0 && (
+              <p className="mt-2 text-[14px] text-gray-600">Escolha a cor para continuar.</p>
+            )}
+
+            <div className="mt-4 space-y-2">
+              {aoComprarAgora && (
+                <button
+                  onClick={() => aoComprarAgora(produtoParaComprar)}
+                  disabled={!podeComprar}
+                  className="btn-primario w-full py-3 text-[15px]"
+                >
+                  Comprar agora
+                </button>
+              )}
+              <button
+                onClick={() => aoAdicionarAoCarrinho(produtoParaComprar)}
+                disabled={!podeComprar}
+                className={`${aoComprarAgora ? "btn-secundario" : "btn-primario"} w-full py-3 text-[15px]`}
+              >
+                Adicionar ao carrinho
+              </button>
+            </div>
+
+            <ul className="mt-6 space-y-3 text-[13.5px] text-gray-500">
+              <li className="flex gap-2.5">
+                <ShieldCheck size={17} strokeWidth={1.5} className="flex-shrink-0 mt-px" />
+                <span>
+                  <span className="text-[#C8102E]">Compra segura.</span> O pagamento é confirmado pelo banco e os dados do cartão não ficam na loja.
+                </span>
+              </li>
+              <li className="flex gap-2.5">
+                <RotateCcw size={17} strokeWidth={1.5} className="flex-shrink-0 mt-px" />
+                <span>Até 7 dias para desistir depois de receber.</span>
+              </li>
+            </ul>
+          </aside>
         </div>
 
-        {/* Descrição (opcional, só aparece se o Admin cadastrou) */}
         {produto.description && (
-          <div className="mt-8 border-t border-gray-100 pt-6">
-            <h2 className="text-lg font-black text-gray-900 mb-3">Descrição</h2>
-            <p className="text-[13px] text-gray-600 whitespace-pre-line leading-relaxed">{produto.description}</p>
-          </div>
+          <section className="border-t border-black/10 px-4 md:px-6 py-6 md:py-8">
+            <h2 className="text-[20px] md:text-[22px] text-gray-900 mb-4">Descrição</h2>
+            <p className="text-[15px] md:text-[16px] text-gray-600 whitespace-pre-line leading-relaxed max-w-[760px]">{produto.description}</p>
+          </section>
         )}
 
-        {/* Avaliações dos clientes */}
-        <div id="avaliacoes-produto" className="mt-8 border-t border-gray-100 pt-6 scroll-mt-24">
-          <h2 className="text-lg font-black text-gray-900 mb-4">Avaliações dos clientes</h2>
+        {/* Opiniões dos clientes */}
+        <section id="avaliacoes-produto" className="border-t border-black/10 px-4 md:px-6 py-6 md:py-8 scroll-mt-28">
+          <h2 className="text-[20px] md:text-[22px] text-gray-900 mb-5">Opiniões do produto</h2>
 
           {carregandoAvaliacoes ? (
-            <p className="text-[13px] text-gray-400 mb-5">Carregando avaliações...</p>
+            <p className="text-[14px] text-gray-400">Carregando opiniões…</p>
           ) : avaliacoes.length === 0 ? (
-            <p className="text-[13px] text-gray-400 mb-5">Ainda não há avaliações para este produto.</p>
+            <p className="text-[14px] text-gray-500">Este produto ainda não tem opiniões.</p>
           ) : (
-            <div className="space-y-3 mb-6">
-              {avaliacoes.map((a) => (
-                <div key={a.id} className="border border-gray-100 rounded-xl p-4">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[13px] text-gray-800">{a.clienteNome}</span>
-                      <div className="flex">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} size={12} className={i < a.nota ? "fill-[#E8B84B] text-[#E8B84B]" : "fill-gray-200 text-gray-200"} />
-                        ))}
-                      </div>
-                    </div>
-                    <span className="text-[11px] text-gray-400">{a.date}</span>
-                  </div>
-                  {a.comentario && <p className="text-[13px] text-gray-700 mt-2 whitespace-pre-line">{a.comentario}</p>}
-                  {a.video && (
-                    <video controls className="mt-3 rounded-lg max-h-[280px] bg-black w-full sm:w-auto" src={a.video} />
-                  )}
+            <div className="grid md:grid-cols-[200px_1fr] gap-6 md:gap-10">
+              <div>
+                <p className="text-[48px] leading-none text-gray-900">{mediaAvaliacoes(avaliacoes.map((a) => a.nota)).media.toFixed(1)}</p>
+                <div className="flex mt-2" aria-hidden>
+                  {[...Array(5)].map((_, i) => (
+                    <Star
+                      key={i}
+                      size={16}
+                      className={i < Math.round(mediaAvaliacoes(avaliacoes.map((a) => a.nota)).media) ? "fill-[#C8102E] text-[#C8102E]" : "fill-gray-300 text-gray-300"}
+                    />
+                  ))}
                 </div>
-              ))}
+                <p className="text-[13px] text-gray-500 mt-1.5">
+                  {avaliacoes.length} {avaliacoes.length === 1 ? "opinião" : "opiniões"}
+                </p>
+              </div>
+              <ul className="divide-y divide-black/[0.08]">
+                {avaliacoes.map((a) => (
+                  <li key={a.id} className="py-4 first:pt-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="flex" role="img" aria-label={`${a.nota} de 5 estrelas`}>
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} size={13} className={i < a.nota ? "fill-[#C8102E] text-[#C8102E]" : "fill-gray-300 text-gray-300"} />
+                        ))}
+                      </span>
+                      <span className="text-[12.5px] text-gray-400">{a.date}</span>
+                    </div>
+                    {a.comentario && <p className="text-[15px] text-gray-700 mt-2 whitespace-pre-line">{a.comentario}</p>}
+                    {a.video && <video controls className="mt-3 rounded max-h-[280px] bg-black w-full sm:w-auto" src={a.video} />}
+                    <p className="text-[12.5px] text-gray-400 mt-2">{a.clienteNome}</p>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
           {/* Formulário: só clientes que compraram este produto podem avaliar */}
           {usuario && jaComprou && (
-            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5">
-              <h3 className="font-black text-gray-900 text-[14px] mb-3">
-                {minhaAvaliacao ? "Editar minha avaliação" : "Deixe sua avaliação"}
+            <div className="mt-8 border border-black/10 rounded-md p-5 max-w-[640px]">
+              <h3 className="text-[16px] font-semibold text-gray-900 mb-3">
+                {minhaAvaliacao ? "Editar minha opinião" : "Dê sua opinião sobre este produto"}
               </h3>
               <div className="flex items-center gap-1 mb-3">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button key={n} type="button" onClick={() => setNotaForm(n)} aria-label={`${n} estrela${n > 1 ? "s" : ""}`}>
-                    <Star size={22} className={n <= notaForm ? "fill-[#E8B84B] text-[#E8B84B]" : "fill-gray-200 text-gray-200"} />
+                    <Star size={26} strokeWidth={1.5} className={n <= notaForm ? "fill-[#C8102E] text-[#C8102E]" : "fill-white text-gray-300"} />
                   </button>
                 ))}
               </div>
               <textarea
                 value={comentarioForm}
                 onChange={(e) => setComentarioForm(e.target.value)}
-                placeholder="Conte o que achou do produto..."
+                placeholder="Conte o que achou do produto"
                 rows={3}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] mb-3 bg-white focus:outline-none focus:ring-2 focus:ring-[#C8102E]/30"
+                className="campo mb-3"
               />
               <div className="flex items-center gap-3 mb-3 flex-wrap">
-                <label className="flex items-center gap-2 text-[12px] font-bold text-gray-600 bg-white border border-gray-200 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
-                  <Video size={15} />
+                <label className="btn-secundario flex items-center gap-2 text-[13.5px] px-3.5 py-2 cursor-pointer">
+                  <Video size={16} />
                   {videoForm ? "Trocar vídeo" : "Anexar vídeo (opcional)"}
                   <input type="file" accept="video/*" className="hidden" onChange={aoEscolherVideo} />
                 </label>
                 {videoForm && (
-                  <span className="text-[12px] text-gray-500 flex items-center gap-2">
+                  <span className="text-[13px] text-gray-500 flex items-center gap-2">
                     {nomeVideoForm || "vídeo anexado"}
-                    <button
-                      type="button"
-                      onClick={() => { setVideoForm(null); setNomeVideoForm(""); }}
-                      className="text-red-500 font-bold hover:underline"
-                    >
+                    <button type="button" onClick={() => { setVideoForm(null); setNomeVideoForm(""); }} className="text-[#C8102E] hover:underline">
                       Remover
                     </button>
                   </span>
                 )}
               </div>
-              {videoForm && <video controls className="rounded-lg max-h-[220px] bg-black mb-3 w-full sm:w-auto" src={videoForm} />}
-              <p className="text-[11px] text-gray-400 mb-3">
+              {videoForm && <video controls className="rounded max-h-[220px] bg-black mb-3 w-full sm:w-auto" src={videoForm} />}
+              <p className="text-[12.5px] text-gray-400 mb-3">
                 Vídeo de até {LIMITE_VIDEO_AVALIACAO_SEGUNDOS}s e {LIMITE_VIDEO_AVALIACAO_MB} MB.
               </p>
-              {erroForm && <p className="text-[12px] text-red-500 font-semibold mb-3">{erroForm}</p>}
-              <button
-                onClick={aoEnviarAvaliacao}
-                disabled={enviando}
-                className="bg-[#C8102E] hover:bg-[#8C1626] disabled:opacity-60 text-white font-black py-2.5 px-5 rounded-xl text-[13px] transition-colors"
-              >
-                {enviando ? "Enviando..." : minhaAvaliacao ? "Atualizar avaliação" : "Enviar avaliação"}
+              {erroForm && <p className="text-[13.5px] text-[#C8102E] mb-3">{erroForm}</p>}
+              <button onClick={aoEnviarAvaliacao} disabled={enviando} className="btn-primario px-6 py-2.5 text-[14px]">
+                {enviando ? "Enviando…" : minhaAvaliacao ? "Atualizar opinião" : "Enviar opinião"}
               </button>
             </div>
           )}
 
           {usuario && !jaComprou && (
-            <p className="text-[12px] text-gray-400">Só clientes que compraram este produto podem avaliar.</p>
+            <p className="text-[13px] text-gray-400 mt-6">Só quem comprou este produto pode dar opinião.</p>
           )}
-          {!usuario && (
-            <p className="text-[12px] text-gray-400">Entre na sua conta para avaliar este produto.</p>
-          )}
-        </div>
+          {!usuario && <p className="text-[13px] text-gray-400 mt-6">Entre na sua conta para dar sua opinião.</p>}
+        </section>
       </div>
 
-      {/* Recommendations */}
-      {recomendados.length > 0 && (
+      {juntos.produtos.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-lg font-black text-gray-900 mb-4">Recomendados para você</h2>
-          {grid(recomendados)}
+          <h2 className="text-[22px] text-gray-800 mb-4">
+            {juntos.deVerdade ? "Quem comprou este produto também comprou" : "Você também pode gostar"}
+          </h2>
+          {grid(juntos.produtos)}
         </section>
       )}
 
       {outrosProdutos.length > 0 && (
-        <section className="mt-8 mb-4">
-          <h2 className="text-lg font-black text-gray-900 mb-4">Mais produtos da loja</h2>
+        <section className="mt-8">
+          <h2 className="text-[22px] text-gray-800 mb-4">Descubra na loja</h2>
           {grid(outrosProdutos)}
         </section>
       )}

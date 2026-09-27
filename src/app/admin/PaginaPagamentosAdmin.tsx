@@ -90,19 +90,19 @@ export function PaginaPagamentosAdmin() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+        <div className="painel p-4 flex items-center gap-3">
           <Clock size={22} className="text-amber-600 flex-shrink-0" />
           <div className="min-w-0">
-            <div className="text-lg font-black text-gray-900">{formatarMoeda(totalPendente)}</div>
+            <div className="text-lg font-bold text-gray-900">{formatarMoeda(totalPendente)}</div>
             <div className="text-[12px] text-gray-400">
               a pagar · {pendentes.length} {pendentes.length === 1 ? "semana fechada" : "semanas fechadas"}
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+        <div className="painel p-4 flex items-center gap-3">
           <Wallet size={22} className="text-[#C8102E] flex-shrink-0" />
           <div className="min-w-0">
-            <div className="text-lg font-black text-gray-900">{formatarMoeda(totalSemanaCorrente)}</div>
+            <div className="text-lg font-bold text-gray-900">{formatarMoeda(totalSemanaCorrente)}</div>
             <div className="text-[12px] text-gray-400">acumulando na semana atual (ainda não fechou)</div>
           </div>
         </div>
@@ -130,16 +130,16 @@ export function PaginaPagamentosAdmin() {
             }`}
           >
             {rotulo}
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${filtro === id ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>
+            <span className={`text-[12px] px-1.5 py-0.5 rounded-sm font-bold ${filtro === id ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>
               {qtd}
             </span>
           </button>
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="painel overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900 text-[15px]">Pagamento semanal dos vendedores</h3>
+          <h3 className="font-bold text-gray-900 text-[15px]">Pagamento semanal dos vendedores</h3>
           <p className="text-[12px] text-gray-400 mt-0.5">
             Cada linha é uma semana encerrada. Ao marcar como pago, o vendedor vê a mudança no painel dele.
           </p>
@@ -156,19 +156,19 @@ export function PaginaPagamentosAdmin() {
             {visiveis.map((f) => (
               <div key={f.id} className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-black flex items-center justify-center flex-shrink-0">
+                  <div className="w-9 h-9 rounded-full bg-[#C8102E]/10 text-[#C8102E] text-[13px] font-bold flex items-center justify-center flex-shrink-0">
                     {nomeDe(f)[0]?.toUpperCase()}
                   </div>
                   <div className="min-w-0">
                     <div className="text-[13px] font-bold text-gray-800 truncate">{nomeDe(f)}</div>
-                    <div className="text-[11px] text-gray-400 truncate">
+                    <div className="text-[12.5px] text-gray-400 truncate">
                       <span className="font-bold text-gray-500">{ROTULO_CARGO[f.cargo] ?? "Vendedor"}</span>{" · "}
                       {diaMes(f.semanaInicio)} a {diaMes(f.semanaFim)}
                       {f.pago && f.pagoEm && ` · pago em ${dataBr(f.pagoEm.slice(0, 10))}`}
                     </div>
                     {/* De onde veio o valor — é o que deixa o Master conferir
                         a parte da equipe sem precisar perguntar. */}
-                    <div className="text-[11px] text-gray-400 mt-0.5 flex flex-wrap gap-x-3">
+                    <div className="text-[12.5px] text-gray-400 mt-0.5 flex flex-wrap gap-x-3">
                       {partesDaComissao(f).map((parte) => (
                         <span key={parte.rotulo}>
                           {parte.rotulo}: {formatarMoeda(parte.base)} × {(parte.pct * 100).toFixed(0)}% ={" "}
@@ -180,7 +180,7 @@ export function PaginaPagamentosAdmin() {
                 </div>
 
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="font-black text-gray-900 text-[15px] tabular-nums">
+                  <span className="font-bold text-gray-900 text-[15px] tabular-nums">
                     {formatarMoeda(f.comissao)}
                   </span>
                   {f.pago ? (
@@ -188,7 +188,7 @@ export function PaginaPagamentosAdmin() {
                       onClick={() => marcar(f, false)}
                       disabled={salvando === f.id}
                       title="Desfazer — marca de volta como a pagar"
-                      className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-300 disabled:opacity-50 transition-colors"
+                      className="flex items-center gap-1.5 text-[12.5px] font-bold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-300 disabled:opacity-50 transition-colors"
                     >
                       <Undo2 size={13} />
                       Desfazer
@@ -197,7 +197,7 @@ export function PaginaPagamentosAdmin() {
                     <button
                       onClick={() => marcar(f, true)}
                       disabled={salvando === f.id}
-                      className="flex items-center gap-1.5 text-[11px] font-black px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60 transition-colors"
+                      className="flex items-center gap-1.5 text-[12.5px] font-bold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60 transition-colors"
                     >
                       {salvando === f.id ? (
                         <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
